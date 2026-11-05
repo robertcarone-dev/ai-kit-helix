@@ -1,0 +1,39 @@
+---
+name: helix-compare-ui
+description: Port and verify Phaser/Three.js web UI in Unity, including layout, responsive behavior, sprites, typography and input states. Use for views, dialogs and HUDs; route timing-focused transitions to motion comparison.
+---
+
+# Compare UI
+
+Route multi-step feature state/data semantics to [feature behavior](../helix-compare-feature/SKILL.md); retain scoped input and state checks needed to verify the UI.
+
+## Prerequisites
+
+Read [the shared workflow](../helix-reference/references/comparison-workflow.md). Match native viewport, orientation, safe area, language, exact text, navigation state, balances/offers, scroll position and selected carousel page where relevant. Record fixture use separately from normal navigation.
+
+Map Phaser origins, containers, cameras, logical scale and layout, plus sprite trim/atlas metadata, to the actual Unity framework. For uGUI this may include CanvasScaler, RectTransform anchors/pivot and Image/RawImage; do not force that framework when the target uses another.
+
+For text cases, read [Typography comparison](references/typography.md). Do not infer font family or loaded fallback from appearance alone.
+
+## Authorized implementation
+
+Follow [the port recipe](../helix-reference/references/port-recipe.md). Map source layout and sprite/font assets to the target UI framework. Implement a representative view with real content and its responsive constraints, then verify the final phone/tablet composition before extending affected states. Diagnose asset trim, typography metrics and state mismatch before compensating with layout offsets.
+
+## Procedure
+
+1. Prove one representative view at a required viewport and inspect the native receipts, visible content and equivalent state.
+2. Map both render paths into final-output pixels, then compare element bounds, alignment, spacing, anchors and layering. Distinguish screen-space bounds from local transform values.
+3. Inspect clipping/masks, scrolling, safe-area response, sprite aspect, atlas trim and nine-slice behavior. Verify input hit regions separately from visible bounds. Identify whether mismatches originate in layout, assets, text metrics or state before proposing a cause.
+4. Check required phone/tablet, orientation, content-length and state variants. Infer responsive rules only from sufficient cases or inspected layout data; one screenshot does not establish an anchor rule.
+5. Apply the typography reference to scoped text. Use inspection/source data for renderer properties; Phaser text is not DOM text, so do not claim CSS properties without evidence.
+6. Verify scoped UI state transitions, input response and gameplay-facing effects against the web behavior. Use paired images and annotations to substantiate differences. Route interaction timing to [motion](../helix-compare-motion/SKILL.md) when needed; a static screenshot does not verify a transition.
+
+## Measurements and observations
+
+Record pixel bounds/gaps and coordinate origin, plus normalized ratios only when useful. Distinguish measured wrapping/line count from hypotheses about font or layout settings. Exact pixel scores can reflect rasterization; assess the task's criteria and approved tolerances rather than assigning a whole-frame percentage threshold.
+
+## Deliverable and completion
+
+Add the shared ledger fields plus source-to-target layout/framework mapping, view/state and input behavior, viewport/safe-area/language/text, element identifiers, measured bounds/gaps, clipping or responsive findings and relevant font provenance. Link annotated native captures and inspection receipts.
+
+Finish when each required view/state/viewport case has a supported disposition and cleanup is verified. Stop only affected claims when content, state, native dimensions or typography provenance cannot be matched; mark them unmeasured or blocked and continue independent cases without reducing required coverage.

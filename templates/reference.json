@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "helix": {
+    "project": "sample-project",
+    "variant": "Default"
+  },
+  "ready": "document.readyState === \"complete\"",
+  "viewports": {
+    "phone": {
+      "width": 390,
+      "height": 844
+    },
+    "tablet": {
+      "width": 768,
+      "height": 1024
+    }
+  },
+  "scenarios": {
+    "baseline": {
+      "description": "Initial preview; replace with verified project readiness and actions",
+      "steps": [],
+      "ready": "document.readyState === \"complete\""
+    }
+  }
+}
