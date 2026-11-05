@@ -31,8 +31,8 @@ function current(path) {
 function same(a,b) { return JSON.stringify(a)===JSON.stringify(b); }
 export function run(argv) {
   const command=argv.shift();
-  if(!['preview','install','update','remove'].includes(command)) throw new Error('Usage: node scripts/install.mjs preview|install|update|remove --project-root DIR [--rules helix|all|none] [--adopt-legacy] [--init] [--copy-skills]');
-  let project, rules, adopt=false, init=false, copies=false;
+  if(!['preview','install','update','remove'].includes(command)) throw new Error('Usage: node scripts/install.mjs preview|install|update|remove --project-root DIR [--rules helix|all|none] [--adopt-legacy] [--init] [--copy-skills] [--unity-helper]');
+  let project, rules, adopt=false, init=false, copies=false, unityHelper=false;
   while(argv.length) {
     const a=argv.shift();
     if(a==='--project-root')project=argv.shift();
@@ -40,6 +40,7 @@ export function run(argv) {
     else if(a==='--adopt-legacy')adopt=true;
     else if(a==='--init')init=true;
     else if(a==='--copy-skills')copies=true;
+    else if(a==='--unity-helper')unityHelper=true;
     else throw new Error(`Unknown option ${a}`);
   }
   if(!project)throw new Error('--project-root is required');
@@ -49,12 +50,18 @@ export function run(argv) {
   if(previous && previous.schemaVersion!==1)throw new Error('Unsupported install manifest');
   rules??=previous?.rules??'none';
   copies= copies || previous?.copySkills===true;
+  unityHelper = unityHelper || previous?.unityHelper===true;
+  if(unityHelper && command!=='remove') {
+    const packages=safe(root,'Packages/manifest.json');
+    if(!existsSync(packages) || !read(packages).dependencies?.['com.unity.nuget.newtonsoft-json']) throw new Error('Unity helper requires an existing com.unity.nuget.newtonsoft-json dependency; no packages were changed.');
+  }
   if(!['helix','all','none'].includes(rules))throw new Error('Invalid rule selection');
   if(command==='update'&&!previous)throw new Error('No installation to update');
   const pkg=read(join(source,'package.json')), desired={}, contents={};
   function add(path, bytes) {contents[path]=bytes;desired[path]={type:'file',sha256:hash(bytes)};}
   function tree(from,to) {for(const file of walk(join(source,from)))add(`${to}/${relative(join(source,from),file)}`,readFileSync(file));}
   if(command!=='remove') {
+    if(unityHelper)tree('unity/Editor','Assets/HelixComparison/Editor');
     tree('cli/src','Tools/Helix/src');tree('cli/bin','Tools/Helix/bin');
     for(const name of ['workflow.py','evidence_utils.py'])add('Tools/Helix/'+name,readFileSync(join(source,'workflows',name)));
     for(const [src,dest] of [['cli.md','Toolkit.md'],['ui.md','UI.md'],['workflows.md','WorkflowToolkit.md'],['project-adapter.md','Adapter.md'],['migration.md','Migration.md']])add(`Tools/Helix/${dest}`,readFileSync(join(source,'docs',src)));
@@ -86,7 +93,7 @@ export function run(argv) {
     }
   }
   const sourceHash=hash(JSON.stringify(desired));
-  const report={command,projectRoot:root,version:pkg.version,sourceHash,rules,changes:changes.map(({path,action,before,after})=>({path,action,before,after})),createdProjectFiles:seeds.map(x=>x.path),conflicts};
+  const report={command,projectRoot:root,version:pkg.version,sourceHash,rules,unityHelper,changes:changes.map(({path,action,before,after})=>({path,action,before,after})),createdProjectFiles:seeds.map(x=>x.path),conflicts};
   if(command==='preview')return report;
   if(conflicts.length)throw new Error(`Locally modified or unmanaged files conflict; nothing written: ${conflicts.join(', ')}`);
   if(changes.length && existsSync(join(root,'.helix/connection.json')))throw new Error('An owned browser session may be active. Stop it before replacing the runtime.');
@@ -106,7 +113,7 @@ export function run(argv) {
   for(const seed of seeds){const dest=safe(root,seed.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,seed.bytes,{flag:'wx'});}
   if(command==='remove'){if(previous)unlinkSync(mp);}
   else {
-    const manifest={schemaVersion:1,name:pkg.name,version:pkg.version,sourceHash,rules,copySkills:copies,files:desired};
+    const manifest={schemaVersion:1,name:pkg.name,version:pkg.version,sourceHash,rules,copySkills:copies,unityHelper,files:desired};
     mkdirSync(dirname(mp),{recursive:true});const temp=mp+`.install-${process.pid}`;writeFileSync(temp,JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});renameSync(temp,mp);
   }
   return report;

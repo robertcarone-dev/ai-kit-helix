@@ -10,9 +10,60 @@ The installer never updates these files:
 - `test-routing.json`: nonempty `sourceHashes` for reviewed paths inside the installed performance test package. Exactly one matching package is required before tests run.
 - `project-adapter.md`: game identity/mappings, exact setup/cleanup procedures, save/preference isolation scope and limits, linked fixtures and approved deviations.
 
-Keep fixtures, helper scripts, Unity code, scenes and assets in the project. A new project has no implicit Unity recipe. No helper may fabricate managed lane metadata, bypass compatibility verification or infer save isolation from worktree separation.
+Keep fixtures, game-specific helper scripts and Unity code, scenes and assets in the project. The optional shared Unity helper supplies comparison infrastructure only. A new project has no implicit Unity recipe. No helper may fabricate managed lane metadata, bypass compatibility verification or infer save isolation from worktree separation.
 
-Unity stages are argument arrays for the installed `ai-kit` executable; placeholders are `out`, `scenario`, `width`, `height`, `capture`, `receipt`. Review the emitted plan before execution. Project-local helpers are responsible for game-specific setup and cleanup. Do not use empty source-hash profiles to claim verification.
+Unity stages are argument arrays executed without a shell. Legacy `scenario.unity` stage objects use `ai-kit`. To select a backend explicitly, use this shape inside a configured scenario:
+
+```json
+{
+  "unity": {
+    "backend": "unity",
+    "stages": {
+      "preflight": [["YOUR_REVIEWED_PREFLIGHT_ARGUMENTS"]],
+      "prepare": [["YOUR_REVIEWED_PREPARE_ARGUMENTS"]],
+      "capture": [["YOUR_REVIEWED_CAPTURE_ARGUMENTS"]],
+      "restore": [["YOUR_REVIEWED_RESTORE_ARGUMENTS"]]
+    }
+  }
+}
+```
+
+The arrays above are placeholders, not executable recipes. `backend` is `ai-kit` or `unity`; supply commands supported by the chosen executable. The toolkit does not translate AI Kit arguments to Unity CLI arguments. Unity CLI commands are pinned to the resolved checkout with `--project-path`; alternative instance selectors are not allowed. Placeholders are `{{projectRoot}}`, `{{out}}`, `{{scenario}}`, `{{width}}`, `{{height}}`, `{{capture}}` and `{{receipt}}`. Review the emitted plan before execution. Project-local hooks remain responsible for game-specific setup and cleanup. Do not use empty source-hash profiles to claim verification. The Python managed-test workflows remain AI Kit-specific.
+
+## Optional Unity comparison helper
+
+Install with `--unity-helper` after previewing the change. The installer copies `unity/Editor` into `Assets/HelixComparison/Editor` and tracks those files in its manifest. This opt-in persists during updates; unchanged managed files are removed by toolkit removal. The consuming project must already declare `com.unity.nuget.newtonsoft-json`; no package is installed or changed automatically.
+
+Create a project-owned Editor class deriving from `Helix.Comparison.ComparisonAdapter`. The adapter is recreated on each call, including after a domain reload. `ComparisonContext.ProjectState` (`JObject`) is the saved restoration baseline returned by `SaveState`, not mutable ongoing session storage. Changes made to it by later hooks are not persisted. Keep ongoing requested-view or readiness state in project-owned session storage that survives the required reloads, not adapter instance fields. Implement:
+
+| Hook | Responsibility |
+| --- | --- |
+| `Preflight(context)` | Return evidence including `storageIsolated: true`, `compatible: true` and the absolute `projectRoot`. Verify real storage and compatibility prerequisites; these fields are assertions backed by the project’s checks, not isolation supplied by the helper. |
+| `SaveState(context)` | Return a `JObject` containing all project state needed for restoration before preparation mutates it. |
+| `Prepare(context)` | Establish the requested scenario, with fixture use disclosed. |
+| `IsReady(context)` | Verify the requested state and dimensions, not an old scene’s existence. |
+| `SelectView(context, name)` | Apply a project-defined comparison view. |
+| `Capture(context)` | Return a `ComparisonFrame` with native `Texture2D Image`, `JObject Ui` and a descriptive `Source` identifying the capture method. |
+| `Restore(context)` | Restore owned project changes from the saved state. |
+| `VerifyRestored(context)` | Check restoration before session ownership is released. |
+
+Keep the recipe’s `preflight` stage read-only. Call `Begin` as the first mutation in the `prepare` stage: the matrix runner begins guaranteed restoration only once preparation is attempted. `Begin` rechecks the project preflight before taking ownership. Drive these static `Helix.Comparison.ComparisonSession` methods through the selected backend’s supported C# execution mechanism:
+
+```text
+Begin(adapterAssemblyQualifiedName, scenario, output, width, height)
+Prepare(output)
+Ready(output)
+View(output, name)       # when required by the case
+Capture(output)
+Restore(output)
+```
+
+The adapter must be a concrete class with a public parameterless constructor. Begin requires an idle compiled, non-playing Editor with saved, clean scenes and fresh output below this checkout’s `.aikit/scratch`. Session ownership uses Unity `SessionState`: it survives domain reloads but not an Editor process restart. The baseline file remains on disk. After an interrupted or restarted Editor leaves an orphan baseline, inspect the recorded state and explicitly recover through the project’s supported procedure; do not assume restoration occurred or start a new comparison over unresolved changes. Poll readiness with the recipe’s bounded procedure before capturing. Exit any Play mode started by the recipe before calling `Restore`; retain ownership and diagnose a failed restoration instead of starting another comparison. The helper holds the Editor pause flag during capture and restores that flag afterward. Its UI snapshot must include `viewport.dpr: 1` and `viewport.zoom: 1`, the actual safe area, state and nodes. The helper validates native image/UI dimensions and required state, hashes evidence and writes `unity-before.json`, `unity.json`, `unity.png` and `unity-restored.json`. A valid receipt establishes its recorded checks and image integrity, not visual parity.
+
+`Helix.Comparison.UiMeasurements.Bounds(RectTransform rect, Camera camera, int width, int height)` returns a `JObject` with native top-left `x`, `y`, `width` and `height`. A null camera means overlay UI and requires matching `Screen` dimensions. A supplied camera must cover the full native viewport without a target texture; behind-camera corners are rejected. These are geometry bounds, not visibility or clipping measurements. Semantic mappings and UI node construction remain project-owned. It does not automatically measure TMP font metrics, sprite provenance, occlusion or UI Toolkit layout. Missing values stay absent or null. The helper does not take screenshots or automatically match scenes. The project capture hook must obtain the actual composed native frame, including the required UI, and retains ownership of its `Texture2D`. No private Unity capture API or automatic fallback is supplied. Prefer supported AI Kit/Unity CLI capture APIs when they supply equivalent pixels and timing; do not replace a working capture route before checking those properties.
+
+Existing game adapters remain valid. Adopt the optional helper only after a live pilot verifies setup, capture equivalence and restoration in that project. Default Node/workflow tests do not establish Unity compilation. The optional `npm run test:unity` smoke checks helper compilation and a synthetic lifecycle in a temporary Editor project; it does not establish game parity, project storage isolation, real Game View capture or backend end-to-end execution.
+
 
 ## Static batch adapter
 

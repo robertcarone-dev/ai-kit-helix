@@ -11,7 +11,8 @@
     "test:workflow": "python3 -B -m unittest discover -s workflows/tests -v",
     "install-browser": "playwright install chromium",
     "format": "node scripts/format.mjs",
-    "format:check": "node scripts/format.mjs --check"
+    "format:check": "node scripts/format.mjs --check",
+    "test:unity": "node scripts/test-unity.mjs"
   },
   "dependencies": {
     "playwright": "1.64.1",

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add an opt-in Unity comparison helper with project-owned hooks, persistent restoration state, native evidence checks and RectTransform measurements.
+- Support explicit AI Kit or Unity CLI comparison recipe backends while preserving legacy AI Kit recipes and checkout targeting.
+
 - Add project-adapted static capture batches with persistent viewport workers, native lossless PNG capture, bounded concurrency, dependency-checked resume and timing receipts.
 - Keep fixture/reset/readiness/view hooks in consumer configuration; generic captures do not infer game state or establish parity.
 - Reuse the owned reference browser across compatible UI matrix cases while preserving per-case setup, evidence and restoration.

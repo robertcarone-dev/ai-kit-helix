@@ -1,3 +1,4 @@
+import { unityExecutable } from './unity-plan.ts';
 import { isolatedWorkspace } from './isolation.ts';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -33,6 +34,7 @@ export interface MatrixOptions {
   /** Omit to plan. Only the literal "yes" authorizes execution. */
   execute?: string;
   aiKit?: string;
+  unity?: string;
 }
 
 /** Run an argument array without a shell, bounding output and terminating timed-out process groups. */
@@ -237,6 +239,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       let browserAttempted = false,
         prepareAttempted = false,
         plan: any,
+        executable: string,
         restoreFailed = false;
       try {
         if (
@@ -254,6 +257,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           'plan',
         );
         plan = JSON.parse(planned.stdout);
+        executable = unityExecutable(plan, options);
         for (const stage of ['preflight', 'prepare', 'capture', 'restore'])
           if (
             !Array.isArray(plan.stages[stage]) ||
@@ -264,8 +268,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           )
             throw new Error('Incomplete Unity lifecycle recipe: ' + stage);
         mkdirSync(join(c.out, 'unity'), { recursive: true });
-        for (const argv of plan.stages.preflight)
-          await invoke(options.aiKit ?? 'ai-kit', argv, 'preflight');
+        for (const argv of plan.stages.preflight) await invoke(executable, argv, 'preflight');
         browserAttempted = true;
         await helix(['start', '--viewport', c.viewport], 'reference-start');
         browserOwned = true;
@@ -274,10 +277,9 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         prepareAttempted = true;
         for (const argv of plan.stages.prepare) {
           if (interrupted) throw new Error('Interrupted');
-          await invoke(options.aiKit ?? 'ai-kit', argv, 'prepare');
+          await invoke(executable, argv, 'prepare');
         }
-        for (const argv of plan.stages.capture)
-          await invoke(options.aiKit ?? 'ai-kit', argv, 'capture');
+        for (const argv of plan.stages.capture) await invoke(executable, argv, 'capture');
         if (c.safeAreaInsets) {
           const v = config.viewports[c.viewport],
             i = c.safeAreaInsets,
@@ -308,7 +310,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           row.restoration = [];
           for (const argv of plan.stages.restore) {
             try {
-              await invoke(options.aiKit ?? 'ai-kit', argv, 'restore');
+              await invoke(executable, argv, 'restore');
               row.restoration.push({ argv, status: 'completed' });
             } catch (e) {
               row.restoration.push({

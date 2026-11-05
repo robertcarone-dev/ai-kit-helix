@@ -49,3 +49,22 @@ test('stale browser connection blocks runtime replacement',()=>withProject(root=
  assert.throws(()=>call('install',root),/session may be active/);
  assert.equal(existsSync(join(root,'Tools/Helix/src/cli.ts')),false);
 }));
+test('Unity helper is opt-in, requires declared JSON dependency and preserves conflicts',()=>withProject(root=>{
+ const helper='Assets/HelixComparison/Editor/ComparisonSession.cs';
+ call('install',root);
+ assert.equal(existsSync(join(root,helper)),false);
+ assert.throws(()=>call('update',root,'--unity-helper'),/newtonsoft-json/);
+ mkdirSync(join(root,'Packages'));writeFileSync(join(root,'Packages/manifest.json'),JSON.stringify({dependencies:{'com.unity.nuget.newtonsoft-json':'3.2.2'}}));
+ const preview=call('preview',root,'--unity-helper');
+ assert.ok(preview.changes.some(c=>c.path===helper));
+ assert.equal(existsSync(join(root,helper)),false);
+ call('update',root,'--unity-helper');
+ assert.equal(call('update',root).changes.length,0);
+ mkdirSync(join(root,'Assets/ProjectFixtures'));writeFileSync(join(root,'Assets/ProjectFixtures/Adapter.cs'),'project owned');
+ const original=readFileSync(join(root,helper));writeFileSync(join(root,helper),'local edit');
+ assert.throws(()=>call('update',root),/conflict/);
+ assert.throws(()=>call('remove',root),/conflict/);
+ writeFileSync(join(root,helper),original);call('remove',root);
+ assert.equal(existsSync(join(root,helper)),false);
+ assert.equal(readFileSync(join(root,'Assets/ProjectFixtures/Adapter.cs'),'utf8'),'project owned');
+}));

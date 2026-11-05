@@ -24,7 +24,12 @@ function fixture(root, name) {
         example: {
           steps: [{ kind: 'script', purpose: 'fixture', file: 'setup.js' }],
           ready: 'true',
-          unity: { capture: [['capture', '{{capture}}']] },
+          unity: {
+            preflight: ['preflight'],
+            prepare: ['prepare'],
+            capture: [['capture', '{{capture}}']],
+            restore: ['restore'],
+          },
         },
       },
     }),
@@ -79,7 +84,7 @@ test('external CLI selects each project from nested cwd or explicit root', () =>
       { encoding: 'utf8' },
     );
     assert.notEqual(rejected.status, 0);
-    assert.match(rejected.stderr, /inside this checkout/);
+    assert.match(rejected.stderr, /this checkout/);
     const absent = spawnSync(process.execPath, [cli, 'resolve'], { cwd: temp, encoding: 'utf8' });
     assert.notEqual(absent.status, 0);
     assert.match(absent.stderr, /No project adapter/);
@@ -92,7 +97,7 @@ test('external CLI selects each project from nested cwd or explicit root', () =>
       { encoding: 'utf8' },
     );
     assert.notEqual(escaped.status, 0);
-    assert.match(escaped.stderr, /inside this checkout/);
+    assert.match(escaped.stderr, /this checkout/);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

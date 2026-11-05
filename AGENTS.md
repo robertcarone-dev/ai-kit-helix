@@ -4,8 +4,8 @@ This repository is the shared source toolkit. Consuming Unity projects receive a
 
 ## Implementation boundaries
 
-- Keep generic CLI code in `cli/`, evidence/workflow helpers in `workflows/`, shared instructions in `skills/` and optional obligations in `rules/`.
-- Keep game identities, scenarios, Unity helpers, fixtures, compatibility profiles, credentials and evidence in the consuming project. Shared tests use synthetic projects.
+- Keep generic CLI code in `cli/`, evidence/workflow helpers in `workflows/`, shared instructions in `skills/` and optional obligations in `rules/`. Optional reusable Unity comparison infrastructure belongs in `unity/`.
+- Keep game identities, scenarios, game-specific Unity helpers, fixtures, compatibility profiles, credentials and evidence in the consuming project. Shared tests use synthetic projects.
 - `scripts/install.mjs` is the only installation implementation. `install.sh` checks prerequisites and forwards arguments; do not duplicate installation policy there.
 - Preserve conflict detection, manifest hashes, project-file ownership and per-checkout session isolation. Resolve project context independently of this repository's location and propagate it to child processes.
 - Do not silently enable Unity execution without supplied recipes and verified storage/compatibility prerequisites. Preserve receipts, native dimensions and the distinction between fixtures and player input.
@@ -14,6 +14,8 @@ This repository is the shared source toolkit. Consuming Unity projects receive a
 ## Verification
 
 Use Node >=22.18 and Python >=3.10. Run `npm ci` before the first dependency-backed check. For changed runtime, installer or workflow behavior, run the relevant `npm test` and/or `npm run test:workflow` suite. Test installer changes in disposable projects, including conflicts and preservation of project-owned files.
+
+For Unity helper changes, also run `npm run test:unity` when a supported Editor and local Newtonsoft JSON package are available. Set `UNITY_EDITOR` to the absolute Editor executable and `UNITY_NEWTONSOFT_PACKAGE` to the existing package directory. This runs `scripts/test-unity.mjs` in a retained temporary synthetic project; inspect its result and Editor log. Report unavailable live Editor validation explicitly, and keep synthetic helper checks distinct from backend end-to-end execution and game parity.
 
 For shell-wrapper changes, run `sh -n install.sh`, then smoke-test help, argument forwarding from another working directory, and paths containing spaces. For instruction-only changes, check links, command accuracy and skill discovery paths; no live Unity session is required.
 

@@ -1,0 +1,7 @@
+{
+  "name": "Helix.Comparison.Editor",
+  "rootNamespace": "Helix.Comparison",
+  "references": ["Unity.Newtonsoft.Json"],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true
+}

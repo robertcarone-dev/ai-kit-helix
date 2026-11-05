@@ -27,7 +27,7 @@ Read only the specialty needed for the current case. A full visual audit may use
 2. Run `Tools/Helix/bin/helix doctor`; inspect browser installation and catalog discovery, not just process exit status.
 3. Start or reuse the checkout's session with the required viewport. Use `status`, then a named `scenario` and `look` as appropriate.
 4. Prove one representative case, check its receipts and render, then collect the remaining required cases.
-5. Use `capture` for native PNGs, `record` for motion, and `compare` for diagnostic image pairs. `unity-plan` emits the configured standard AI Kit argument arrays; execute and restore them using the shared workflow. Follow the specialist's measurement procedure.
+5. Use `capture` for native PNGs, `record` for motion, and `compare` for diagnostic image pairs. `unity-plan` emits the configured argument arrays for the selected AI Kit or Unity CLI backend; execute and restore them using the shared workflow. Follow the specialist's measurement procedure.
 6. Restore owned Unity state, stop owned browser work when finished, and hand off the ledger and accessible evidence.
 
 `look` inspects Phaser and, only when `config.three` is present, configured Three.js data. Inspect the selected configuration and its scope: a gameplay-board mapping does not automatically cover lobby or mascot scenes. It is not a generic model, font or animation probe. Additional measurements need an inspected project fixture or explicit instrumentation.

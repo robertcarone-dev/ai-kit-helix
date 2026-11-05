@@ -1,11 +1,11 @@
 # AI Kit Helix
 
-Install a reusable Helix browser reference CLI, six comparison skills and optional project rules into an AI Kit Unity project. Capture the running prototype, inspect its state, and prepare evidence for comparison with Unity. The toolkit does not patch AI Kit or automatically implement a game's Unity integration.
+Install a reusable Helix browser reference CLI, six comparison skills and optional project rules into a Unity project. Capture the running prototype, inspect its state, and prepare evidence for comparison with Unity. The toolkit does not patch AI Kit or automatically implement a game's Unity integration.
 
 ## Prerequisites
 
 - Node.js **22.18 or later** and npm on `PATH`.
-- An existing Unity project configured for AI Kit when using Unity workflows.
+- An existing Unity project with AI Kit or Unity CLI available when using Unity comparison recipes. The optional managed-test workflows still use AI Kit.
 - Helix Desktop installed and set up, with the intended prototype pulled locally. Automatic Desktop launch is macOS-only; on other platforms start a compatible local Helix service first.
 - Python **3.10 or later** for optional evidence/workflow helpers. Managed Unity test execution currently requires Unix account-home support.
 
@@ -34,6 +34,7 @@ On Windows, or when invoking Node directly, replace `./install.sh` with `node sc
 | `--rules helix` | Install the six Helix reference/comparison rules when Helix is the project's chosen reference. |
 | `--rules all` | Also install the two general AI Kit lane recovery and isolated-test rules. Review overlap with existing project policy. |
 | `--rules none` | Install no rules; the default when no prior installation exists. |
+| `--unity-helper` | Opt in to the generic Editor comparison helper under `Assets/HelixComparison/Editor`; requires the project’s existing Newtonsoft JSON package. |
 | `--init` | Create `reference.json` and `project-adapter.md` only when absent. |
 | `--copy-skills` | Install copies for Codex instead of checkout-local aliases. |
 
@@ -61,7 +62,9 @@ On systems without a POSIX shell, use `node Tools/Helix/src/cli.ts` in place of 
 
 Every CLI command accepts `--project-root DIR`. Otherwise it discovers the nearest configured project above the current working directory. Relative file arguments use that project as their base.
 
-**Unity pairing requires the game's own adapter.** Browser capture works independently, but the toolkit cannot infer Unity navigation, scenes, save isolation or cleanup. Supply Unity recipe argument arrays and reviewed verifier/profile files as described in [the adapter contract](docs/project-adapter.md), installed as `Tools/Helix/Adapter.md`. Do not copy another game's isolation claims or compatibility hashes without review.
+**Unity pairing requires the game's own adapter.** Browser capture works independently, but the toolkit cannot infer Unity navigation, scenes, save isolation or cleanup. Choose AI Kit or Unity CLI for Unity recipe argument arrays and supply reviewed verifier/profile files as described in [the adapter contract](docs/project-adapter.md), installed as `Tools/Helix/Adapter.md`. Do not copy another game's isolation claims or compatibility hashes without review.
+
+To add the optional Unity comparison helper, include `--unity-helper` in a reviewed installer preview and install/update. It requires an existing `com.unity.nuget.newtonsoft-json` dependency; the installer does not change Unity packages. The selection persists on updates and the helper files are protected by the same manifest/conflict checks. A project-owned adapter must implement setup, readiness, capture and restoration; installation does not enable Unity execution. See [the helper contract](docs/project-adapter.md#optional-unity-comparison-helper).
 
 ## Use with Claude and Codex
 
@@ -160,7 +163,17 @@ npm test
 npm run test:workflow
 ```
 
-Tests use synthetic projects and do not require Unity, Helix, a browser download or a game checkout. Generic code lives in `cli/` and `workflows/`; game scenarios, fixtures, Unity helpers and compatibility profiles belong to consumers. Update this source first, then install a reviewed snapshot into projects.
+The default Node and workflow suites use synthetic projects and do not require Unity, Helix, a browser download or a game checkout. Generic code lives in `cli/`, `workflows/` and the optional `unity/` helper; game scenarios, fixtures, game-specific Unity helpers and compatibility profiles belong to consumers. Update this source first, then install a reviewed snapshot into projects.
+
+Run the optional Unity Editor smoke separately with an existing Editor executable and a local Newtonsoft JSON package directory:
+
+```sh
+UNITY_EDITOR="/absolute/path/to/Unity" \
+UNITY_NEWTONSOFT_PACKAGE="/absolute/path/to/com.unity.nuget.newtonsoft-json" \
+npm run test:unity
+```
+
+`scripts/test-unity.mjs` creates a temporary synthetic Unity project, copies in the helper and test adapter, and runs lifecycle, restoration and evidence checks in batch mode. It uses the supplied local package and does not install into or migrate a consuming game. It prints and retains the temporary project path, `Editor.log` and `smoke-result.json` for inspection. The smoke has passed with Unity 6000.3.23f1. This establishes helper compilation and the tested synthetic lifecycle; it does not establish game parity, a native Game View capture route, or end-to-end execution through AI Kit or Unity CLI.
 
 Use `npm run format` to format the TypeScript and embedded browser probes. See [the TypeScript contributor guide](docs/typescript.md) for the module map, style conventions, session ownership, and evidence boundaries.
 

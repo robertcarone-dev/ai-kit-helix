@@ -1,3 +1,4 @@
+import { unityPlan } from './unity-plan.ts';
 import {
   existsSync,
   readFileSync,
@@ -141,52 +142,15 @@ async function main() {
   }
   if (command === 'unity-plan') {
     const { config } = readConfig();
-    const scenario = pos[0],
-      recipe = config.scenarios[scenario]?.unity,
-      viewport = options.viewport ?? Object.keys(config.viewports)[0],
-      size = config.viewports[viewport];
-    if (pos.length !== 1 || !recipe || !size || !options.out)
-      throw new Error(
-        'unity-plan requires a scenario with a Unity recipe, --out DIR and a configured viewport.',
-      );
-    const out = resolve(root, options.out),
-      within = relative(join(root, '.aikit/scratch'), out);
-    if (within.startsWith('..') || isAbsolute(within))
-      throw new Error('Unity output must be inside this checkout’s .aikit/scratch directory.');
-    const values: any = {
-      out,
-      scenario,
-      width: size.width,
-      height: size.height,
-      capture: join(out, 'unity.png'),
-      receipt: join(out, 'unity.json'),
-    };
-    const render = (arg: string) =>
-      arg.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-        if (!(key in values)) throw new Error('Unknown recipe placeholder ' + key);
-        return typeof values[key] === 'number'
-          ? String(values[key])
-          : JSON.stringify(values[key]).slice(1, -1);
-      });
-    return {
-      scenario,
-      viewport,
-      out,
-      reference: config.helix,
-      executable: 'ai-kit',
-      stages: Object.fromEntries(
-        Object.entries(recipe).map(([key, commands]: any) => [
-          key,
-          (Array.isArray(commands[0]) ? commands : [commands]).map((argv: string[]) =>
-            argv.map(render),
-          ),
-        ]),
-      ),
-      notes: [
-        'Commands are argument arrays for standard AI Kit, not shell strings. Run preflight, prepare, capture, and always restore owned Unity state, including after failure.',
-        'Unity recipe requires its output under this checkout’s .aikit/scratch. No build or Production check is required.',
-      ],
-    };
+    if (pos.length !== 1 || !options.out)
+      throw new Error('unity-plan requires SCENARIO and --out.');
+    return unityPlan(
+      config,
+      root,
+      pos[0],
+      options.viewport ?? Object.keys(config.viewports)[0],
+      options.out,
+    );
   }
   if (command === 'doctor') {
     const { config, configHash } = readConfig();

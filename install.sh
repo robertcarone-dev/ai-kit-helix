@@ -9,6 +9,7 @@ Usage: ./install.sh preview|install|update|remove --project-root DIR [OPTIONS]
 Options forwarded to the Node installer:
   --rules helix|all|none  Reference rules, all workflow rules, or none (default)
   --init                 Create absent project configuration templates
+  --unity-helper         Install optional Unity Editor comparison infrastructure
   --copy-skills          Copy Codex skills instead of using local symlinks
   --adopt-legacy         Accept only exact known pre-extraction file hashes
 

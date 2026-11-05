@@ -39,7 +39,7 @@ Add `uiBindingsFile: "Tools/Helix/ui-bindings.json"` to `reference.json`. The pr
 }
 ```
 
-The reference expression must resolve to the actual displayed object; it is read-only instrumentation and must not mutate the game. Binding IDs must be unique. Duplicate object bindings and unavailable targets produce explicit errors. They are not replaced with nearest-looking objects. Unity binding resolution is implemented by the project adapter; the sample uGUI adapter supports field, array/list index, component and relative-child steps. Roots must resolve to exactly one active component.
+The reference expression must resolve to the actual displayed object; it is read-only instrumentation and must not mutate the game. Binding IDs must be unique. Duplicate object bindings and unavailable targets produce explicit errors. They are not replaced with nearest-looking objects. Unity binding resolution is implemented by the project adapter. Resolve each semantic ID to exactly one intended object and report missing or ambiguous targets explicitly. The binding structure above is an example project contract, not a universal field resolver.
 
 A comparison selector is an exact conjunction of `semanticId`, `name`, `path`, `id`, `kind`, `scene` or `type`. Semantic IDs are preferred; name/path selectors remain useful for unique objects. Multiple matches block that element. Missing matches in a complete inventory are differences; missing matches in a truncated inventory remain unmeasured.
 
@@ -66,7 +66,7 @@ A comparison selector is an exact conjunction of `semanticId`, `name`, `path`, `
 }
 ```
 
-Choose tolerances from the task's acceptance criteria. The example's values are illustrative. The supplied game spec defaults to zero for diagnostic reporting, not an approved visual tolerance. Every mapped element compares bounds and visibility. Other properties are opt-in. Numeric tolerances return signed candidate-minus-reference deltas. Omit tolerance for exact JSON equality. `referencePath`/`candidatePath` map different renderer properties. `expected` checks each engine against its own verified asset or setting instead of requiring the same identifier in both engines.
+Choose tolerances from the task's acceptance criteria. The example's values are illustrative. Every mapped element compares bounds and visibility. Other properties are opt-in. Numeric tolerances return signed candidate-minus-reference deltas. Omit tolerance for exact JSON equality. `referencePath`/`candidatePath` map different renderer properties. `expected` checks each engine against its own verified asset or setting instead of requiring the same identifier in both engines.
 
 Relations specify `from`, `to`, `metric` and a nonnegative pixel `tolerance`. Metrics are `gapX`, `gapY`, `left`, `top`, `centerX`, `centerY`. Positive gap means separation; negative gap means overlap. Alignment metrics compare the two elements' edge/center displacement in each engine, then report the difference between engines.
 
@@ -81,11 +81,13 @@ A v1 receipt contains `ui`, `sha256`, and `image` (relative to the receipt) or `
 - `state`, optional `checkpoint`, `nodes`, `truncated`, optional `bindingErrors`.
 - Each node's identity, `bounds`, `visible`, and optional nested `text`, `sprite`, `input`, `layout`, `clipping` evidence.
 
-Missing measurements must be null or absent, never fabricated zeros. Retain measurement method and renderer metadata. The comparator can consume another Unity/UI Toolkit/device adapter using this contract; the bundled project helper covers uGUI/TMP only.
+Missing measurements must be null or absent, never fabricated zeros. Retain measurement method and renderer metadata. The comparator can consume Unity, UI Toolkit or device adapters using this contract. Only report properties actually measured by the selected adapter.
 
-Phaser captures expose configured font properties, wrapping, baseline metrics and texture/atlas metadata. Font network resource hashes are retained in the main receipt. `fontReady` tests family availability; it does not identify the actual per-glyph fallback. The Unity helper records TMP rendered line metrics, font asset provenance, sprite borders/import settings and rectangular-mask intersections. Padded/soft/rotated/stencil mask intersections remain unmeasured. A canvas raycast observation is not proof that a callback ran.
+Phaser captures expose configured font properties, wrapping, baseline metrics and texture/atlas metadata. Font network resource hashes are retained in the main receipt. `fontReady` tests family availability; it does not identify the actual per-glyph fallback. TMP rendered line metrics, font asset provenance, sprite borders/import settings and mask intersections require an adapter that measures those properties. Unmeasured fields must remain absent or null. A canvas raycast observation is not proof that a callback ran.
 
 Phaser screen bounds use the main camera and world AABB. Secondary cameras, rotated-camera geometry, masks and pixel occlusion require scoped custom instrumentation; use `uiProbe` to return additional JSON nodes/evidence. Do not treat layout bounds as visible pixel silhouettes. Both geometry and typography need visual verification before adopting tolerances.
+
+The optional Unity helper described in `Tools/Helix/Adapter.md` validates and writes this receipt contract. It supplies RectTransform bounds utilities; a project adapter supplies semantic mappings, state and any additional measured UI fields. It does not replace the project’s capture method or storage-isolation checks.
 
 ## Inputs and capture timing
 
@@ -97,7 +99,7 @@ Scenario steps support `press` (including a semantic binding ID as `target`), `d
 
 Use real pointer steps followed by assertions to test disabled controls, scrolling, callbacks and overlay blocking. Down/up must be paired in the scenario or followed by a reset. Assertions fail scenario setup immediately. Label any direct state manipulation as a fixture. Individual manual non-wait steps invalidate the named scenario, as before.
 
-`uiClockHold: "phaser-loop"` temporarily sleeps the configured Phaser loop after readiness/capture setup, obtains the snapshot and PNG, and restores the previous running state even on failure. This is disclosed instrumentation. The project's Unity capture temporarily pauses its Editor and restores the pause flag. Neither hold synchronizes animation phase across engines, freezes DOM/CSS animation, nor establishes transition timing. For transition cases use explicitly instrumented checkpoints or the separate motion workflow.
+`uiClockHold: "phaser-loop"` temporarily sleeps the configured Phaser loop after readiness/capture setup, obtains the snapshot and PNG, and restores the previous running state even on failure. This is disclosed instrumentation. Document whether the project's Unity capture holds its frame and how it restores the prior state. Neither hold synchronizes animation phase across engines, freezes DOM/CSS animation, nor establishes transition timing. For transition cases use explicitly instrumented checkpoints or the separate motion workflow.
 
 ## Matrix plan and explicit execution
 
@@ -113,7 +115,7 @@ Use real pointer steps followed by assertions to test disabled controls, scrolli
 ./Tools/Helix/bin/helix ui-matrix --spec Tools/Helix/ui-matrix.json --out .aikit/scratch/ui-round-01 --execute yes
 ```
 
-Planning never starts an Editor/browser or writes evidence. Execution requires the project's supplied `preflight`, `prepare`, `capture`, `restore` recipes, an already available Editor, AI Kit on PATH (or `--ai-kit /absolute/executable`), an isolated workspace, and no pre-existing reference browser session. It creates the Unity output directory, executes argument arrays without a shell, then compares `reference/reference.json` with `unity/unity.json`. The capture recipe must produce those names. Each case uses fresh output. `matrix.json` retains command results, failures, cleanup and cases not run.
+Planning never starts an Editor/browser or writes evidence. Execution requires the project's supplied `preflight`, `prepare`, `capture`, `restore` recipes, an already available Editor, the selected `ai-kit` or `unity` backend on PATH, an isolated workspace, and no pre-existing reference browser session. It creates the Unity output directory, executes argument arrays without a shell, then compares `reference/reference.json` with `unity/unity.json`. The capture recipe must produce those names. Each case uses fresh output. `matrix.json` retains command results, failures, cleanup and cases not run.
 
 Adjacent cases with the same viewport reuse the matrix-owned browser. Each case still runs its configured scenario setup and Unity restoration; browser reuse is not fixture reuse or permission to skip readiness. A viewport change, interruption, blocked case or restoration failure closes the owned browser. Group compatible viewports in the spec when case ordering permits, and retain every case’s separate evidence.
 
@@ -123,8 +125,8 @@ The runner does not provision an Editor, install packages, build games, or acqui
 {"schemaVersion":1,"kind":"standalone-comparison","projectRoot":"/absolute/canonical/worktree/path"}
 ```
 
-The Git backlink must match. The project adapter must independently verify storage isolation before Play. Never add this marker to a developer checkout to bypass those checks. The included game's storage adapter routes standalone worktrees to their own Library storage, just like managed lanes.
+The Git backlink must match. The project adapter must independently verify storage isolation before Play. Never add this marker to a developer checkout to bypass those checks. Document the actual storage paths and isolation mechanism in the project's adapter.
 
 A matrix lock prevents normal CLI commands from changing its browser. Commands are bounded to 90 seconds. SIGINT/SIGTERM request a stop at command boundaries with restoration; an unresponsive remote Editor may still need inspection. Once preparation is attempted, every restoration command is attempted even if one fails. Cleanup failure stops later cases. No automatic retry occurs. A crash/SIGKILL can leave a stale lock: inspect and restore the owned sessions before removing it.
 
-Optional `safeAreaInsets: {top,right,bottom,left}` uses native pixels. Nonzero insets require the scenario to declare the same `safeAreaInsets` and supply an actual device/simulator capture recipe; both resulting receipts must report the requested safe rectangle. The current Cans vs Cannons native Game-view adapter supports full rectangular safe areas only. Unsupported notch cases are blocked, not passed as rectangular captures. Orientation/content/language variants are ordinary separately configured scenarios and viewports.
+Optional `safeAreaInsets: {top,right,bottom,left}` uses native pixels. Nonzero insets require the scenario to declare the same `safeAreaInsets` and supply an actual device/simulator capture recipe; both resulting receipts must report the requested safe rectangle. Do not assume an Editor Game View capture reproduces a device notch or safe area. Unsupported notch cases are blocked, not passed as rectangular captures. Orientation/content/language variants are ordinary separately configured scenarios and viewports.
