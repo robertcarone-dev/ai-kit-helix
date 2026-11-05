@@ -1,0 +1,22 @@
+import {mkdtempSync,mkdirSync,cpSync,writeFileSync,readFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+const editor=process.env.UNITY_EDITOR, jsonPackage=process.env.UNITY_NEWTONSOFT_PACKAGE;
+if(!editor || !jsonPackage) throw new Error('Set UNITY_EDITOR executable and UNITY_NEWTONSOFT_PACKAGE to an existing local package directory. This test never installs packages into a consumer.');
+const uguiPackage=process.env.UNITY_UGUI_PACKAGE;
+if(!uguiPackage) throw new Error('Set UNITY_UGUI_PACKAGE to an existing local com.unity.ugui package.');
+const source=fileURLToPath(new URL('..',import.meta.url));
+const root=mkdtempSync(join(tmpdir(),'helix-ui-authoring-'));
+mkdirSync(join(root,'Assets/Editor'),{recursive:true});mkdirSync(join(root,'Packages'));
+mkdirSync(join(root,'ProjectSettings'));
+writeFileSync(join(root,'ProjectSettings/ProjectVersion.txt'),'m_EditorVersion: '+(process.env.UNITY_VERSION || '6000.3.23f1')+'\n');
+cpSync(join(source,'unity/Editor'),join(root,'Assets/HelixComparison/Editor'),{recursive:true});
+cpSync(join(source,'unity/Tests/UiAuthoringSmoke.cs'),join(root,'Assets/Editor/UiAuthoringSmoke.cs'));
+writeFileSync(join(root,'Packages/manifest.json'),JSON.stringify({dependencies:{'com.unity.nuget.newtonsoft-json':'file:'+resolve(jsonPackage),'com.unity.ugui':'file:'+resolve(uguiPackage),'com.unity.modules.ui':'1.0.0','com.unity.modules.imageconversion':'1.0.0','com.unity.modules.animation':'1.0.0','com.unity.modules.physics':'1.0.0','com.unity.modules.physics2d':'1.0.0','com.unity.modules.uielements':'1.0.0','com.unity.modules.imgui':'1.0.0','com.unity.modules.audio':'1.0.0'}}));
+console.log('Isolated synthetic Unity test project: '+root);
+const result=spawnSync(editor,['-batchmode','-nographics','-projectPath',root,'-executeMethod','UiAuthoringSmoke.Run','-logFile',join(root,'Editor.log')],{timeout:180000,stdio:'inherit'});
+try {console.log(readFileSync(join(root,'ui-authoring-result.json'),'utf8'));}catch{console.error('No result; inspect '+join(root,'Editor.log'));}
+if(result.error)console.error(result.error.message);
+process.exitCode=result.status??1;

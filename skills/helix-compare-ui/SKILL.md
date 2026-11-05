@@ -23,6 +23,8 @@ Follow [the port recipe](../helix-reference/references/port-recipe.md). Map sour
 
 Read `Tools/Helix/UI.md` for `ui-look`, `ui-compare` and the explicit matrix runner. Prefer semantic bindings and supplied project specs. Inspect report prerequisites and unmeasured checks; a generated report or passing synthetic test is not live parity. The native Game-view adapter does not establish device-notch coverage.
 
+For asset transfer and uGUI layout planning, read `Tools/Helix/UIPort.md` and the project's UI conversion adapter when present. Use `ui-assets` to stage original frames, `ui-plan` for a reviewable proposal, and `ui-impact` to narrow recapture to affected declared cases. Keep selectors, parent mappings, state meanings and gameplay callbacks project-owned. Do not infer responsive anchors from a single image or write prefab YAML. Report blocked layout controllers and unmeasured effects explicitly; a plan or dependency match is not visual acceptance.
+
 ## Procedure
 
 1. Prove one representative view at a required viewport and inspect the native receipts, visible content and equivalent state.

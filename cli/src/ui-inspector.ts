@@ -234,7 +234,7 @@ export const UI_INSPECTOR = String.raw`(config) => {
   return {
     schemaVersion: 1,
     coordinateSpace: 'native-top-left-pixels',
-    viewport: { width: innerWidth, height: innerHeight },
+    viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio, zoom: visualViewport?.scale ?? 1 },
     safeArea,
     state: config.state ? evaluate(config.state) : null,
     checkpoint: config.checkpoint ?? null,

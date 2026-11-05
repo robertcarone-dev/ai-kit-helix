@@ -98,19 +98,31 @@ export function readConfig(url?: string) {
   const local = resolve(root, 'Tools/Helix/reference.local.json');
   const overrides = existsSync(local) ? JSON.parse(readFileSync(local, 'utf8')) : {};
   const config = { ...base, ...overrides, helix: { ...base.helix, ...overrides.helix } };
-  if (config.uiBindingsFile) {
-    const path = realpathSync(resolve(root, config.uiBindingsFile));
-    if (relative(root, path).startsWith('..'))
-      throw new Error('UI bindings must be inside the project.');
-    const bindings = JSON.parse(readFileSync(path, 'utf8'));
-    if (bindings.schemaVersion !== 1 || !Array.isArray(bindings.elements))
-      throw new Error('UI bindings need schemaVersion:1 and elements.');
+  if (config.uiBindingsFile || config.uiBindingsFiles) {
+    if (
+      config.uiBindingsFiles !== undefined &&
+      (!Array.isArray(config.uiBindingsFiles) || !config.uiBindingsFiles.length)
+    )
+      throw new Error('uiBindingsFiles must be a nonempty file list.');
+    const files = [
+      ...(config.uiBindingsFile ? [config.uiBindingsFile] : []),
+      ...(config.uiBindingsFiles ?? []),
+    ];
     const ids = new Set();
-    config.uiBindings = bindings.elements.map((e: any) => {
-      if (typeof e.id !== 'string' || !e.id || ids.has(e.id) || typeof e.reference !== 'string')
-        throw new Error('Invalid or duplicate UI binding.');
-      ids.add(e.id);
-      return { id: e.id, expression: e.reference };
+    config.uiBindings = files.flatMap((file) => {
+      if (typeof file !== 'string' || !file) throw new Error('UI binding file must be a path.');
+      const path = realpathSync(resolve(root, file));
+      if (relative(root, path).startsWith('..'))
+        throw new Error('UI bindings must be inside the project.');
+      const bindings = JSON.parse(readFileSync(path, 'utf8'));
+      if (bindings.schemaVersion !== 1 || !Array.isArray(bindings.elements))
+        throw new Error('UI bindings need schemaVersion:1 and elements.');
+      return bindings.elements.map((e: any) => {
+        if (typeof e.id !== 'string' || !e.id || ids.has(e.id) || typeof e.reference !== 'string')
+          throw new Error('Invalid or duplicate UI binding.');
+        ids.add(e.id);
+        return { id: e.id, expression: e.reference };
+      });
     });
   }
   if (config.uiClockHold !== undefined && config.uiClockHold !== 'phaser-loop')

@@ -37,6 +37,10 @@ Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix
 
 `ui-look --match TEXT` inspects semantic bindings, text/sprite metadata and native layout observations. `ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR` produces an element report. `ui-matrix --spec JSON --out EMPTY_DIR` plans a case matrix; only explicit `--execute yes` executes supplied Unity recipes. Read the UI contract (`Tools/Helix/UI.md` in an installed project; `docs/ui.md` in the source repository) for schema, limitations, isolation and cleanup.
 
+## UI conversion tools
+
+`ui-assets --spec JSON --out EMPTY_DIR` stages local PNG/WebP/JPEG frames as PNGs with import metadata. `ui-plan --spec JSON --out EMPTY_DIR` proposes layout edits from paired native observations and explicit project mappings. `ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR` identifies cases affected by declared dependency changes. These commands do not launch Unity or apply prefab changes. Read the conversion contract (`Tools/Helix/UIPort.md` when installed; [ui-port.md](ui-port.md) in the source repository) before authoring specs.
+
 ## Warm static capture batches
 
 Use `batch` for repeated static fixture views when the consumer supplies a reviewed batch adapter. It loads once per viewport worker, resets the requested fixture between cases, and captures only the requested views. It does not record motion or exercise normal player navigation.

@@ -31,6 +31,9 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   step JSON                     press/drag/hover/pointerDown/pointerUp/wheel/wait/assert/script
   capture NAME [--out EMPTY_DIR]
   record NAME [--duration SECONDS] [--out EMPTY_DIR]  replays named scenario; max 30s
+  ui-assets --spec JSON --out EMPTY_DIR
+  ui-plan --spec JSON --out EMPTY_DIR
+  ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR
   ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   batch --spec JSON --out EMPTY_DIR [--workers 1|2] [--resume yes]
   ui-matrix --spec JSON --out EMPTY_DIR [--execute yes] [--ai-kit PATH]
@@ -115,6 +118,9 @@ async function main() {
     step: [],
     capture: ['out'],
     record: ['out', 'duration'],
+    'ui-assets': ['spec', 'out'],
+    'ui-plan': ['spec', 'out'],
+    'ui-impact': ['spec', 'previous', 'out'],
     'ui-compare': ['reference', 'candidate', 'spec', 'out'],
     batch: ['spec', 'out', 'workers', 'resume'],
     'ui-matrix': ['spec', 'out', 'execute', 'ai-kit'],
@@ -177,6 +183,15 @@ async function main() {
         'Install browser with npm run install-browser from Tools/Helix.',
       ],
     };
+  }
+  if (['ui-assets', 'ui-plan', 'ui-impact'].includes(command)) {
+    if (pos.length || !options.spec || !options.out)
+      throw new Error(command + ' requires --spec and --out.');
+    const { uiAssets, uiPlan, uiImpact } = await import('./ui-port.ts');
+    const out = resolve(root, options.out);
+    if (command === 'ui-assets') return uiAssets(root, options.spec, out);
+    if (command === 'ui-plan') return uiPlan(root, options.spec, out);
+    return uiImpact(root, options.spec, options.previous, out);
   }
   if (command === 'ui-compare') {
     if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)
