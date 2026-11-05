@@ -186,12 +186,13 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
     startedAt: new Date().toISOString(),
   };
   let created = false;
+  let browserOwned = false;
   try {
     emptyOutput(out);
     created = true;
     const save = () => writeFileSync(join(out, 'matrix.json'), JSON.stringify(report, null, 2));
     save();
-    for (const c of cases) {
+    for (const [caseIndex, c] of cases.entries()) {
       if (interrupted) break;
       const row: any = {
         id: c.id,
@@ -222,7 +223,11 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           save();
           return r;
         } catch (e) {
-          row.commands.push({ stage, error: String(e), ...(e as any).record });
+          row.commands.push({
+            stage,
+            error: String(e),
+            ...(e as any).record,
+          });
           save();
           throw e;
         }
@@ -263,6 +268,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           await invoke(options.aiKit ?? 'ai-kit', argv, 'preflight');
         browserAttempted = true;
         await helix(['start', '--viewport', c.viewport], 'reference-start');
+        browserOwned = true;
         await helix(['scenario', c.scenario], 'reference-scenario');
         await helix(['capture', c.id, '--out', join(c.out, 'reference')], 'reference-capture');
         prepareAttempted = true;
@@ -305,14 +311,27 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
               await invoke(options.aiKit ?? 'ai-kit', argv, 'restore');
               row.restoration.push({ argv, status: 'completed' });
             } catch (e) {
-              row.restoration.push({ argv, status: 'failed', error: String(e) });
+              row.restoration.push({
+                argv,
+                status: 'failed',
+                error: String(e),
+              });
               restoreFailed = true;
             }
           }
         }
-        if (browserAttempted) {
+        // Retain only this matrix's browser across adjacent same-viewport cases.
+        // Scenario setup still performs its configured reset; Unity restores every case.
+        if (
+          browserAttempted &&
+          (interrupted ||
+            restoreFailed ||
+            row.status === 'blocked' ||
+            cases[caseIndex + 1]?.viewport !== c.viewport)
+        ) {
           try {
             await helix(['stop'], 'reference-stop');
+            browserOwned = false;
           } catch (e) {
             row.browserCleanupError = String(e);
             restoreFailed = true;
@@ -350,9 +369,32 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
     if (created) writeFileSync(join(out, 'matrix.json'), JSON.stringify(report, null, 2));
     throw e;
   } finally {
-    closeSync(fd);
-    unlinkSync(lock);
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
+    if (browserOwned) {
+      try {
+        await command(
+          process.execPath,
+          [options.cli, 'stop', '--project-root', root],
+          root,
+          90000,
+          { ...process.env, HELIX_MATRIX_TOKEN: matrixToken },
+        );
+      } catch (e) {
+        report.cleanupFailed = true;
+        report.status = 'blocked';
+        report.cleanupError = String(e);
+        if (created) writeFileSync(join(out, 'matrix.json'), JSON.stringify(report, null, 2));
+        throw e;
+      } finally {
+        closeSync(fd);
+        unlinkSync(lock);
+        process.off('SIGINT', onSignal);
+        process.off('SIGTERM', onSignal);
+      }
+    } else {
+      closeSync(fd);
+      unlinkSync(lock);
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+    }
   }
 }

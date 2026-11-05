@@ -31,6 +31,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   capture NAME [--out EMPTY_DIR]
   record NAME [--duration SECONDS] [--out EMPTY_DIR]  replays named scenario; max 30s
   ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
+  batch --spec JSON --out EMPTY_DIR [--workers 1|2] [--resume yes]
   ui-matrix --spec JSON --out EMPTY_DIR [--execute yes] [--ai-kit PATH]
   compare --reference PNG --candidate PNG --out EMPTY_DIR
 Every command accepts --project-root DIR; otherwise discover from the working directory.\nRelative file paths are project-relative. Config: Tools/Helix/reference.json; optional reference.local.json top-level overrides.
@@ -114,6 +115,7 @@ async function main() {
     capture: ['out'],
     record: ['out', 'duration'],
     'ui-compare': ['reference', 'candidate', 'spec', 'out'],
+    batch: ['spec', 'out', 'workers', 'resume'],
     'ui-matrix': ['spec', 'out', 'execute', 'ai-kit'],
     compare: ['reference', 'candidate', 'out'],
   };
@@ -222,6 +224,31 @@ async function main() {
       resolve(root, options.spec),
       resolve(root, options.out),
     );
+  }
+  if (command === 'batch') {
+    if (pos.length || !options.spec || !options.out || (options.resume && options.resume !== 'yes'))
+      throw new Error('batch needs --spec JSON --out DIR; --resume accepts yes.');
+    const { config } = readConfig();
+    config.referenceIdentity = await discover(config, true);
+    config.url = config.url ?? config.referenceIdentity.url;
+    const { runBatch } = await import('./batch.ts');
+    const report = await runBatch({
+      root,
+      config,
+      spec: JSON.parse(readFileSync(resolve(root, options.spec), 'utf8')),
+      out: resolve(root, options.out),
+      workers: Number(options.workers ?? 1),
+      resume: options.resume === 'yes',
+    });
+    if (report.status !== 'captured') process.exitCode = 1;
+    return {
+      status: report.status,
+      out: resolve(root, options.out),
+      performance: report.performance,
+      elapsedMs: report.elapsedMs,
+      cases: report.cases.map(({ id, status, error }: any) => ({ id, status, error })),
+      notRun: report.notRun,
+    };
   }
   if (command === 'ui-matrix') {
     if (pos.length || !options.spec || !options.out)

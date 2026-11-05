@@ -21,6 +21,14 @@ Identify the catalog-resolved project and variant, preview URL, served-content h
 5. After a prerequisite failure, allow one retry only when a concrete prerequisite changes; record that change. If it fails again, mark affected cases blocked and continue independent cases. Never repeat unchanged capture or startup attempts.
 6. Use fresh output directories. Attach evidence or place executable helpers in the repository so the next lane can access them; a bare board attachment ID or another lane's temporary path is not a usable handoff.
 
+## Efficient static capture
+
+For static fixture views, prefer the configured `batch` command in `Tools/Helix/Toolkit.md` over repeated full audits. Its adapter contract is in `Tools/Helix/Adapter.md`. Load once per viewport worker, request only the required views, and leave destruction and video out unless the acceptance criterion requires them. Do not infer fixture behavior from another project's adapter.
+
+Prove deterministic reset and readiness for the requested fixture/seed, then compare a representative warm-session result with a fresh-session result before expanding. Start with one worker; measure before selecting two. The shared worker budget bounds simultaneous batch captures across agents. Serialize Unity operations within each lane; independent browser work and subsequent image analysis may overlap when resources permit.
+
+Use resume only with matching recorded source/adapter inputs and intact image hashes. Preserve shared source manifests with the case receipts. Record startup and fixture setup separately from view-change and screenshot timings; a fast warm PNG does not establish fast initial loading or a parity verdict. Reuse valid evidence instead of rerunning unchanged cases, and checkpoint partial output before expanding scope.
+
 ## Authorized implementation
 
 For port/fix work, follow [the port recipe](port-recipe.md), then use the specialist measurements to verify the result. Review-only work records actionable findings without changing game behavior. Close each bounded audit section with explicit case dispositions and route confirmed fixes or missing counterparts into scoped implementation tasks; a missing fixture blocks its dependent cases, not the entire library.

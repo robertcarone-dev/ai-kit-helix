@@ -164,6 +164,8 @@ Tests use synthetic projects and do not require Unity, Helix, a browser download
 
 Use `npm run format` to format the TypeScript and embedded browser probes. See [the TypeScript contributor guide](docs/typescript.md) for the module map, style conventions, session ownership, and evidence boundaries.
 
+For repeated static views, configure the project-owned batch adapter and use warm capture batches. Start with one worker, validate reuse against a fresh-session pilot, and measure before enabling two. See [batch commands](docs/cli.md#warm-static-capture-batches) and [adapter requirements](docs/project-adapter.md#static-batch-adapter).
+
 For command details, see [CLI](docs/cli.md), [project adapter](docs/project-adapter.md) and [workflows](docs/workflows.md). Packaging and synthetic project isolation have been tested; a browser pilot has run in the original game. A second real game's Unity pairing and fresh AI Kit provider discovery remain acceptance work.
 
 ## UI comparison

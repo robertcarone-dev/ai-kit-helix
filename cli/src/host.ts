@@ -1,3 +1,5 @@
+import { nativePng } from './png.ts';
+import { performance } from 'node:perf_hooks';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { isDeepStrictEqual } from 'node:util';
 import { createServer } from 'node:net';
@@ -17,7 +19,7 @@ const launch = JSON.parse(readFileSync(join(stateDir, 'launch.json'), 'utf8'));
 const { config, configHash, viewport, token } = launch,
   size = config.viewports[viewport],
   sessionId = randomUUID();
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, channel: 'chromium' });
 // State belongs to this browser session and is reset when its context is replaced.
 let context: BrowserContext;
 let page: Page;
@@ -110,7 +112,10 @@ async function load(recordDir?: string) {
       .finally(() => generationPending.delete(job));
     generationPending.add(job);
   });
-  await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+  await page.goto(config.url, {
+    waitUntil: 'domcontentloaded',
+    timeout: 25000,
+  });
   await until(config.ready);
   native(await facts());
   ready = true;
@@ -160,7 +165,11 @@ async function step(raw: any) {
       entry.actual = await evaluate(s.expression);
       if (!isDeepStrictEqual(entry.actual, s.expected))
         throw new Error(
-          'Assertion failed: ' + JSON.stringify({ expected: s.expected, actual: entry.actual }),
+          'Assertion failed: ' +
+            JSON.stringify({
+              expected: s.expected,
+              actual: entry.actual,
+            }),
         );
     }
     if (['hover', 'pointerDown', 'pointerUp', 'wheel'].includes(s.kind)) {
@@ -327,6 +336,7 @@ async function capture(label: string, output?: string) {
 
 /** Collect state, UI metrics and a native PNG; hash the evidence without claiming revision parity. */
 async function captureHeld(label: string, output?: string, clockHeld = false) {
+  const captureStarted = performance.now();
   if (!ready) throw new Error('Session not ready; reset after diagnosing the failure.');
   const s = scenario ? config.scenarios[scenario] : null;
   const measured = await facts();
@@ -335,7 +345,10 @@ async function captureHeld(label: string, output?: string, clockHeld = false) {
   const state = s?.state ? await evaluate(s.state) : null;
   const ui = await lookUI();
   ui.clockHold = clockHeld ? 'phaser-loop' : 'none';
-  const png = await page.screenshot({ type: 'png', fullPage: false, animations: 'allow' });
+  const inspectionMs = performance.now() - captureStarted,
+    pngStarted = performance.now();
+  const png = await nativePng(page);
+  const pngMs = performance.now() - pngStarted;
   if (png.readUInt32BE(16) !== size.width || png.readUInt32BE(20) !== size.height)
     throw new Error('Screenshot dimensions differ from native viewport.');
   await Promise.allSettled([...pending]);
@@ -375,6 +388,11 @@ async function captureHeld(label: string, output?: string, clockHeld = false) {
     inspection,
     ui,
     image: 'reference.png',
+    timings: {
+      inspectionMs,
+      pngMs,
+      captureToReceiptMs: performance.now() - captureStarted,
+    },
     errors,
     notes: [
       'Source hashes do not verify expectedRevision.',
@@ -526,7 +544,16 @@ const server = createServer((client) => {
       const error = String(e);
       writeFileSync(
         join(stateDir, 'failure.json'),
-        JSON.stringify({ at: new Date().toISOString(), error, status: status(), actions }, null, 2),
+        JSON.stringify(
+          {
+            at: new Date().toISOString(),
+            error,
+            status: status(),
+            actions,
+          },
+          null,
+          2,
+        ),
       );
       client.end(JSON.stringify({ ok: false, error }) + '\n');
     } finally {
@@ -545,7 +572,14 @@ try {
   const file = join(stateDir, 'connection.json');
   writeFileSync(
     file + '.tmp',
-    JSON.stringify({ port, token, configHash, viewport, projectRoot: root, pid: process.pid }),
+    JSON.stringify({
+      port,
+      token,
+      configHash,
+      viewport,
+      projectRoot: root,
+      pid: process.pid,
+    }),
     { mode: 0o600 },
   );
   renameSync(file + '.tmp', file);

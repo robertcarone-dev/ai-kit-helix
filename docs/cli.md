@@ -36,3 +36,31 @@ Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix
 ## UI comparison
 
 `ui-look --match TEXT` inspects semantic bindings, text/sprite metadata and native layout observations. `ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR` produces an element report. `ui-matrix --spec JSON --out EMPTY_DIR` plans a case matrix; only explicit `--execute yes` executes supplied Unity recipes. Read the UI contract (`Tools/Helix/UI.md` in an installed project; `docs/ui.md` in the source repository) for schema, limitations, isolation and cleanup.
+
+## Warm static capture batches
+
+Use `batch` for repeated static fixture views when the consumer supplies a reviewed batch adapter. It loads once per viewport worker, resets the requested fixture between cases, and captures only the requested views. It does not record motion or exercise normal player navigation.
+
+```sh
+./Tools/Helix/bin/helix batch --spec Tools/Helix/static-batch.json --out .helix/evidence/static-01 --workers 1
+./Tools/Helix/bin/helix batch --spec Tools/Helix/static-batch.json --out .helix/evidence/static-01 --workers 1 --resume yes
+```
+
+The spec uses configured viewport and adapter view names. Fixture contents belong to the consuming project:
+
+```json
+{
+  "schemaVersion": 1,
+  "cases": [
+    {"id": "sample-front", "viewport": "phone", "fixture": {"asset": "sample"}, "seed": 1, "views": ["front", "side"]}
+  ]
+}
+```
+
+A missing seed defaults to 1. Use `--workers 2` only after measuring the single-worker pilot; workers own separate pages and state, and commands remain sequential within each worker. A shared two-worker budget limits competing batch processes. Keep Unity operations serialized in their assigned lane.
+
+The batch captures native lossless PNGs using the full Chromium distribution installed by `install-browser`. Receipts retain image hashes, adapter/source fingerprints, observed state and timings. Repeated source manifests are shared within the output package; preserve the complete package when handing off evidence. Resume requires matching recorded dependencies and intact evidence. A changed dependency set is a reason to capture a fresh batch, not to weaken verification.
+
+Measure initial loading, fixture preparation, view changes and PNG capture separately. Warm capture latency excludes startup and fixture setup. The generic toolkit has no universal subsecond guarantee: benchmark the actual project and machine. Before accepting scene reuse, compare a representative reused case with a fresh-session capture at the same state, viewport and seed, then inspect the images and receipts.
+
+The required project-owned `batch` adapter is documented in `Tools/Helix/Adapter.md` (source: [project-adapter.md](project-adapter.md)).
