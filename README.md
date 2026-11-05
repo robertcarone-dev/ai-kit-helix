@@ -2,10 +2,6 @@
 
 Install a reusable Helix browser reference CLI, six comparison skills and optional project rules into an AI Kit Unity project. Capture the running prototype, inspect its state, and prepare evidence for comparison with Unity. The toolkit does not patch AI Kit or automatically implement a game's Unity integration.
 
-## Share with another developer
-
-Share this repository through Git, or send the full source folder excluding `.git`, `node_modules` and generated files. Keep the folder structure intact. Each developer installs a snapshot into their Unity project; teammates and AI Kit lanes then use the committed snapshot without needing this source folder.
-
 ## Prerequisites
 
 - Node.js **22.18 or later** and npm on `PATH`.
