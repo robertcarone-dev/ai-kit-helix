@@ -13,3 +13,37 @@ Requires Python 3.10+; managed Unity test execution currently supports Unix acco
 Managed tests require `Tools/Helix/Adapter.md` configuration and an active assigned lane. Use `test-plan --project-root DIR --editor PATH --filter FILTER --assignment ID --out DIR`, then `test-preflight --project-root DIR --assignment ID --out FRESH_DIR` while the owned Editor is ready and Play is stopped. Safely close only that Editor without releasing its assignment. `test-run` accepts the same plan arguments plus `--execute --isolation-receipt FILE`. The preflight receipt expires after twenty minutes and must match lane, assignment, revision and verifier paths/hashes.
 
 The runner verifies closed-Editor state, source compatibility and account-home credentials, preserves XML/logs, and attempts `ai-kit unity ensure` restoration even after a failed process. Inspect run-receipt.json for both test and restoration results. Do not restart shared infrastructure or overwrite shared saves. Test success is not Helix parity.
+
+
+## Readiness and synchronized motion
+
+After implementing the project-owned capture hooks documented in `Tools/Helix/Adapter.md`, run:
+
+```sh
+python3 Tools/Helix/capture.py gate --execute --project-root /path/to/game --assignment A-N --expected expected.json --out .aikit/scratch/gate-01
+python3 Tools/Helix/capture.py motion --execute --project-root /path/to/game --assignment A-N --expected expected.json --out .aikit/scratch/motion-01 --seconds 8 --timeout 90
+```
+
+Omit `--assignment` only for a configured non-managed backend. Relative expected/output paths resolve against the selected project, independent of cwd or toolkit location. Outputs must be new directories inside that checkout's `.aikit/scratch`. A per-checkout capture lock prevents overlapping runs; inspect an abandoned lock and its owner rather than automatically removing it. Symlink paths cannot escape the project. Source hashes, compatibility profile and expected identity are checked before execution; `--execute` is required. Nothing is armed or inferred by default.
+
+The gate waits for a project-defined safe transition, requests preparation at most once, then checks exact ready identity and dimensions. A successful gate leaves the session ready for its caller, which must eventually invoke the adapter's restoration procedure. Gate errors attempt restoration. Motion runs its own gate, starts recording, waits for a captured frame, calls the guarded action once, and requires observed event endpoints within the actual native saved frame sequence. Keep action/observer duration shorter than the recording window to allow startup overhead. A lost reply never authorizes another action. Failed motion attempts stop only their allocated recording and attempt restoration; successful motion also restores. Restoration failure fails the result. Every started workflow retains `capture.json`, including hook timings, returned evidence and errors. Configuration errors before an output is created produce no receipt.
+
+`capture.py` is deliberately not a copy of any game's C# helper. Keep game actions, readiness logic, restoration, motion fixtures and environment selection in the adapter. Test one live pilot including error cleanup; automated synthetic tests do not establish visual parity or a measured speed improvement.
+
+## Delivery, reuse and timing
+
+```sh
+python3 Tools/Helix/delivery.py integration --project-root /path/to/game --branch task-branch --base main --out integration.json
+python3 Tools/Helix/delivery.py pack --source evidence-directory --out new-package-directory --revision EXACT_REVISION_LABEL --part-mib 20
+python3 Tools/Helix/delivery.py upload --project-root /path/to/game --issue AK-N --package new-package-directory --out new-upload-receipt-directory
+python3 Tools/Helix/delivery.py reuse --ledger ledger.json --inputs current-inputs.json --out reuse.json
+python3 Tools/Helix/delivery.py timings --project-root /path/to/game --out timings.json
+```
+
+Delivery output paths are explicit filesystem paths (relative to cwd); they are not capture output paths. `integration` snapshots both refs and reports missing commits versus ancestry or patch equivalence, exiting nonzero for a merge gap. Merge commits absent from the target conservatively require review. It neither merges nor approves runtime behavior. Choose the project's actual integration branch; `main` is only the default.
+
+`pack` requires a stable nonempty source directory and a new output outside it. It rejects symlinks, hashes source and archived payload bytes, and produces ZIP parts of 1–20 MiB plus a manifest with the supplied revision label, ordered reconstruction instructions, archive hash and per-part/payload hashes. Existing filenames/embedded labels remain unchanged. Do not package unrelated credentials, caches or unpublished evidence. Mixed-revision evidence needs its own per-file provenance; the packaging label is not historical proof.
+
+`upload` and `timings` are optional AI Kit integrations. Upload verifies package parts and reconstruction hash, attaches through the supported CLI, then verifies consumer bytes against board metadata. Matching existing attachment hashes are reused. A partial failure preserves `upload.json`; inspect it before retrying with a fresh receipt directory. The helper never deletes existing attachments or marks a task complete. The supplied archive is not automatically extracted.
+
+`reuse` uses the existing ledger format: each case's declared dependencies and evidence hashes determine whether it can be reused. It does not discover undeclared dependencies or change verdicts. Preserve valid cases and repeat only invalidated/required integration cases. `timings` reports requested/start/end wall-clock spans, run counts and provider holds from AI Kit metadata. Resumed assignments may include earlier work: request-to-latest-start is not pure queue time, and spans are not model execution or an invented phase breakdown.

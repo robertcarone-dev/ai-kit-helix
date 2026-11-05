@@ -2,6 +2,8 @@
 
 Install a reusable Helix browser reference CLI, six comparison skills and optional project rules into a Unity project. Capture the running prototype, inspect its state, and prepare evidence for comparison with Unity. The toolkit does not patch AI Kit or automatically implement a game's Unity integration.
 
+Generic readiness/motion and delivery helpers are optional. Their execution requires reviewed project-owned hooks; see [capture adapters](docs/project-adapter.md#optional-capture-workflow-adapter) and [workflow commands](docs/workflows.md#readiness-and-synchronized-motion). Browser-only use remains independent of AI Kit.
+
 ## Prerequisites
 
 - Node.js **22.18 or later** and npm on `PATH`.

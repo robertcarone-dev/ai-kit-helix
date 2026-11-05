@@ -68,3 +68,36 @@ test('Unity helper is opt-in, requires declared JSON dependency and preserves co
  assert.equal(existsSync(join(root,helper)),false);
  assert.equal(readFileSync(join(root,'Assets/ProjectFixtures/Adapter.cs'),'utf8'),'project owned');
 }));
+
+test('capture and delivery install/update/remove preserve game adapters',()=>withProject(root=>{
+ call('install',root,'--init');
+ const adapter=join(root,'Tools/Helix/workflow-adapter.json');
+ writeFileSync(adapter,'{"capture":{"gameSpecific":true}}');
+ for(const name of ['capture.py','delivery.py'])assert.ok(existsSync(join(root,'Tools/Helix',name)));
+ call('update',root);
+ assert.equal(readFileSync(adapter,'utf8'),'{"capture":{"gameSpecific":true}}');
+ writeFileSync(join(root,'Tools/Helix/capture.py'),'local edits');
+ assert.throws(()=>call('update',root),/conflict/);
+ assert.throws(()=>call('remove',root),/conflict/);
+}));
+
+
+test('older snapshot gains workflows without changing project-owned config',()=>withProject(root=>{
+ call('install',root,'--init');
+ const mp=join(root,'Tools/Helix/toolkit-install.json');
+ const manifest=JSON.parse(readFileSync(mp,'utf8'));
+ for(const name of ['capture.py','delivery.py']) {
+   const path=`Tools/Helix/${name}`;rmSync(join(root,path));delete manifest.files[path];
+ }
+ manifest.version='1.1.0';writeFileSync(mp,JSON.stringify(manifest));
+ const adapter=join(root,'Tools/Helix/workflow-adapter.json');writeFileSync(adapter,'{"owned":true}');
+ const preview=call('preview',root);
+ assert.ok(preview.changes.some(c=>c.path==='Tools/Helix/capture.py'));
+ assert.equal(existsSync(join(root,'Tools/Helix/capture.py')),false);
+ call('update',root);
+ assert.equal(readFileSync(adapter,'utf8'),'{"owned":true}');
+ call('remove',root);
+ assert.equal(existsSync(join(root,'Tools/Helix/capture.py')),false);
+ assert.equal(existsSync(join(root,'Tools/Helix/delivery.py')),false);
+ assert.equal(readFileSync(adapter,'utf8'),'{"owned":true}');
+}));

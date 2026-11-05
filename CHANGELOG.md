@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 (unreleased)
+
+- Add adapter-driven readiness and synchronized motion workflows with explicit execution, isolation/compatibility preflight, one-shot mutations, endpoint validation and restoration.
+- Add integration receipts, evidence packaging/upload readback, selective reuse and honest assignment timing helpers.
+- Install these helpers with existing manifest/conflict protection; keep game hooks and capture profiles project-owned.
+- Add synthetic cross-game/failure-path tests. Live game backend adoption remains a project pilot, not a generic parity claim.
+
 ## Unreleased
 
 - Add an opt-in Unity comparison helper with project-owned hooks, persistent restoration state, native evidence checks and RectTransform measurements.

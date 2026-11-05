@@ -87,3 +87,46 @@ These function expressions illustrate an adapter API; the toolkit does not suppl
 `reset(fixture, seed)` must remove previous fixture effects and deterministically establish the requested state, including owned timers, transient objects and camera settings. `ready(fixture, seed)` must verify the **new requested fixture and seed**, not merely that an old scene or canvas exists. `probe()` returns plain serializable state sufficient to identify the actual fixture and relevant settings. `view(view)` applies one of the declared view names and must establish the requested static view before capture. Load all dependencies needed by the requested views during reset/readiness; view switching must not lazily introduce unrecorded resources. Do not use a generic truthy readiness result as proof of correct setup.
 
 Hashing the adapter and served resources establishes recorded dependencies, not semantic correctness of reset or readiness. Validate at least one warm reuse against a fresh-session result and retain the comparison. Motion, normal input, callback/guard behavior and cross-engine timing require their own evidence. Static batch configuration does not authorize Unity execution or replace its isolation and restoration procedure.
+
+
+## Optional capture workflow adapter
+
+`capture.py` is a backend-neutral orchestrator. It contains no game names, Unity types, fixtures or input semantics. Configure `capture` in project-owned `workflow-adapter.json`; no executable capture adapter is seeded by installation. Supply reviewed adapter commands for the game's actual lifecycle. AI Kit and standalone Unity CLI commands need a project wrapper that normalizes their replies to the protocol below; the toolkit does not guess backend envelopes or convert arguments.
+
+```json
+{
+  "capture": {
+    "schemaVersion": 1,
+    "managedAiKit": true,
+    "sourceHashes": {"Tools/Comparison/adapter.py": "REVIEWED_SHA256"},
+    "hooks": {
+      "preflight": ["python3", "Tools/Comparison/adapter.py", "preflight", "{{projectRoot}}", "{{out}}", "{{expected}}", "{{recordingId}}"],
+      "probe": ["python3", "Tools/Comparison/adapter.py", "probe", "{{projectRoot}}", "{{out}}", "{{expected}}", "{{recordingId}}"],
+      "prepare": ["python3", "Tools/Comparison/adapter.py", "prepare", "{{projectRoot}}", "{{out}}", "{{expected}}", "{{recordingId}}"],
+      "restore": ["python3", "Tools/Comparison/adapter.py", "restore", "{{projectRoot}}", "{{out}}", "{{expected}}", "{{recordingId}}"]
+    }
+  }
+}
+```
+
+This illustrates the contract; the wrapper and hash must be implemented/reviewed by the project. All hooks are nonempty argv arrays, executed without a shell in the selected checkout. Placeholders are `projectRoot`, `out`, `expected`, `recordingId`, `seconds`, `width`, `height`, `assignment`, each enclosed in double braces. Paths to helper scripts belong in nonempty `sourceHashes`; include every relevant adapter dependency. Hash matching is recorded provenance, not proof the hook is correct.
+
+`managedAiKit: true` also requires a running Editor assignment bound to this ready managed lane. `false` permits other backends and standalone worktrees; the project preflight must still verify ownership, compatibility and save/preference isolation. It is not a way to bypass an AI Kit lane's lifecycle.
+
+Every hook prints one JSON object, exits zero, and returns `ok: true` and the exact resolved `projectRoot`. The runner rejects other projects, malformed replies, nonzero exit and timeouts. Do not echo secrets into receipts.
+
+| Hook | Additional result and responsibility |
+| --- | --- |
+| `preflight` | `isolated: true`, `compatible: true`. Validate actual ownership/storage routing and installed/compiled backend; retain baseline needed for restoration under `out`. Safe restoration must also handle a partially failed preflight. |
+| `probe` | `state`: `waiting`, `prepare`, or `ready`. Only return `prepare` when the transition can be accepted. `ready` additionally requires exact `identity`, native `width`/`height`, `quiescent: true` and integer `frame`. Check actual fixture, seed, input history, settled state and served resources relevant to this game. |
+| `prepare` | Perform the scoped transition at most once, rechecking readiness atomically. The runner never retries it after a lost reply. No automatic reset or hit replay. |
+| `restore` | Restore only owned state from the baseline and return `restored: true` after verification; safe if preparation failed partway. |
+| `recordStart` | Motion only: start native recording with supplied `recordingId` and `seconds`, return `id`. The allocated id is a `rec-YYYYMMDD-HHMMSS-xxxx` token. It must identify only this recording, even if the reply is lost. |
+| `recordStatus` | Return `id`, `state` (`armed`, `recording`, `done`, `failed`, `timedOut`, `interrupted`), integer `frames`. `done` includes `recordPath`, contained in `out`. |
+| `action` | Atomically confirm this recorder is active with at least one captured frame, then install observer/trigger once. Return matching `id`, `recordingConfirmed: true` and actual integer `firstFrame`. A prior poll alone is insufficient. The wrapper owns this backend-specific atomic check. |
+| `events` | Return `complete: true`, observed integer `firstFrame` and `lastFrame`, both at/after action invocation. Missing or incomplete events fail coverage; never substitute recorder endpoints. |
+| `recordStop` | Stop only the supplied id, including after a lost start reply. |
+
+Motion requires all nine hooks plus a reviewed `capture-capabilities.json` profile. The adapter must write the supported frame-sequence JSON format: `screen` and `frameSize` are `{width,height}`; nonempty `frames` contain relative `file`, integer `frame` and numeric `t`. Images must be native PNG/JPEGs readable by `recording-check`. Other recorder formats need an explicit project conversion preserving source provenance; encoded videos alone cannot be substituted. Adapter frame numbering must use the same frame clock for actions, events and recorder frames.
+
+Expected input is `{ "identity": { "case": "PROJECT_CASE", "seed": 7 }, "width": 780, "height": 1688 }`. Identity keys are project-defined, nonempty and compared exactly. Add relevant payload hashes, source hashes and state selectors; equal seed alone is insufficient. Width/height are requested evidence dimensions, never silently reduced. The hooks must check semantics, not merely return the expected input. Validate a live pilot before expanding a matrix; synthetic protocol tests do not validate a game's hooks.

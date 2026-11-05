@@ -35,3 +35,6 @@ Distinguish video frame time, wall time and game time explicitly. Describe perce
 Add the shared ledger fields plus source/target motion implementations and timing conversions, event/state sequence, trigger/scenario, initial snapshot and final pose, alignment frame/event, time basis, sampled frame timestamps, timing/displacement measurements and clock uncertainty. Link both videos, motion receipts and any instrumentation scripts/data.
 
 Finish when all required events and variants have supported dispositions and owned state is restored. Stop affected timing or trajectory claims when event alignment or sampling is insufficient; retain qualitative observations, identify the missing fixture/instrumentation and continue independent events.
+
+
+For configured Unity/backend captures, follow `Tools/Helix/WorkflowToolkit.md` and the project's adapter. Use the readiness/motion helper only after a reviewed live pilot; do not invent hooks or copy another game's fixtures. Record before actions, verify first/last event coverage, and restore owned state. Use delivery receipts to distinguish implemented, validated and integrated work. Reuse evidence only when its declared inputs and bytes remain valid.

@@ -35,3 +35,6 @@ Read only the specialty needed for the current case. A full visual audit may use
 ## Result and stopping condition
 
 Deliver the shared case ledger with source-to-target mapping, reference identity, setup, expected/actual results, evidence, recommended or implemented Unity fixes, retest cases and restoration receipts. For launch diagnostics, add the exact failing command, error and changed prerequisite needed to proceed. Completion means every required case has a supported status; blocked or unmeasured cases remain explicit and do not become passes.
+
+
+For configured Unity/backend captures, follow `Tools/Helix/WorkflowToolkit.md` and the project's adapter. Use the readiness/motion helper only after a reviewed live pilot; do not invent hooks or copy another game's fixtures. Record before actions, verify first/last event coverage, and restore owned state. Use delivery receipts to distinguish implemented, validated and integrated work. Reuse evidence only when its declared inputs and bytes remain valid.
