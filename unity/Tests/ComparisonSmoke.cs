@@ -40,6 +40,7 @@ public static class ComparisonSmoke
     {
         try {
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            SceneSmoke.RunAssertions();
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             string output = Path.Combine(root, ".aikit/scratch/success");
             string type = typeof(SyntheticComparisonAdapter).AssemblyQualifiedName;

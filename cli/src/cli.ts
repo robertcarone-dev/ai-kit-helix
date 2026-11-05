@@ -27,6 +27,8 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   recover                       recheck timed-out scenario readiness; no setup replay
   scenario NAME
   look [--match TEXT]
+  scene-look                    read-only hierarchy and scene measurements
+  scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
   ui-look [--match TEXT]          UI metrics and semantic bindings
   step JSON                     press/drag/hover/pointerDown/pointerUp/wheel/wait/assert/script
   capture NAME [--out EMPTY_DIR]
@@ -115,6 +117,8 @@ async function main() {
     scenario: [],
     look: ['match'],
     'ui-look': ['match'],
+    'scene-look': [],
+    'scene-compare': ['reference', 'candidate', 'spec', 'out'],
     step: [],
     capture: ['out'],
     record: ['out', 'duration'],
@@ -192,6 +196,16 @@ async function main() {
     if (command === 'ui-assets') return uiAssets(root, options.spec, out);
     if (command === 'ui-plan') return uiPlan(root, options.spec, out);
     return uiImpact(root, options.spec, options.previous, out);
+  }
+  if (command === 'scene-compare') {
+    if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)
+      throw new Error('scene-compare requires --reference, --candidate, --spec and --out');
+    const { compareSceneFiles } = await import('./scene.ts');
+    return compareSceneFiles(
+      ...([options.reference, options.candidate, options.spec, options.out].map((p) =>
+        resolve(root, p),
+      ) as [string, string, string, string]),
+    );
   }
   if (command === 'ui-compare') {
     if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)

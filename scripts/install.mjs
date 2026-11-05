@@ -64,7 +64,7 @@ export function run(argv) {
     if(unityHelper)tree('unity/Editor','Assets/HelixComparison/Editor');
     tree('cli/src','Tools/Helix/src');tree('cli/bin','Tools/Helix/bin');
     for(const name of ['workflow.py','evidence_utils.py','capture.py','delivery.py'])add('Tools/Helix/'+name,readFileSync(join(source,'workflows',name)));
-    for(const [src,dest] of [['cli.md','Toolkit.md'],['ui.md','UI.md'],['ui-port.md','UIPort.md'],['workflows.md','WorkflowToolkit.md'],['project-adapter.md','Adapter.md'],['migration.md','Migration.md']])add(`Tools/Helix/${dest}`,readFileSync(join(source,'docs',src)));
+    for(const [src,dest] of [['cli.md','Toolkit.md'],['ui.md','UI.md'],['ui-port.md','UIPort.md'],['scene.md','Scene.md'],['workflows.md','WorkflowToolkit.md'],['project-adapter.md','Adapter.md'],['migration.md','Migration.md']])add(`Tools/Helix/${dest}`,readFileSync(join(source,'docs',src)));
     const installed={...pkg,scripts:{'install-browser':'playwright install chromium'}};
     add('Tools/Helix/package.json',Buffer.from(JSON.stringify(installed,null,2)+'\n'));
     add('Tools/Helix/package-lock.json',readFileSync(join(source,'package-lock.json')));

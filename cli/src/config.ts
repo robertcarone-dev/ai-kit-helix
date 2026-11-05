@@ -125,6 +125,21 @@ export function readConfig(url?: string) {
       });
     });
   }
+  if (config.sceneBindings !== undefined) {
+    if (!Array.isArray(config.sceneBindings)) throw new Error('sceneBindings must be a list');
+    const ids = new Set((config.uiBindings ?? []).map((b) => b.id));
+    for (const b of config.sceneBindings) {
+      if (
+        typeof b.id !== 'string' ||
+        !b.id ||
+        ids.has(b.id) ||
+        typeof b.expression !== 'string' ||
+        !b.expression
+      )
+        throw new Error('Invalid or duplicate scene binding');
+      ids.add(b.id);
+    }
+  }
   if (config.uiClockHold !== undefined && config.uiClockHold !== 'phaser-loop')
     throw new Error('Supported uiClockHold is phaser-loop.');
   if (config.uiClockHold && !config.phaser)

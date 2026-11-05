@@ -25,6 +25,8 @@ Read `Tools/Helix/UI.md` for `ui-look`, `ui-compare` and the explicit matrix run
 
 For asset transfer and uGUI layout planning, read `Tools/Helix/UIPort.md` and the project's UI conversion adapter when present. Use `ui-assets` to stage original frames, `ui-plan` for a reviewable proposal, and `ui-impact` to narrow recapture to affected declared cases. Keep selectors, parent mappings, state meanings and gameplay callbacks project-owned. Do not infer responsive anchors from a single image or write prefab YAML. Report blocked layout controllers and unmeasured effects explicitly; a plan or dependency match is not visual acceptance.
 
+For broader hierarchy and grouped-element diagnosis, read `Tools/Helix/Scene.md`. Compare explicit semantic mappings in screen space before adjusting local transforms. Keep unresolved matches and unsupported clipping/camera cases explicit. A group union does not verify its internal spacing or order; continue element-level UI measurements and inspect native images.
+
 ## Procedure
 
 1. Prove one representative view at a required viewport and inspect the native receipts, visible content and equivalent state.

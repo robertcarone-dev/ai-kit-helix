@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { root, stateDir, sha, localUrl, validateStep, emptyOutput } from './config.ts';
 import { webmDimensions } from './video.ts';
 import { REFERENCE_INSPECTOR } from './inspector.ts';
+import { SCENE_INSPECTOR } from './scene-inspector.ts';
 import { UI_INSPECTOR } from './ui-inspector.ts';
 import { ScenarioReadiness } from './readiness.ts';
 import { receiptValue } from './receipt.ts';
@@ -425,6 +426,33 @@ async function dispatch(req: any) {
   }
   if (req.method === 'look') return look(req.match);
   if (req.method === 'ui-look') return lookUI(req.match);
+  if (req.method === 'scene-look') {
+    if (!ready || !scenario) throw new Error('scene-look requires a ready named scenario');
+    const s = config.scenarios[scenario];
+    const snapshot = await page.evaluate(
+      '(' +
+        SCENE_INSPECTOR +
+        ')(' +
+        JSON.stringify({
+          phaser: config.phaser,
+          three: config.three,
+          bindings: [...(config.uiBindings ?? []), ...(config.sceneBindings ?? [])],
+          state: s.state,
+          checkpoint: s.checkpoint,
+        }) +
+        ')',
+    );
+    return {
+      ...snapshot,
+      provenance: {
+        projectRoot: root,
+        configHash,
+        referenceIdentity: config.referenceIdentity,
+        scenario,
+        sessionId,
+      },
+    };
+  }
   if (req.method === 'step') {
     readiness.invalidate();
     await step(req.step);

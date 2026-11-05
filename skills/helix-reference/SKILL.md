@@ -32,6 +32,10 @@ Read only the specialty needed for the current case. A full visual audit may use
 
 `look` inspects Phaser and, only when `config.three` is present, configured Three.js data. Inspect the selected configuration and its scope: a gameplay-board mapping does not automatically cover lobby or mascot scenes. It is not a generic model, font or animation probe. Additional measurements need an inspected project fixture or explicit instrumentation.
 
+## Structural diagnosis
+
+Read `Tools/Helix/Scene.md` when hierarchy or object placement could explain a visual difference. Use `scene-look` and a project-supplied Unity scene snapshot, then `scene-compare` with explicit semantic or grouped mappings. Inspect state, checkpoint, viewport and unsupported measurements before using the report to guide a fix. Keep selectors and semantic meanings project-owned; name-only suggestions do not establish correspondence. Read-only inventories and geometric overlays supplement native screenshots and do not prove rendering or interaction parity.
+
 ## Result and stopping condition
 
 Deliver the shared case ledger with source-to-target mapping, reference identity, setup, expected/actual results, evidence, recommended or implemented Unity fixes, retest cases and restoration receipts. For launch diagnostics, add the exact failing command, error and changed prerequisite needed to proceed. Completion means every required case has a supported status; blocked or unmeasured cases remain explicit and do not become passes.

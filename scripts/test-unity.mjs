@@ -10,6 +10,7 @@ const root=mkdtempSync(join(tmpdir(),'helix-unity-smoke-'));
 mkdirSync(join(root,'Assets/Editor'),{recursive:true});mkdirSync(join(root,'Packages'));
 cpSync(join(source,'unity/Editor'),join(root,'Assets/HelixComparison/Editor'),{recursive:true});
 cpSync(join(source,'unity/Tests/ComparisonSmoke.cs'),join(root,'Assets/Editor/ComparisonSmoke.cs'));
+cpSync(join(source,'unity/Tests/SceneSmoke.cs'),join(root,'Assets/Editor/SceneSmoke.cs'));
 writeFileSync(join(root,'Packages/manifest.json'),JSON.stringify({dependencies:{'com.unity.nuget.newtonsoft-json':'file:'+resolve(jsonPackage)}}));
 console.log('Isolated synthetic Unity test project: '+root);
 const result=spawnSync(editor,['-batchmode','-nographics','-projectPath',root,'-executeMethod','ComparisonSmoke.Run','-logFile',join(root,'Editor.log')],{timeout:180000,stdio:'inherit'});
