@@ -162,3 +162,7 @@ npm run test:workflow
 Tests use synthetic projects and do not require Unity, Helix, a browser download or a game checkout. Generic code lives in `cli/` and `workflows/`; game scenarios, fixtures, Unity helpers and compatibility profiles belong to consumers. Update this source first, then install a reviewed snapshot into projects.
 
 For command details, see [CLI](docs/cli.md), [project adapter](docs/project-adapter.md) and [workflows](docs/workflows.md). Packaging and synthetic project isolation have been tested; a browser pilot has run in the original game. A second real game's Unity pairing and fresh AI Kit provider discovery remain acceptance work.
+
+## UI comparison
+
+Helix 1.1 adds semantic UI inspection, element-level comparison reports, and opt-in viewport matrix execution. See [the UI comparison contract](docs/ui.md) for configuration, supported measurements, isolation, and explicit limitations.

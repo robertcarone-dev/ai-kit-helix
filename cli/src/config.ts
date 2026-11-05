@@ -31,9 +31,12 @@ export function validateStep(s: any) {
   if (!s || typeof s !== 'object') throw new Error('Step must be an object.');
   if (s.kind === 'script' && ['fixture','instrumentation'].includes(s.purpose) && typeof s.expression === 'string') return s;
   if (s.kind === 'wait' && typeof s.until === 'string') return s;
+  if (s.kind === 'assert' && typeof s.expression === 'string' && Object.hasOwn(s, 'expected')) return s;
+  if (['hover','pointerDown','pointerUp'].includes(s.kind) && [s.x,s.y].every(Number.isFinite)) return s;
+  if (s.kind === 'wheel' && [s.x,s.y,s.deltaX,s.deltaY].every(Number.isFinite) && Math.abs(s.deltaX)<=10000 && Math.abs(s.deltaY)<=10000) return s;
   if (s.kind === 'press' && (typeof s.target === 'string' || [s.x,s.y].every(Number.isFinite))) return s;
   if (s.kind === 'drag' && [s.x,s.y,s.toX,s.toY].every(Number.isFinite) && Number.isInteger(s.durationMs ?? 300) && (s.durationMs ?? 300) >=16 && (s.durationMs ?? 300)<=5000) return s;
-  throw new Error('Invalid step: use press, drag, wait, or a script labelled fixture/instrumentation.');
+  throw new Error('Invalid step: use press, drag, hover, pointerDown, pointerUp, wheel, wait, assert, or a script labelled fixture/instrumentation.');
 }
 export function loadStep(s: any) {
   if (s?.kind !== 'script' || s.file === undefined) return validateStep(s);
@@ -50,6 +53,9 @@ export function readConfig(url?: string) {
   const local = resolve(root,'Tools/Helix/reference.local.json');
   const overrides = existsSync(local) ? JSON.parse(readFileSync(local,'utf8')) : {};
   const config = {...base,...overrides,helix:{...base.helix,...overrides.helix}};
+  if(config.uiBindingsFile){const path=realpathSync(resolve(root,config.uiBindingsFile));if(relative(root,path).startsWith('..'))throw new Error('UI bindings must be inside the project.');const bindings=JSON.parse(readFileSync(path,'utf8'));if(bindings.schemaVersion!==1||!Array.isArray(bindings.elements))throw new Error('UI bindings need schemaVersion:1 and elements.');const ids=new Set();config.uiBindings=bindings.elements.map((e:any)=>{if(typeof e.id!=='string'||!e.id||ids.has(e.id)||typeof e.reference!=='string')throw new Error('Invalid or duplicate UI binding.');ids.add(e.id);return {id:e.id,expression:e.reference};});}
+  if(config.uiClockHold!==undefined&&config.uiClockHold!=='phaser-loop')throw new Error('Supported uiClockHold is phaser-loop.');
+  if(config.uiClockHold&&!config.phaser)throw new Error('Phaser clock hold needs a phaser expression.');
   if (url ?? config.url) config.url = localUrl(url ?? config.url);
   if (!config.helix?.project || !config.helix?.variant) throw new Error('Config needs helix.project and helix.variant.');
   if (typeof config.ready !== 'string' || !config.ready) throw new Error('Config needs a ready expression.');

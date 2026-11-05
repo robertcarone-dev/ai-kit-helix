@@ -19,6 +19,10 @@ For text cases, read [Typography comparison](references/typography.md). Do not i
 
 Follow [the port recipe](../helix-reference/references/port-recipe.md). Map source layout and sprite/font assets to the target UI framework. Implement a representative view with real content and its responsive constraints, then verify the final phone/tablet composition before extending affected states. Diagnose asset trim, typography metrics and state mismatch before compensating with layout offsets.
 
+## Tool support
+
+Read `Tools/Helix/UI.md` for `ui-look`, `ui-compare` and the explicit matrix runner. Prefer semantic bindings and supplied project specs. Inspect report prerequisites and unmeasured checks; a generated report or passing synthetic test is not live parity. The native Game-view adapter does not establish device-notch coverage.
+
 ## Procedure
 
 1. Prove one representative view at a required viewport and inspect the native receipts, visible content and equivalent state.

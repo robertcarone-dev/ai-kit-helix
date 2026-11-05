@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import {isDeepStrictEqual} from 'node:util';
 import { createServer } from 'node:net';
 import { readFileSync, writeFileSync, rmSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { root,stateDir,sha,localUrl,validateStep,emptyOutput } from './config.ts';
 import { webmDimensions } from './video.ts';
 import { REFERENCE_INSPECTOR } from './inspector.ts';
+import { UI_INSPECTOR } from './ui-inspector.ts';
 import { ScenarioReadiness } from './readiness.ts';
 import { receiptValue } from './receipt.ts';
 const launch=JSON.parse(readFileSync(join(stateDir,'launch.json'),'utf8'));
@@ -31,7 +33,7 @@ async function load(recordDir?:string){
   page.on('pageerror',(e:Error)=>{errors.push(e.message);errors=errors.slice(-50);});
   const generationSources=sources,generationPending=pending;
   page.on('response',(response:any)=>{
-    if(!['document','script','stylesheet'].includes(response.request().resourceType()))return;
+    if(!['document','script','stylesheet','font'].includes(response.request().resourceType()))return;
     const job:Promise<void>=response.body().then((b:Buffer)=>{generationSources.set(response.url(),{url:response.url(),status:response.status(),sha256:sha(b),bytes:b.length});}).catch(()=>{sourceFailures++;}).finally(()=>generationPending.delete(job));generationPending.add(job);
   });
   await page.goto(config.url,{waitUntil:'domcontentloaded',timeout:25000});await until(config.ready);native(await facts());ready=true;
@@ -42,10 +44,12 @@ async function step(raw:any){
  const s=validateStep(raw),entry:any={...s,at:new Date().toISOString(),status:'running'};actions.push(entry);
  try{
   if(s.kind==='wait')await until(s.until);
+  if(s.kind==='assert'){entry.actual=await evaluate(s.expression);if(!isDeepStrictEqual(entry.actual,s.expected))throw new Error('Assertion failed: '+JSON.stringify({expected:s.expected,actual:entry.actual}));}
+  if(['hover','pointerDown','pointerUp','wheel'].includes(s.kind)){const p=point(s.x,s.y);await page.mouse.move(p.x,p.y);if(s.kind==='pointerDown')await page.mouse.down();if(s.kind==='pointerUp')await page.mouse.up();if(s.kind==='wheel')await page.mouse.wheel(s.deltaX,s.deltaY);}
   if(s.kind==='script')entry.result=await evaluate(s.expression);
   if(s.kind==='press'){
    let p;
-   if(s.target){const nodes=(await look(s.target)).nodes.filter((n:any)=>(n.id===s.target||n.name===s.target)&&n.inputEnabled&&n.visible&&n.bounds?.width>0&&n.bounds?.height>0);if(nodes.length!==1)throw new Error('Expected one visible enabled target; inspect look for an exact id.');const b=nodes[0].bounds;p=point(b.x+b.width/2,b.y+b.height/2);}else p=point(s.x,s.y);
+   if(s.target){const mapped=(await lookUI()).nodes.filter((n:any)=>n.semanticId===s.target);if(mapped.length){if(mapped.length!==1||!mapped[0].visible||!mapped[0].input?.enabled||!(mapped[0].bounds?.width>0&&mapped[0].bounds?.height>0))throw new Error('Semantic target is ambiguous, hidden, disabled or unmeasured.');const b=mapped[0].bounds;p=point(b.x+b.width/2,b.y+b.height/2);}else {const nodes=(await look(s.target)).nodes.filter((n:any)=>(n.id===s.target||n.name===s.target)&&n.inputEnabled&&n.visible&&n.bounds?.width>0&&n.bounds?.height>0);if(nodes.length!==1)throw new Error('Expected one visible enabled target; inspect look for an exact id.');const b=nodes[0].bounds;p=point(b.x+b.width/2,b.y+b.height/2);}}else p=point(s.x,s.y);
    await page.mouse.click(p.x,p.y,{delay:40});
   }
   if(s.kind==='drag'){const a=point(s.x,s.y),b=point(s.toX,s.toY);await page.mouse.move(a.x,a.y);await page.mouse.down();try{for(let i=1;i<=20;i++){await pause((s.durationMs??300)/20);await page.mouse.move(a.x+(b.x-a.x)*i/20,a.y+(b.y-a.y)*i/20);}}finally{await page.mouse.up();}}
@@ -59,18 +63,36 @@ async function checkReady(name:string,recovery=false){
 }
 async function select(name:string,reset=true){const s=config.scenarios[name];if(!s)throw new Error('Unknown scenario '+name);readiness.invalidate();if(reset&&s.reset!==false)await load();ready=false;scenario=null;for(const a of s.steps)await step(a);await readiness.check(name,()=>checkReady(name));scenario=name;ready=true;return status();}
 function status(){return {sessionId,projectRoot:root,pid:process.pid,configHash,referenceIdentity:config.referenceIdentity,viewport,url:page?.url(),ready,scenario,pendingScenario:readiness.pending,scenarios:Object.entries(config.scenarios).map(([name,s]:any)=>({name,description:s.description,counterpart:s.counterpart})),errors};}
+async function lookUI(match=''){
+ const s=scenario?config.scenarios[scenario]:null;
+ const snapshot=await page.evaluate('('+UI_INSPECTOR+')('+JSON.stringify({phaser:config.phaser,uiProbe:config.uiProbe,bindings:config.uiBindings,state:s?.state,checkpoint:s?.checkpoint})+')');
+ if(match)snapshot.nodes=snapshot.nodes.filter((n:any)=>JSON.stringify(n).toLowerCase().includes(match.toLowerCase()));
+ return snapshot;
+}
 async function capture(label:string,output?:string){
  if(!ready)throw new Error('Session not ready; reset after diagnosing the failure.');
  const s=scenario?config.scenarios[scenario]:null;if(s){await until(s.ready);for(const a of s.captureSteps??[])await step(a);await until(s.ready);}
+ const hold=config.uiClockHold==='phaser-loop'&&config.phaser;
+ let restore=false;
+ try {
+  if(hold)restore=await page.evaluate('(()=>{const g=('+config.phaser+');if(!g?.loop?.sleep||!g?.loop?.wake)throw new Error("Phaser clock hold unavailable");const running=g.loop.running;g.loop.sleep();return running;})()');
+  return await captureHeld(label,output,!!hold);
+ } finally {if(restore)await page.evaluate('('+config.phaser+').loop.wake(true)');}
+}
+async function captureHeld(label:string,output?:string,clockHeld=false){
+ if(!ready)throw new Error('Session not ready; reset after diagnosing the failure.');
+ const s=scenario?config.scenarios[scenario]:null;
  const measured=await facts();native(measured);const inspection=await look();
  const state=s?.state?await evaluate(s.state):null;
+ const ui=await lookUI();
+ ui.clockHold=clockHeld?'phaser-loop':'none';
  const png=await page.screenshot({type:'png',fullPage:false,animations:'allow'});
  if(png.readUInt32BE(16)!==size.width||png.readUInt32BE(20)!==size.height)throw new Error('Screenshot dimensions differ from native viewport.');
  await Promise.allSettled([...pending]);
  const out=emptyOutput(output??join(stateDir,'evidence',randomUUID())),capturePath=join(out,'reference.png'),manifestPath=join(out,'reference.json');
  writeFileSync(capturePath,png);
- const identity={reference:config.referenceIdentity,url:page.url(),expectedRevision:config.expectedRevision??null,revisionVerified:false,sources:[...sources.values()].sort((a,b)=>a.url.localeCompare(b.url)),sourceScope:'document, script, stylesheet',complete:pending.size===0&&sourceFailures===0};
- const manifest={schemaVersion:1,sessionId,projectRoot:root,configHash,scenario,label,at:new Date().toISOString(),viewport:measured,native:size,state,capturePath,sha256:sha(png),setup:actions,setupKind:actions.some(a=>a.purpose==='fixture')?'fixture':actions.some(a=>a.purpose==='instrumentation')?'instrumented-input':'input',identity,inspection,errors,notes:['Source hashes do not verify expectedRevision. Inspection and capture are sequential; moving objects may advance.']};
+ const identity={reference:config.referenceIdentity,url:page.url(),expectedRevision:config.expectedRevision??null,revisionVerified:false,sources:[...sources.values()].sort((a,b)=>a.url.localeCompare(b.url)),sourceScope:'document, script, stylesheet, font',complete:pending.size===0&&sourceFailures===0};
+ const manifest={schemaVersion:1,sessionId,projectRoot:root,configHash,scenario,label,at:new Date().toISOString(),viewport:measured,native:size,state,capturePath,sha256:sha(png),setup:actions,setupKind:actions.some(a=>a.purpose==='fixture')?'fixture':actions.some(a=>a.purpose==='instrumentation')?'instrumented-input':'input',identity,inspection,ui,image:"reference.png",errors,notes:['Source hashes do not verify expectedRevision.',clockHeld?'Phaser loop held during snapshot and PNG; this does not synchronize animation phase with Unity.':'Inspection and capture are sequential; moving objects may advance.']};
  writeFileSync(manifestPath,JSON.stringify(manifest,null,2));return {capturePath,manifestPath,native:size,scenario};
 }
 async function dispatch(req:any){
@@ -83,6 +105,7 @@ async function dispatch(req:any){
   scenario=await readiness.recover(name=>checkReady(name,true));ready=true;return status();
  }
  if(req.method==='look')return look(req.match);
+ if(req.method==='ui-look')return lookUI(req.match);
  if(req.method==='step'){readiness.invalidate();await step(req.step);if(req.step.kind!=='wait')scenario=null;return look();}
  if(req.method==='capture')return capture(req.label,req.out);
  if(req.method==='record'){
@@ -98,7 +121,7 @@ async function dispatch(req:any){
    const video=page.video();
    const state=config.scenarios[selected].state?await evaluate(config.scenarios[selected].state):null;
    await Promise.allSettled([...pending]);
-   const identity={reference:config.referenceIdentity,url:page.url(),sources:[...sources.values()].sort((a,b)=>a.url.localeCompare(b.url)),sourceScope:'document, script, stylesheet',complete:pending.size===0&&sourceFailures===0};
+   const identity={reference:config.referenceIdentity,url:page.url(),sources:[...sources.values()].sort((a,b)=>a.url.localeCompare(b.url)),sourceScope:'document, script, stylesheet, font',complete:pending.size===0&&sourceFailures===0};
    await context.close();
    const videoPath=join(out,'motion.webm');
    await video.saveAs(videoPath);
