@@ -43,7 +43,7 @@ Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix
 
 ## Scene comparison
 
-`scene-look` prints a read-only Phaser/Three scene inventory from a ready named scenario. `scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR` compares explicit node or group mappings and writes diagnostic JSON plus geometric SVG overlays. Read the scene contract (`Tools/Helix/Scene.md` when installed; [scene.md](scene.md) in the source repository) for snapshot prerequisites, supported bounds and result statuses. Scene snapshots supplement separately captured images; they are not visual acceptance.
+`scene-look` prints a read-only Phaser/Three scene inventory from a ready named scenario. `scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR` compares explicit node or group mappings, camera-projected landmarks and optional declared world-coordinate conversions. It writes diagnostic JSON plus geometric SVG overlays. Read the scene contract (`Tools/Helix/Scene.md` when installed; [scene.md](scene.md) in the source repository) for snapshot prerequisites, supported bounds and result statuses. Scene snapshots supplement separately captured images; they are not visual acceptance.
 
 ## Warm static capture batches
 

@@ -1,5 +1,7 @@
+import { sceneGeometry } from './scene-geometry.ts';
 /** Read-only scene inventory. No rendering, layout, camera or animation updates are invoked. */
 export const SCENE_INSPECTOR = String.raw`(config) => {
+  const geometry = (${sceneGeometry.toString()})();
   const evaluate = expression => (0, eval)('(' + expression + ')');
   const nodes = [], cameras = [], bindingErrors = [], bindings = new Map();
   const limit = 10000;
@@ -45,12 +47,19 @@ export const SCENE_INSPECTOR = String.raw`(config) => {
   }
   if(config.three) {
     const root=evaluate(config.three.scene), camera=evaluate(config.three.camera);
-    cameras.push({id:'three-camera',engine:'three',raw:{name:camera.name,type:camera.type,projection:camera.projectionMatrix.toArray(),world:camera.matrixWorld.toArray(),near:camera.near,far:camera.far}});
+    const surface=config.three.surface?evaluate(config.three.surface):null;
+    if(surface&&!geometry.surface(surface))throw new Error('Three surface must be an explicit axis-aligned final-output pixel rectangle');
+    cameras.push({id:'three-camera',engine:'three',surface,projectionConvention:'clip-minus-one-to-one',raw:{name:camera.name,type:camera.type,projection:camera.projectionMatrix.toArray(),view:camera.matrixWorldInverse.toArray(),world:camera.matrixWorld.toArray(),near:camera.near,far:camera.far}});
     const visit=(o,id,parentId,parentVisible,depth)=>{
       if(depth>128 || total>=limit) {total++;return;}
       const visible=parentVisible&&o.visible!==false;
-      add({id,parentId,semanticId:bindings.get(o)??null,engine:'three',name:o.name,type:o.type,visible,cameraId:'three-camera',bounds:null,
-        boundsMethod:'unmeasured: Three output surface requires an explicit mapping',
+      const box=o.geometry?.boundingBox;
+      const localBounds=box?{min:box.min.toArray(),max:box.max.toArray()}:null;
+      const supported=!o.isSkinnedMesh&&!o.isInstancedMesh&&!o.morphTargetInfluences?.some(v=>v!==0);
+      const projected=supported?geometry.corners(localBounds).map(p=>geometry.project(geometry.transform(o.matrixWorld.toArray(),p),camera.matrixWorldInverse.toArray(),camera.projectionMatrix.toArray(),surface)):[];
+      const bounds=geometry.bounds(projected);
+      add({id,parentId,semanticId:bindings.get(o)??null,engine:'three',name:o.name,type:o.type,visible,cameraId:'three-camera',bounds,localBounds,projectionSupported:supported,
+        boundsMethod:bounds?'existing local geometry AABB projected through observed matrices':'unmeasured: no existing bounds, unsupported deformation/instancing, surface or clip-plane crossing',
         raw:{uuid:o.uuid,position:o.position.toArray(),quaternion:o.quaternion.toArray(),scale:o.scale.toArray(),world:o.matrixWorld.toArray(),geometry:o.geometry?{name:o.geometry.name,uuid:o.geometry.uuid}:null}});
       o.children.forEach((child,i)=>visit(child,id+'/'+i,id,visible,depth+1));
     };visit(root,'three',null,true,0);

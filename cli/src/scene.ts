@@ -1,3 +1,4 @@
+import { compareGeometry } from './scene-geometry.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -96,7 +97,14 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
     !isDeepStrictEqual(reference.state, candidate.state)
   )
     prerequisites.push('state-mismatch-or-missing');
-  if (reference.bindingErrors?.length || candidate.bindingErrors?.length)
+  const scopedErrors = (snapshot, side) => {
+    const selected = new Set([
+      ...spec.mappings.flatMap((m) => m[side]?.semanticIds ?? []),
+      ...(spec.landmarks ?? []).map((l) => l[side]?.semanticId).filter(Boolean),
+    ]);
+    return (snapshot.bindingErrors ?? []).filter((e) => selected.has(e.id));
+  };
+  if (scopedErrors(reference, 'reference').length || scopedErrors(candidate, 'candidate').length)
     prerequisites.push('binding-errors');
   const ids = new Set();
   const mappings = spec.mappings.map((m) => {
@@ -183,6 +191,7 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
     schemaVersion: 1,
     kind: 'helix-scene-comparison',
     acceptance: 'diagnostic-only',
+    geometry: compareGeometry(reference, candidate, spec, prerequisites),
     prerequisites,
     mappings,
     suggestions,

@@ -33,8 +33,16 @@ A project-owned comparison spec selects nodes explicitly:
     {
       "id": "example-panel",
       "tolerancePx": 1,
-      "reference": {"semanticIds": ["example.panel"]},
-      "candidate": {"ids": ["unity/0/2"]}
+      "reference": {
+        "semanticIds": [
+          "example.panel"
+        ]
+      },
+      "candidate": {
+        "ids": [
+          "unity/0/2"
+        ]
+      }
     }
   ]
 }
@@ -49,11 +57,58 @@ The output directory must be empty. It receives:
 
 ## Snapshot scope and result statuses
 
-Snapshots preserve engine-native node data alongside bounds measured in top-left viewport pixels. Comparisons require native viewport metadata with DPR and zoom both 1, a complete bounded inventory and a valid hierarchy. Matching viewport dimensions, nonempty checkpoint and equivalent state are prerequisites for measurement. Binding errors also prevent measurement.
+Snapshots preserve engine-native node data alongside bounds measured in top-left viewport pixels. Comparisons require native viewport metadata with DPR and zoom both 1, a complete bounded inventory and a valid hierarchy. Matching viewport dimensions, nonempty checkpoint and equivalent state are prerequisites for measurement. Binding errors for semantic IDs requested by the spec also prevent measurement; unrelated bindings outside the scoped comparison do not establish a blocker for that scope.
 
 A mapping is `unresolved` when a selector is missing or ambiguous. It is `unmeasured` when prerequisites fail or selected bounds are unavailable. Otherwise its x, y, width and height deltas are compared separately against the explicit nonnegative `tolerancePx`, producing `within-tolerance` or `different`. Those labels describe rectangle measurements only. The report also records normalized viewport rectangles and visibility observations.
 
-Phaser extraction uses the main camera for supported single-camera, unmasked, unrotated-camera bounds. Unsupported camera/mask cases have no bounds. Three extraction in this stage provides hierarchy and raw transforms; screen bounds remain unmeasured until an explicit output-surface mapping is supported. Neither engine's inventory proves occlusion or final visible pixels.
+Phaser extraction uses the main camera for supported single-camera, unmasked, unrotated-camera bounds. Unsupported camera/mask cases have no bounds. Three extraction projects existing geometry bounds only when an explicit output-surface mapping and supported geometry are available. Neither engine's inventory proves occlusion or final visible pixels.
+
+## Camera-aware geometry
+
+A 3D camera renders into a surface that may occupy only part of the final image. Configure `three.surface` as an expression returning `{x, y, width, height, axisAligned: true}` in final viewport pixels. Use the actual displayed output rectangle, including its offset and size. Do not substitute the full viewport for a canvas embedded in another surface. Rotated or otherwise non-axis-aligned compositing is unsupported by this rectangle contract.
+
+Three snapshots retain camera world, view and projection matrices plus the output surface. Supported existing geometry bounding boxes are projected through the observed object and camera matrices. Extraction never calls bounding-box computation or updates scene matrices. Missing bounds, skinned/instanced/morph geometry, absent surfaces and near/far clip-plane crossings remain unmeasured. Inspect `boundsMethod`; a projected box is not an exact silhouette.
+
+Unity retains the equivalent camera matrices and projects renderer world bounds. The optional `cameraSurface` argument declares the final output rectangle. The helper infers a surface only when the camera renders directly to display 0 without a RenderTexture and the requested dimensions match `Screen`; it applies the camera viewport within that output. Other paths need an explicit surface. RectTransform measurements retain their separate canvas rules.
+
+All stored matrices are column-major. Camera projection uses the CPU clip convention with depth from -1 to 1. The comparison projects each side through its own camera; it does not equate FOV, Euler angles or raw transform components across engines.
+
+## Landmarks and world coordinates
+
+Add `landmarks` to the mapping spec for points with an explicit correspondence:
+
+```json
+{
+  "landmarks": [
+    {
+      "id": "example-origin",
+      "reference": {
+        "semanticId": "example.object",
+        "point": [
+          0,
+          0,
+          0
+        ]
+      },
+      "candidate": {
+        "id": "unity/0/2",
+        "point": [
+          0,
+          0,
+          0
+        ]
+      },
+      "tolerancePx": 1
+    }
+  ]
+}
+```
+
+Each point is in its selected node's local coordinates. The report transforms it using that node's recorded world matrix and projects it using its recorded camera and surface. `geometry.landmarks` reports `screenDistancePx` and `screenStatus`; absent camera/matrix/surface data or failed prerequisites remain unmeasured. The report retains both sides' camera evidence in `geometry.cameras`.
+
+World distance is opt-in. Add `coordinates.units` and both `coordinates.reference.worldToCommon` and `coordinates.candidate.worldToCommon`, each an explicit invertible affine 16-number matrix. These matrices convert each engine's world coordinates into the same declared space and units, accounting for axis direction, handedness, scale and origin as needed. Every landmark must then include a nonnegative `toleranceWorld`. The report records `worldDistance`, `worldUnits` and `worldStatus` separately from screen results.
+
+Validate the conversion with known project landmarks before using world distances to guide a fix. Omitting it leaves world comparison unmeasured while still allowing supported screen projection. Never invent a universal axis flip, unit scale or camera adjustment to force agreement.
 
 ## Collect a representative pair
 
@@ -78,7 +133,7 @@ Bounds and overlays are diagnostic approximations. They do not resolve all masks
 
 ## Unity collection
 
-The optional reusable `SceneSnapshot.Capture(root, camera, width, height, state, checkpoint, bindings)` helper returns a JSON object. It reads a supplied root, output dimensions and semantic `Transform` bindings. The camera may be omitted only for a screen-space overlay canvas; other render paths need their actual rendering camera. The project adapter chooses those objects and supplies semantic bindings; the generic helper does not search for a game's cameras or prepare gameplay state. Invoke it through the project's supported Unity execution route and preserve the returned snapshot with the case evidence.
+The optional reusable `SceneSnapshot.Capture(root, camera, width, height, state, checkpoint, bindings, cameraSurface)` helper returns a JSON object. It reads a supplied root, output dimensions and semantic `Transform` bindings. The camera may be omitted only for a screen-space overlay canvas; other render paths need their actual rendering camera. The project adapter chooses those objects and supplies semantic bindings; the generic helper does not search for a game's cameras or prepare gameplay state. Invoke it through the project's supported Unity execution route and preserve the returned snapshot with the case evidence.
 
 Collection does not authorize scene or prefab changes. Use the game's implementation workflow for any resulting fix, then recapture the affected case.
 

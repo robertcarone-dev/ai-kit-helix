@@ -34,7 +34,7 @@ Read only the specialty needed for the current case. A full visual audit may use
 
 ## Structural diagnosis
 
-Read `Tools/Helix/Scene.md` when hierarchy or object placement could explain a visual difference. Use `scene-look` and a project-supplied Unity scene snapshot, then `scene-compare` with explicit semantic or grouped mappings. Inspect state, checkpoint, viewport and unsupported measurements before using the report to guide a fix. Keep selectors and semantic meanings project-owned; name-only suggestions do not establish correspondence. Read-only inventories and geometric overlays supplement native screenshots and do not prove rendering or interaction parity.
+Read `Tools/Helix/Scene.md` when hierarchy or object placement could explain a visual difference. Use `scene-look` and a project-supplied Unity scene snapshot, then `scene-compare` with explicit semantic or grouped mappings. Inspect state, checkpoint, viewport and unsupported measurements before using the report to guide a fix. Keep selectors and semantic meanings project-owned; name-only suggestions do not establish correspondence. For 3D cases, verify the final camera output surface and compare projected landmarks before changing transforms or framing. World distances require project-validated affine conversions and units; never assume a generic axis flip or force camera agreement. Read-only inventories and geometric overlays supplement native screenshots and do not prove rendering or interaction parity.
 
 ## Result and stopping condition
 

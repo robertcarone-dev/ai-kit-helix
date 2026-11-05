@@ -57,7 +57,7 @@ test('state checkpoint viewport and binding mismatch withhold measurement', () =
     { state: { view: 'other' } },
     { checkpoint: 'other' },
     { viewport: { width: 101, height: 200, dpr: 1, zoom: 1 } },
-    { bindingErrors: ['missing'] },
+    { bindingErrors: [{ id: 'thing', error: 'missing' }] },
   ]) {
     const r = compareScenes(snapshot(), { ...snapshot(), ...change }, spec);
     assert.equal(r.mappings[0].status, 'unmeasured');
@@ -108,7 +108,7 @@ test('browser inventory keeps duplicate names as distinct ids and traverses Thre
     children: [],
   };
   const root = { ...child, children: [{ ...child }, { ...child }] };
-  const camera = { projectionMatrix: matrix, matrixWorld: matrix };
+  const camera = { projectionMatrix: matrix, matrixWorldInverse: matrix, matrixWorld: matrix };
   const context = {
     root,
     camera,
@@ -129,3 +129,114 @@ test('browser inventory keeps duplicate names as distinct ids and traverses Thre
   assert.notEqual(result.nodes[1].id, result.nodes[2].id);
   assert.equal(result.nodes[1].bounds, null);
 });
+
+import { sceneGeometry } from '../src/scene-geometry.ts';
+const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+const surface = { x: 10, y: 20, width: 100, height: 200, axisAligned: true };
+test('camera projection accounts for viewport offset, top-left axis, perspective and near plane', () => {
+  const g = sceneGeometry();
+  assert.deepEqual(g.project([0, 1, 0], identity, identity, surface), { x: 60, y: 20, depth: 0 });
+  const perspective = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -11 / 9, -1, 0, 0, -20 / 9, 0];
+  assert.equal(g.project([0, 0, 1], identity, perspective, surface), null);
+  assert.equal(g.project([0, 0, -0.5], identity, perspective, surface), null);
+  assert.equal(g.project([0, 0, -11], identity, perspective, surface), null);
+  assert.equal(g.project([0, 0, -2], identity, perspective, surface)?.x, 60);
+  assert.equal(g.project([0, 0, 0], identity, identity, { ...surface, axisAligned: false }), null);
+});
+test('explicit world mappings account for mirrored axes and unit scales without guessing', () => {
+  const a: any = snapshot();
+  const b: any = snapshot();
+  a.nodes[0].raw.world = identity;
+  b.nodes[0].raw.world = [...identity];
+  b.nodes[0].raw.world[12] = 2;
+  for (const s of [a, b]) {
+    s.nodes[0].cameraId = 'cam';
+    s.cameras = [
+      {
+        id: 'cam',
+        projectionConvention: 'clip-minus-one-to-one',
+        raw: { view: identity, projection: identity },
+        surface,
+      },
+    ];
+  }
+  const s: any = {
+    ...spec,
+    coordinates: {
+      units: 'metres',
+      reference: { worldToCommon: identity },
+      candidate: { worldToCommon: [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 0, 1] },
+    },
+    landmarks: [
+      {
+        id: 'origin',
+        reference: { id: 'a', point: [0, 0, 0] },
+        candidate: { id: 'a', point: [0, 0, 0] },
+        tolerancePx: 1,
+        toleranceWorld: 0.001,
+      },
+    ],
+  };
+  const l = compareScenes(a, b, s).geometry.landmarks[0];
+  assert.equal(l.worldDistance, 0);
+  assert.equal(l.screenDistancePx, 100);
+  assert.equal(l.worldStatus, 'within-tolerance');
+  assert.equal(l.screenStatus, 'different');
+  delete s.coordinates;
+  assert.equal(compareScenes(a, b, s).geometry.landmarks[0].worldStatus, 'unmeasured');
+  s.coordinates = {
+    units: 'm',
+    reference: { worldToCommon: Array(16).fill(0) },
+    candidate: { worldToCommon: identity },
+  };
+  assert.throws(() => compareScenes(a, b, s));
+});
+
+test(
+  'real Three scene projection respects transformed parents and does not update runtime matrices',
+  { skip: !process.env.HELIX_THREE_MODULE },
+  async () => {
+    const { createRequire } = await import('node:module');
+    const THREE = createRequire(import.meta.url)(process.env.HELIX_THREE_MODULE!);
+    const root = new THREE.Scene(),
+      parent = new THREE.Group(),
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    root.add(parent);
+    parent.add(mesh);
+    parent.position.set(1, 0, 0);
+    parent.rotation.z = 0.3;
+    mesh.geometry.computeBoundingBox();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.z = 5;
+    root.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    const before = mesh.matrixWorld.toArray();
+    const context = {
+      root,
+      camera,
+      innerWidth: 100,
+      innerHeight: 100,
+      devicePixelRatio: 1,
+      visualViewport: { scale: 1 },
+      performance: { now: () => 0 },
+    };
+    const result = vm.runInNewContext(
+      '(' +
+        SCENE_INSPECTOR +
+        ')({three:{scene:"root",camera:"camera",surface:"({x:0,y:0,width:100,height:100,axisAligned:true})"}})',
+      context,
+    );
+    assert.equal(result.nodes.length, 3);
+    assert.ok(result.nodes[2].bounds.x > 50);
+    assert.deepEqual(mesh.matrixWorld.toArray(), before);
+    mesh.position.x = 10;
+    const stale = vm.runInNewContext(
+      '(' +
+        SCENE_INSPECTOR +
+        ')({three:{scene:"root",camera:"camera",surface:"({x:0,y:0,width:100,height:100,axisAligned:true})"}})',
+      context,
+    );
+    assert.equal(stale.nodes[2].bounds.x, result.nodes[2].bounds.x);
+    assert.equal(mesh.matrixWorldNeedsUpdate, false);
+  },
+);
