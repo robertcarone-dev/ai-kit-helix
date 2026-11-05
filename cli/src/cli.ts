@@ -27,6 +27,8 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   recover                       recheck timed-out scenario readiness; no setup replay
   scenario NAME
   look [--match TEXT]
+  scene-record --out EMPTY_DIR [--duration SECONDS] [--interval-ms MS]
+  scene-motion --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
   scene-look                    read-only hierarchy and scene measurements
   scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
   ui-look [--match TEXT]          UI metrics and semantic bindings
@@ -118,6 +120,8 @@ async function main() {
     look: ['match'],
     'ui-look': ['match'],
     'scene-look': [],
+    'scene-record': ['out', 'duration', 'interval-ms'],
+    'scene-motion': ['reference', 'candidate', 'spec', 'out'],
     'scene-compare': ['reference', 'candidate', 'spec', 'out'],
     step: [],
     capture: ['out'],
@@ -136,11 +140,21 @@ async function main() {
       throw new Error('Unknown option --' + k);
   if (['scenario', 'step', 'capture', 'record'].includes(command) && pos.length !== 1)
     throw new Error(command + ' requires one argument.');
+  if (['scene-look', 'scene-record'].includes(command) && pos.length)
+    throw new Error(command + ' takes no positional arguments');
   const matrixLock = join(stateDir, 'ui-matrix.lock');
   if (
-    ['start', 'stop', 'reset', 'scenario', 'step', 'capture', 'record', 'recover'].includes(
-      command,
-    ) &&
+    [
+      'start',
+      'stop',
+      'reset',
+      'scenario',
+      'step',
+      'capture',
+      'record',
+      'recover',
+      'scene-record',
+    ].includes(command) &&
     existsSync(matrixLock) &&
     JSON.parse(readFileSync(matrixLock, 'utf8')).token !== process.env.HELIX_MATRIX_TOKEN
   )
@@ -196,6 +210,16 @@ async function main() {
     if (command === 'ui-assets') return uiAssets(root, options.spec, out);
     if (command === 'ui-plan') return uiPlan(root, options.spec, out);
     return uiImpact(root, options.spec, options.previous, out);
+  }
+  if (command === 'scene-motion') {
+    if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)
+      throw new Error('scene-motion requires --reference, --candidate, --spec and --out');
+    const { compareMotionFiles } = await import('./scene-motion.ts');
+    return compareMotionFiles(
+      ...([options.reference, options.candidate, options.spec, options.out].map((p) =>
+        resolve(root, p),
+      ) as [string, string, string, string]),
+    );
   }
   if (command === 'scene-compare') {
     if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)
@@ -345,6 +369,7 @@ async function main() {
       match: options.match,
       out: options.out ? resolve(root, options.out) : undefined,
       duration: options.duration,
+      interval: options['interval-ms'],
       step: command === 'step' ? JSON.parse(pos[0]) : undefined,
     },
     command === 'record' ? 125000 : 65000,

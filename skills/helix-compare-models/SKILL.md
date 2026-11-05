@@ -15,6 +15,10 @@ Match equivalent projected views, aspect, pose and visible state; compare camera
 
 Follow [the port recipe](../helix-reference/references/port-recipe.md). Map a file asset or procedural generator into Unity mesh data, preserving the inspected topology, pivot, normals, UVs and material boundaries that matter to the case. Prove one mesh/material pair in the final scene before extending generator parameters or variants. Diagnose geometry separately from shader response before changing either.
 
+## Scene property support
+
+Read `Tools/Helix/Scene.md` for explicit node/group mappings, projected landmarks, optional common-world conversions and appearance rules. Check camera output surfaces before interpreting projected bounds. A geometric box is not a silhouette or topology measurement; asset names are not content hashes. Keep shader, light and coordinate conversions project-owned and supported by inspected data.
+
 ## Procedure
 
 1. Prove a representative final-output view, preserving intended game crop/clipping. Full-silhouette measurements require the scoped silhouette to be visible and framing to be comparable; label unseen geometry unmeasured rather than invalidating the final-composite case.

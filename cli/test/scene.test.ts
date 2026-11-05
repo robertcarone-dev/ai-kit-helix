@@ -57,7 +57,6 @@ test('state checkpoint viewport and binding mismatch withhold measurement', () =
     { state: { view: 'other' } },
     { checkpoint: 'other' },
     { viewport: { width: 101, height: 200, dpr: 1, zoom: 1 } },
-    { bindingErrors: [{ id: 'thing', error: 'missing' }] },
   ]) {
     const r = compareScenes(snapshot(), { ...snapshot(), ...change }, spec);
     assert.equal(r.mappings[0].status, 'unmeasured');
@@ -240,3 +239,165 @@ test(
     assert.equal(mesh.matrixWorldNeedsUpdate, false);
   },
 );
+
+import { compareMotion, validateSequence } from '../src/scene-motion.ts';
+test('appearance compares explicit shader-property mappings and declared color spaces', () => {
+  const a: any = snapshot(),
+    b: any = snapshot();
+  a.nodes[0].raw = { color: [0.5, 0.5, 0.5], roughness: 0.7 };
+  b.nodes[0].raw = {
+    color: [0.21404114048223255, 0.21404114048223255, 0.21404114048223255],
+    smoothness: 0.3,
+  };
+  const s = {
+    ...spec,
+    appearance: [
+      {
+        id: 'color',
+        mode: 'linear-color',
+        reference: { id: 'a', path: ['raw', 'color'], colorSpace: 'srgb' },
+        candidate: { id: 'a', path: ['raw', 'color'], colorSpace: 'linear' },
+        tolerance: 0.00001,
+      },
+      {
+        id: 'roughness',
+        mode: 'number',
+        reference: { id: 'a', path: ['raw', 'roughness'] },
+        candidate: { id: 'a', path: ['raw', 'smoothness'], scale: -1, offset: 1 },
+        tolerance: 0.001,
+      },
+    ],
+  };
+  assert.ok(compareScenes(a, b, s).appearance.every((r) => r.status === 'within-tolerance'));
+  delete b.nodes[0].raw.color;
+  assert.equal(compareScenes(a, b, s).appearance[0].status, 'unmeasured');
+  b.state = { other: true };
+  assert.equal(compareScenes(a, b, s).appearance[1].status, 'unmeasured');
+});
+const sequence = (times: number[], shift = 0) => ({
+  schemaVersion: 1,
+  kind: 'helix-scene-sequence',
+  complete: true,
+  samples: times.map((t, i) => ({
+    snapshot: {
+      ...snapshot([node('a', i * 10 + shift)]),
+      timeline: { event: 'impact', elapsedMs: t },
+    },
+  })),
+});
+test('motion pairs measured event times without retiming, sample reuse or hidden coverage loss', () => {
+  const s = { ...spec, timeToleranceMs: 5 };
+  const report = compareMotion(sequence([0, 100, 200]), sequence([1, 101], 2), s);
+  assert.equal(report.coverage.pairedSamples, 2);
+  assert.equal(report.samples[2].status, 'unmeasured');
+  assert.equal(report.trajectories[0].samples[0].deltaPx.x, 2);
+  assert.equal(
+    compareMotion(sequence([5, 100]), sequence([0, 10, 100]), s).samples[0].status,
+    'unmeasured',
+  );
+  assert.throws(() => validateSequence(sequence([0, 0])));
+  assert.throws(() => validateSequence({ ...sequence([0, 1]), complete: false }));
+  const b = sequence([0, 1]);
+  b.samples[0].snapshot.timeline.event = 'other';
+  assert.throws(() => compareMotion(sequence([0, 1]), b, s));
+  const bare: any = sequence([0, 1]);
+  delete bare.samples[0].snapshot.timeline;
+  assert.throws(() => compareMotion(bare, sequence([0, 1]), s));
+});
+test('motion reports changed state and appearance separately at each measured sample', () => {
+  const a: any = sequence([0, 10]),
+    b: any = sequence([0, 10]);
+  b.samples[1].snapshot.state = { view: 'other' };
+  const r = compareMotion(a, b, { ...spec, timeToleranceMs: 0 });
+  assert.equal(r.samples[0].report.mappings[0].status, 'within-tolerance');
+  assert.equal(r.samples[1].report.mappings[0].status, 'unmeasured');
+});
+
+test(
+  'native Unity and actual Three agree on projected cube bounds and mirrored local landmarks',
+  { skip: !process.env.HELIX_UNITY_SCENE || !process.env.HELIX_THREE_MODULE },
+  async () => {
+    const { createRequire } = await import('node:module');
+    const THREE = createRequire(import.meta.url)(process.env.HELIX_THREE_MODULE!);
+    const candidate = JSON.parse(readFileSync(process.env.HELIX_UNITY_SCENE!, 'utf8'));
+    const cameraData = candidate.cameras[0],
+      aspect = cameraData.raw.projection[5] / cameraData.raw.projection[0];
+    const root = new THREE.Scene(),
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    root.add(mesh);
+    mesh.geometry.computeBoundingBox();
+    const camera = new THREE.OrthographicCamera(
+      -2 * aspect,
+      2 * aspect,
+      2,
+      -2,
+      cameraData.raw.near,
+      cameraData.raw.far,
+    );
+    camera.position.z = 5;
+    camera.updateMatrixWorld(true);
+    root.updateMatrixWorld(true);
+    const ctx = {
+      root,
+      camera,
+      innerWidth: 120,
+      innerHeight: 240,
+      devicePixelRatio: 1,
+      visualViewport: { scale: 1 },
+      performance: { now: () => 0 },
+      surface: cameraData.surface,
+    };
+    const reference = vm.runInNewContext(
+      '(' +
+        SCENE_INSPECTOR +
+        ')({three:{scene:"root",camera:"camera",surface:"surface"},state:"({})",checkpoint:"test"})',
+      ctx,
+    );
+    // Cross-realm objects are serialized exactly like real browser snapshots.
+    const r = JSON.parse(JSON.stringify(reference));
+    const spec = {
+      schemaVersion: 1,
+      mappings: [
+        {
+          id: 'cube',
+          reference: { ids: ['three/0'] },
+          candidate: { ids: ['unity/2'] },
+          tolerancePx: 0.001,
+        },
+      ],
+      coordinates: {
+        units: 'fixture-units',
+        reference: { worldToCommon: identity },
+        candidate: { worldToCommon: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1] },
+      },
+      landmarks: [
+        {
+          id: 'corner',
+          reference: { id: 'three/0', point: [0.5, 0.5, -0.5] },
+          candidate: { id: 'unity/2', point: [0.5, 0.5, 0.5] },
+          tolerancePx: 0.001,
+          toleranceWorld: 0.001,
+        },
+      ],
+    };
+    const report = compareScenes(r, candidate, spec);
+    assert.equal(report.mappings[0].status, 'within-tolerance');
+    assert.equal(report.geometry.landmarks[0].screenStatus, 'within-tolerance');
+    assert.equal(report.geometry.landmarks[0].worldStatus, 'within-tolerance');
+  },
+);
+
+test('binding errors affect only selected aliases; independent explicit nodes remain measurable', () => {
+  const b = { ...snapshot(), bindingErrors: [{ id: 'thing', error: 'unavailable' }] };
+  const s = {
+    ...spec,
+    mappings: [
+      ...spec.mappings,
+      { id: 'explicit', reference: { ids: ['a'] }, candidate: { ids: ['a'] }, tolerancePx: 1 },
+    ],
+  };
+  const r = compareScenes(snapshot(), b, s);
+  assert.equal(r.mappings[0].status, 'unresolved');
+  assert.equal(r.mappings[1].status, 'within-tolerance');
+  assert.deepEqual(r.prerequisites, []);
+});

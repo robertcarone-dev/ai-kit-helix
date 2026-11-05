@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
+using UnityEditor;
 
 namespace Helix.Comparison
 {
@@ -53,6 +54,7 @@ namespace Helix.Comparison
                 ["schemaVersion"] = 1, ["kind"] = "helix-scene", ["coordinateSpace"] = "viewport-top-left-pixels",
                 ["viewport"] = new JObject { ["width"] = width, ["height"] = height, ["dpr"] = 1, ["zoom"] = 1 },
                 ["state"] = state.DeepClone(), ["checkpoint"] = checkpoint, ["observedAt"] = Time.realtimeSinceStartupAsDouble * 1000,
+                ["pipeline"] = new JObject { ["engine"] = "unity", ["activeColorSpace"] = QualitySettings.activeColorSpace.ToString(), ["ambientMode"] = RenderSettings.ambientMode.ToString(), ["ambientIntensity"] = RenderSettings.ambientIntensity, ["fog"] = RenderSettings.fog },
                 ["frame"] = Time.frameCount, ["nodes"] = nodes, ["cameras"] = cameras, ["bindingErrors"] = errors,
                 ["totalNodes"] = total, ["truncated"] = total > nodes.Count,
                 ["conventions"] = new JObject { ["unity"] = "engine-native transforms; quaternion xyzw; column-major matrices" },
@@ -66,13 +68,16 @@ namespace Helix.Comparison
             if (nodes.Count >= 10000 || depth > 128) { return; }
             JObject bounds = null;
             string reason = "No measurable geometry";
+            string cameraId = camera == null ? null : "unity-camera";
             if (transform is RectTransform rect)
             {
+                cameraId = null;
                 Canvas canvas = rect.GetComponentInParent<Canvas>();
                 if (canvas != null)
                 {
                     canvas = canvas.rootCanvas;
                     Camera uiCamera = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+                    if (uiCamera != null && uiCamera == camera) { cameraId = "unity-camera"; }
                     if (canvas.targetDisplay != 0 || (canvas.renderMode != RenderMode.ScreenSpaceOverlay && uiCamera == null)) { reason = "Unsupported display or missing Canvas camera"; }
                     else
                     {
@@ -90,10 +95,44 @@ namespace Helix.Comparison
             nodes.Add(new JObject {
                 ["id"] = id, ["parentId"] = parentId, ["semanticId"] = bindings != null && bindings.TryGetValue(transform, out string semanticId) ? semanticId : null,
                 ["engine"] = "unity", ["name"] = transform.name, ["type"] = transform.GetType().Name, ["visible"] = transform.gameObject.activeInHierarchy && (renderer == null || renderer.enabled),
-                ["bounds"] = bounds, ["boundsMethod"] = reason, ["cameraId"] = camera == null ? null : "unity-camera",
-                ["raw"] = new JObject { ["cameraLayerIncluded"] = camera == null ? JValue.CreateNull() : new JValue((camera.cullingMask & (1 << transform.gameObject.layer)) != 0), ["position"] = Vector(transform.localPosition), ["scale"] = Vector(transform.localScale), ["quaternion"] = new JArray(transform.localRotation.x, transform.localRotation.y, transform.localRotation.z, transform.localRotation.w), ["world"] = Matrix(transform.localToWorldMatrix) }
+                ["bounds"] = bounds, ["boundsMethod"] = reason, ["cameraId"] = cameraId,
+                ["raw"] = new JObject { ["materials"] = Materials(renderer), ["light"] = Light(transform.GetComponent<Light>()), ["cameraLayerIncluded"] = camera == null ? JValue.CreateNull() : new JValue((camera.cullingMask & (1 << transform.gameObject.layer)) != 0), ["position"] = Vector(transform.localPosition), ["scale"] = Vector(transform.localScale), ["quaternion"] = new JArray(transform.localRotation.x, transform.localRotation.y, transform.localRotation.z, transform.localRotation.w), ["world"] = Matrix(transform.localToWorldMatrix) }
             });
             for (int i = 0; i < transform.childCount; i++) { Visit(transform.GetChild(i), id + "/" + i, id, camera, width, height, bindings, nodes, surface, ref total, depth + 1); }
+        }
+
+        private static JArray Materials(Renderer renderer)
+        {
+            var result = new JArray();
+            if (renderer == null) { return result; }
+            foreach (Material material in renderer.sharedMaterials)
+            {
+                if (material == null) { result.Add(JValue.CreateNull()); continue; }
+                var properties = new JObject();
+                foreach (string key in new[] { "_BaseColor", "_Color", "_EmissionColor" })
+                {
+                    if (material.HasProperty(key)) { Color c = material.GetColor(key); properties[key] = new JArray(c.r, c.g, c.b, c.a); }
+                }
+                foreach (string key in new[] { "_Metallic", "_Smoothness", "_Glossiness", "_Cutoff" })
+                {
+                    if (material.HasProperty(key)) { properties[key] = material.GetFloat(key); }
+                }
+                var textures = new JArray();
+                foreach (string key in material.GetTexturePropertyNames())
+                {
+                    Texture texture = material.GetTexture(key);
+                    if (texture != null) { textures.Add(new JObject { ["slot"] = key, ["name"] = texture.name, ["assetPath"] = AssetDatabase.GetAssetPath(texture), ["offset"] = new JArray(material.GetTextureOffset(key).x, material.GetTextureOffset(key).y), ["scale"] = new JArray(material.GetTextureScale(key).x, material.GetTextureScale(key).y) }); }
+                }
+                result.Add(new JObject { ["name"] = material.name, ["shader"] = material.shader.name, ["assetPath"] = AssetDatabase.GetAssetPath(material), ["properties"] = properties, ["textures"] = textures, ["renderQueue"] = material.renderQueue });
+            }
+            return result;
+        }
+
+        private static JObject Light(UnityEngine.Light light)
+        {
+            if (light == null) { return null; }
+            return new JObject { ["type"] = light.type.ToString(), ["color"] = new JArray(light.color.r, light.color.g, light.color.b), ["intensity"] = light.intensity,
+                ["range"] = light.range, ["spotAngle"] = light.spotAngle, ["shadows"] = light.shadows.ToString(), ["enabled"] = light.enabled };
         }
 
         private static JObject ProjectBounds(Bounds bounds, Camera camera, JObject surface)

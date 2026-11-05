@@ -15,6 +15,10 @@ Inspect available color-space, exposure, tone-mapping, quality, antialiasing and
 
 Follow [the port recipe](../helix-reference/references/port-recipe.md). Map source texture-baked illumination, lights, environment and output transforms into the target rendering pipeline. Prove one representative material under the final camera and background before propagating tuning. Change one explanatory variable at a time; retain intended target settings and remove diagnostic overrides.
 
+## Scene property support
+
+Read `Tools/Helix/Scene.md` for read-only material/light inventories and explicit appearance comparison rules. Preserve raw engine values and declare color spaces or numeric conversions only when inspected pipeline semantics support them. Equal shader parameters or light intensity do not establish equal output; missing pipeline properties remain unmeasured. Use the property report to guide one-variable diagnosis alongside native images.
+
 ## Procedure
 
 1. Prove one matched native capture with comparable state and unclipped regions of interest.

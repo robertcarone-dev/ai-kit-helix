@@ -65,13 +65,16 @@ export function compareGeometry(a: any, b: any, spec: any, prerequisites: string
   const coordinates = spec.coordinates;
   if (
     coordinates &&
-    (!coordinates.units ||
+    (typeof coordinates.units !== 'string' ||
+      !coordinates.units ||
       !['reference', 'candidate'].every((k) => g.affine(coordinates[k]?.worldToCommon)))
   )
     throw new Error(
       'coordinates needs units and invertible affine worldToCommon matrices for both sides',
     );
   const worlds = (snapshot, selector, conversion) => {
+    if (selector.semanticId && snapshot.bindingErrors?.some((e) => e.id === selector.semanticId))
+      return { reason: 'landmark binding-error' };
     const nodes = snapshot.nodes.filter((n) =>
       selector.id ? n.id === selector.id : n.semanticId === selector.semanticId,
     );

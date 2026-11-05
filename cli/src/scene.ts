@@ -1,3 +1,4 @@
+import { appearanceDiagnostics } from './scene-diagnostics.ts';
 import { compareGeometry } from './scene-geometry.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -37,7 +38,8 @@ export function validateScene(s: any) {
     const seen = new Set([n.id]);
     let p = n.parentId;
     while (p != null) {
-      if (!ids.has(p) || seen.has(p)) throw new Error('Broken or cyclic hierarchy');
+      if (!ids.has(p) || seen.has(p) || seen.size > 129)
+        throw new Error('Broken or cyclic hierarchy');
       seen.add(p);
       p = (byId.get(p) as any).parentId;
     }
@@ -61,6 +63,8 @@ function select(s: any, selector: any) {
     throw new Error('Invalid selector values');
   const result = [];
   for (const v of values) {
+    if (key === 'semanticId' && s.bindingErrors?.some((e) => e.id === v))
+      return { error: 'binding-error', value: v };
     const found = s.nodes.filter((n) => n[key] === v);
     if (found.length !== 1) return { error: found.length ? 'ambiguous' : 'missing', value: v };
     result.push(found[0]);
@@ -97,15 +101,6 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
     !isDeepStrictEqual(reference.state, candidate.state)
   )
     prerequisites.push('state-mismatch-or-missing');
-  const scopedErrors = (snapshot, side) => {
-    const selected = new Set([
-      ...spec.mappings.flatMap((m) => m[side]?.semanticIds ?? []),
-      ...(spec.landmarks ?? []).map((l) => l[side]?.semanticId).filter(Boolean),
-    ]);
-    return (snapshot.bindingErrors ?? []).filter((e) => selected.has(e.id));
-  };
-  if (scopedErrors(reference, 'reference').length || scopedErrors(candidate, 'candidate').length)
-    prerequisites.push('binding-errors');
   const ids = new Set();
   const mappings = spec.mappings.map((m) => {
     if (
@@ -134,6 +129,21 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
       : null;
     return {
       id: m.id,
+      structure: {
+        reference: a.nodes.map((n) => ({
+          id: n.id,
+          parentId: n.parentId,
+          type: n.type,
+          name: n.name,
+        })),
+        candidate: b.nodes.map((n) => ({
+          id: n.id,
+          parentId: n.parentId,
+          type: n.type,
+          name: n.name,
+        })),
+        assessment: 'observed-only; different engine hierarchies may be intentional',
+      },
       status: !measured
         ? 'unmeasured'
         : Object.values(delta).every((v: any) => Math.abs(v) <= m.tolerancePx)
@@ -179,19 +189,31 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
     };
   });
   // Suggestions never participate in accepted mappings.
+  const names = new Map();
+  for (const n of candidate.nodes) {
+    if (!n.name) continue;
+    const list = names.get(n.name) ?? [];
+    list.push(n.id);
+    names.set(n.name, list);
+  }
   const suggestions = reference.nodes
-    .filter((n) => n.name)
+    .filter((n) => n.name && names.has(n.name))
     .map((n) => ({
       reference: n.id,
-      candidates: candidate.nodes.filter((c) => c.name === n.name).map((c) => c.id),
-      basis: 'exact-name-only',
-    }))
-    .filter((s) => s.candidates.length);
+      candidates: names.get(n.name).slice(0, 20),
+      candidateCount: names.get(n.name).length,
+      basis: 'exact-name-only; never accepted automatically',
+    }));
   return {
     schemaVersion: 1,
     kind: 'helix-scene-comparison',
     acceptance: 'diagnostic-only',
+    bindingErrors: {
+      reference: reference.bindingErrors ?? [],
+      candidate: candidate.bindingErrors ?? [],
+    },
     geometry: compareGeometry(reference, candidate, spec, prerequisites),
+    appearance: appearanceDiagnostics(reference, candidate, spec, prerequisites),
     prerequisites,
     mappings,
     suggestions,

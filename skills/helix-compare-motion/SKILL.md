@@ -17,6 +17,10 @@ Use a named scenario with reproducible actions for transient interactions. `reco
 
 Follow [the port recipe](../helix-reference/references/port-recipe.md). Map the source tween, mixer or procedural update into the existing Unity motion system. Translate time units, easing, delays and interruption behavior explicitly; prove one event from matched initial state through its final pose before extending affected variants. Keep observation instrumentation separate from the shipped motion logic.
 
+## Scene sampling support
+
+Read `Tools/Helix/Scene.md` for `scene-record`, the optional Unity `SceneSampling` helper and `scene-motion`. Use a project-observed event timeline, not sampler start time, to align snapshots. The sampler observes the current scenario; it does not reset animations or reproduce an event automatically. Inspect actual sample timing and unmatched coverage, and keep unsampled transitions unmeasured. A fixture-readiness marker is not animation onset. Retain video and input/event evidence for rendered motion and behavior.
+
 ## Procedure
 
 1. Establish explicitly matched initial snapshots, including relevant progress and object state; equal seeds do not guarantee equal RNG output across engines. Prove a short representative recording and inspect its receipt, setup interval and encoded dimensions before recording the matrix.

@@ -290,6 +290,84 @@ function status() {
   };
 }
 
+async function lookScene() {
+  if (!ready || !scenario) throw new Error('scene-look requires a ready named scenario');
+  const s = config.scenarios[scenario];
+  const snapshot = await page.evaluate(
+    '(' +
+      SCENE_INSPECTOR +
+      ')(' +
+      JSON.stringify({
+        phaser: config.phaser,
+        three: config.three,
+        bindings: [...(config.uiBindings ?? []), ...(config.sceneBindings ?? [])],
+        state: s.state,
+        checkpoint: s.checkpoint,
+        timeline: config.sceneTimeline,
+      }) +
+      ')',
+  );
+  return {
+    ...snapshot,
+    provenance: {
+      projectRoot: root,
+      configHash,
+      referenceIdentity: config.referenceIdentity,
+      scenario,
+      sessionId,
+    },
+  };
+}
+
+async function recordScene(req: any) {
+  const seconds = Number(req.duration ?? 1),
+    interval = Number(req.interval ?? 100);
+  if (
+    !Number.isFinite(seconds) ||
+    seconds <= 0 ||
+    seconds > 30 ||
+    !Number.isFinite(interval) ||
+    interval < 16 ||
+    interval > 5000 ||
+    Math.ceil((seconds * 1000) / interval) + 1 > 300 ||
+    !req.out
+  )
+    throw new Error(
+      'scene-record requires out, duration >0..30s, interval 16..5000ms and at most 300 samples',
+    );
+  if (!ready || !scenario) throw new Error('scene-record requires a ready named scenario');
+  const out = emptyOutput(req.out),
+    samples = [];
+  const start = performance.now();
+  let error = null;
+  let bytes = 0;
+  try {
+    while (samples.length < 300) {
+      const sample = { sampledAtMs: performance.now() - start, snapshot: await lookScene() };
+      bytes += Buffer.byteLength(JSON.stringify(sample));
+      if (bytes > 64000000) throw new Error('Scene recording exceeds 64MB');
+      samples.push(sample);
+      if (samples.length >= 2 && performance.now() - start >= seconds * 1000) break;
+      await new Promise((r) => setTimeout(r, interval));
+    }
+  } catch (e) {
+    error = String(e);
+  }
+  const sequence = {
+    schemaVersion: 1,
+    kind: 'helix-scene-sequence',
+    complete: error === null,
+    samples,
+    error,
+    notes: [
+      'Observation only. Timeline alignment requires a project sceneTimeline expression; host sampledAtMs is not a shared event clock.',
+    ],
+  };
+  writeFileSync(join(out, 'sequence.json'), JSON.stringify(sequence, null, 2));
+  if (error) throw new Error('Partial scene sequence retained: ' + out + '; ' + error);
+  return { out, samples: samples.length, complete: true };
+}
+
 async function lookUI(match = '') {
   const s = scenario ? config.scenarios[scenario] : null;
   const snapshot = await page.evaluate(
@@ -426,33 +504,8 @@ async function dispatch(req: any) {
   }
   if (req.method === 'look') return look(req.match);
   if (req.method === 'ui-look') return lookUI(req.match);
-  if (req.method === 'scene-look') {
-    if (!ready || !scenario) throw new Error('scene-look requires a ready named scenario');
-    const s = config.scenarios[scenario];
-    const snapshot = await page.evaluate(
-      '(' +
-        SCENE_INSPECTOR +
-        ')(' +
-        JSON.stringify({
-          phaser: config.phaser,
-          three: config.three,
-          bindings: [...(config.uiBindings ?? []), ...(config.sceneBindings ?? [])],
-          state: s.state,
-          checkpoint: s.checkpoint,
-        }) +
-        ')',
-    );
-    return {
-      ...snapshot,
-      provenance: {
-        projectRoot: root,
-        configHash,
-        referenceIdentity: config.referenceIdentity,
-        scenario,
-        sessionId,
-      },
-    };
-  }
+  if (req.method === 'scene-look') return lookScene();
+  if (req.method === 'scene-record') return recordScene(req);
   if (req.method === 'step') {
     readiness.invalidate();
     await step(req.step);

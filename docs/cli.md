@@ -45,6 +45,8 @@ Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix
 
 `scene-look` prints a read-only Phaser/Three scene inventory from a ready named scenario. `scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR` compares explicit node or group mappings, camera-projected landmarks and optional declared world-coordinate conversions. It writes diagnostic JSON plus geometric SVG overlays. Read the scene contract (`Tools/Helix/Scene.md` when installed; [scene.md](scene.md) in the source repository) for snapshot prerequisites, supported bounds and result statuses. Scene snapshots supplement separately captured images; they are not visual acceptance.
 
+`scene-record --out EMPTY_DIR --duration SECONDS --interval-ms MS` samples the current ready scenario without replaying setup. `scene-motion --reference SEQUENCE --candidate SEQUENCE --spec JSON --out EMPTY_DIR` compares samples using explicit event-relative timelines and time tolerance. Appearance rules in the scene spec compare explicitly selected properties with declared conversions. Read the scene contract before interpreting material values, event clocks or incomplete coverage.
+
 ## Warm static capture batches
 
 Use `batch` for repeated static fixture views when the consumer supplies a reviewed batch adapter. It loads once per viewport worker, resets the requested fixture between cases, and captures only the requested views. It does not record motion or exercise normal player navigation.

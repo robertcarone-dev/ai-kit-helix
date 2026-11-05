@@ -4,6 +4,8 @@ export const SCENE_INSPECTOR = String.raw`(config) => {
   const geometry = (${sceneGeometry.toString()})();
   const evaluate = expression => (0, eval)('(' + expression + ')');
   const nodes = [], cameras = [], bindingErrors = [], bindings = new Map();
+  const material = m => ({name:m.name,type:m.type,uuid:m.uuid,color:m.color?[m.color.r,m.color.g,m.color.b]:null,emissive:m.emissive?[m.emissive.r,m.emissive.g,m.emissive.b]:null,opacity:m.opacity??null,roughness:m.roughness??null,metalness:m.metalness??null,transparent:m.transparent??null,side:m.side??null,
+    textures:Object.entries(m).filter(([,t])=>t?.isTexture).map(([slot,t])=>({slot,name:t.name,uuid:t.uuid,source:t.source?.data?.currentSrc??t.source?.data?.src??null,colorSpace:t.colorSpace??null,offset:t.offset?.toArray()??null,repeat:t.repeat?.toArray()??null}))});
   const limit = 10000;
   let total = 0;
   for (const b of config.bindings ?? []) {
@@ -39,7 +41,7 @@ export const SCENE_INSPECTOR = String.raw`(config) => {
         add({id,parentId,semanticId:bindings.get(o)??null,engine:'phaser',name:o.name||o.type,type:o.type,visible,bounds,cameraId,
           boundsMethod:bounds?'main-camera projected world AABB; occlusion unresolved':'unmeasured: unsupported camera/mask or no bounds',
           raw:{position:[o.x,o.y],scale:[o.scaleX,o.scaleY],rotation:o.rotation,origin:[o.originX??null,o.originY??null],depth:o.depth,alpha:o.alpha,
-            texture:o.texture?.key??null,frame:o.frame?.name??null,text:typeof o.text==='string'?o.text:null}});
+            texture:o.texture?.key??null,frame:o.frame?.name??null,text:typeof o.text==='string'?o.text:null,font:o.style?{family:o.style.fontFamily,size:o.style.fontSize,align:o.style.align,color:o.style.color,stroke:o.style.stroke,strokeThickness:o.style.strokeThickness}:null,tint:[o.tintTopLeft??null,o.tintTopRight??null,o.tintBottomLeft??null,o.tintBottomRight??null],blendMode:o.blendMode??null,mask:masked}});
         if(Array.isArray(o.list))o.list.forEach((child,i)=>visit(child,id+'/'+i,id,visible,masked,depth+1));
       };
       scene.children.list.forEach((o,i)=>visit(o,'phaser/'+si+'/'+i,null,true,false,0));
@@ -60,11 +62,11 @@ export const SCENE_INSPECTOR = String.raw`(config) => {
       const bounds=geometry.bounds(projected);
       add({id,parentId,semanticId:bindings.get(o)??null,engine:'three',name:o.name,type:o.type,visible,cameraId:'three-camera',bounds,localBounds,projectionSupported:supported,
         boundsMethod:bounds?'existing local geometry AABB projected through observed matrices':'unmeasured: no existing bounds, unsupported deformation/instancing, surface or clip-plane crossing',
-        raw:{uuid:o.uuid,position:o.position.toArray(),quaternion:o.quaternion.toArray(),scale:o.scale.toArray(),world:o.matrixWorld.toArray(),geometry:o.geometry?{name:o.geometry.name,uuid:o.geometry.uuid}:null}});
+        raw:{uuid:o.uuid,position:o.position.toArray(),quaternion:o.quaternion.toArray(),scale:o.scale.toArray(),world:o.matrixWorld.toArray(),geometry:o.geometry?{name:o.geometry.name,uuid:o.geometry.uuid}:null,materials:(Array.isArray(o.material)?o.material:[o.material]).filter(Boolean).map(material),light:o.isLight?{type:o.type,color:[o.color.r,o.color.g,o.color.b],intensity:o.intensity,castShadow:o.castShadow,distance:o.distance??null,decay:o.decay??null,angle:o.angle??null}:null}});
       o.children.forEach((child,i)=>visit(child,id+'/'+i,id,visible,depth+1));
     };visit(root,'three',null,true,0);
   }
   return {schemaVersion:1,kind:'helix-scene',coordinateSpace:'viewport-top-left-pixels',viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,zoom:visualViewport?.scale??1},
-    checkpoint:config.checkpoint??null,state:config.state?evaluate(config.state):null,observedAt:performance.now(),nodes,cameras,bindingErrors,truncated:total>nodes.length,totalNodes:total,
+    timeline:config.timeline?evaluate(config.timeline):null,pipeline:config.three?.renderer?(()=>{const r=evaluate(config.three.renderer);return {engine:'three',outputColorSpace:r.outputColorSpace??null,toneMapping:r.toneMapping??null,toneMappingExposure:r.toneMappingExposure??null,shadows:r.shadowMap?.enabled??null};})():null,checkpoint:config.checkpoint??null,state:config.state?evaluate(config.state):null,observedAt:performance.now(),nodes,cameras,bindingErrors,truncated:total>nodes.length,totalNodes:total,
     conventions:{phaser:'2D y-down; radians',three:'engine-native; column-major matrices'},notes:['Geometry observations only; no occlusion or visual acceptance. Capture images separately at a settled checkpoint.']};
 }`;

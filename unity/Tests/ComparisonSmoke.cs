@@ -78,8 +78,10 @@ public static class ComparisonSmoke
             Check(!ComparisonSession.Ready(output), "Failed prepare accepted as ready");
             Reject(() => ComparisonSession.Prepare(output));
             ComparisonSession.Restore(output);
-            File.WriteAllText(Path.Combine(root, "smoke-result.json"), "{\"passed\":true,\"scope\":\"synthetic Editor lifecycle and evidence; no game parity\"}");
-            EditorApplication.Exit(0);
+            SceneSmoke.RunSampling(() => {
+                File.WriteAllText(Path.Combine(root, "smoke-result.json"), "{\"passed\":true,\"scope\":\"synthetic Editor lifecycle, scene geometry, materials, event sampling and failure evidence; no game parity\"}");
+                EditorApplication.Exit(0);
+            });
         } catch (Exception error) {
             File.WriteAllText(Path.Combine(Application.dataPath, "../smoke-result.json"), new JObject { ["passed"] = false, ["error"] = error.ToString() }.ToString());
             EditorApplication.Exit(1);

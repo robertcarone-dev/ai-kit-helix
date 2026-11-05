@@ -125,6 +125,20 @@ export function readConfig(url?: string) {
       });
     });
   }
+  if (
+    config.sceneTimeline !== undefined &&
+    (typeof config.sceneTimeline !== 'string' || !config.sceneTimeline)
+  )
+    throw new Error('sceneTimeline must be an expression');
+  if (config.three) {
+    for (const key of ['scene', 'camera', 'surface', 'renderer']) {
+      if (
+        (key === 'scene' || key === 'camera' || config.three[key] !== undefined) &&
+        (typeof config.three[key] !== 'string' || !config.three[key])
+      )
+        throw new Error('three.' + key + ' must be an expression');
+    }
+  }
   if (config.sceneBindings !== undefined) {
     if (!Array.isArray(config.sceneBindings)) throw new Error('sceneBindings must be a list');
     const ids = new Set((config.uiBindings ?? []).map((b) => b.id));
