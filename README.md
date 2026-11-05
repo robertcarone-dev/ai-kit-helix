@@ -155,11 +155,14 @@ Agents maintaining **this source repository** should read [AGENTS.md](AGENTS.md)
 
 ```sh
 npm ci
+npm run format:check
 npm test
 npm run test:workflow
 ```
 
 Tests use synthetic projects and do not require Unity, Helix, a browser download or a game checkout. Generic code lives in `cli/` and `workflows/`; game scenarios, fixtures, Unity helpers and compatibility profiles belong to consumers. Update this source first, then install a reviewed snapshot into projects.
+
+Use `npm run format` to format the TypeScript and embedded browser probes. See [the TypeScript contributor guide](docs/typescript.md) for the module map, style conventions, session ownership, and evidence boundaries.
 
 For command details, see [CLI](docs/cli.md), [project adapter](docs/project-adapter.md) and [workflows](docs/workflows.md). Packaging and synthetic project isolation have been tested; a browser pilot has run in the original game. A second real game's Unity pairing and fresh AI Kit provider discovery remain acceptance work.
 

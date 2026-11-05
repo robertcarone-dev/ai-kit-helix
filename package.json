@@ -9,10 +9,15 @@
   "scripts": {
     "test": "node --test cli/test/*.test.ts scripts/*.test.mjs",
     "test:workflow": "python3 -B -m unittest discover -s workflows/tests -v",
-    "install-browser": "playwright install chromium"
+    "install-browser": "playwright install chromium",
+    "format": "node scripts/format.mjs",
+    "format:check": "node scripts/format.mjs --check"
   },
   "dependencies": {
     "playwright": "1.64.1",
     "pngjs": "7.0.0"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2"
   }
 }

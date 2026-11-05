@@ -4,6 +4,9 @@ export function receiptValue(value: unknown): unknown {
   try {
     return JSON.parse(JSON.stringify(value));
   } catch (cause) {
-    throw new Error('Browser script returned a non-JSON value. Return plain evidence data instead of a scene or runtime object; setup may already have executed. Reset before retrying.', { cause });
+    throw new Error(
+      'Browser script returned a non-JSON value. Return plain evidence data instead of a scene or runtime object; setup may already have executed. Reset before retrying.',
+      { cause },
+    );
   }
 }
