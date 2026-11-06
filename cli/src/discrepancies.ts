@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 // A feature's continuation travels with the checkout. Evidence stays at its original location.
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -20,7 +21,12 @@ import { fileURLToPath } from 'node:url';
 import { root } from './config.ts';
 
 type Pin = { path: string; sha256: string };
-type Evidence = Pin & { claim: string; inputs: Pin[]; recoverFrom?: string };
+type Evidence = Pin & {
+  claim: string;
+  inputs: Pin[];
+  recoverFrom?: string;
+  recovery?: { attachment: string; member?: string };
+};
 type Issue = {
   schemaVersion: 1;
   id: string;
@@ -36,6 +42,7 @@ type Issue = {
   decision?: string;
   suspectedCause?: string;
   assignment?: string;
+  integration?: { commits: string[]; afterIntegration: string };
   uiCase?: {
     matrix: string;
     caseId: string;
@@ -107,7 +114,23 @@ function validate(issue: Issue) {
         throw new Error('Each retained receipt must identify one evidence entry.');
     }
   }
+  if (issue.integration !== undefined) {
+    const { commits, afterIntegration } = issue.integration;
+    if (
+      !Array.isArray(commits) ||
+      !commits.length ||
+      commits.some((c) => typeof c !== 'string' || !/^[a-f0-9]{40}$/.test(c))
+    )
+      throw new Error('Integration requires full Git commit IDs.');
+    textField(afterIntegration, 'afterIntegration');
+  }
   for (const evidence of issue.evidence) {
+    if (evidence.recovery !== undefined) {
+      const { attachment, member } = evidence.recovery;
+      if (typeof attachment !== 'string' || !/^[A-Za-z][A-Za-z0-9]*-\d+#a\d+$/.test(attachment))
+        throw new Error('Expected exact ISSUE#aN attachment ID.');
+      if (member !== undefined) validatePath(member);
+    }
     validatePin(evidence);
     textField(evidence.claim, 'evidence claim');
     if (!Array.isArray(evidence.inputs))
@@ -169,7 +192,14 @@ async function inspectPin(pin: Pin, hashes: Map<string, string>): Promise<Check>
 }
 
 async function inspectEvidence(evidence: Evidence, hashes: Map<string, string>) {
-  const artifact = await inspectPin(evidence, hashes);
+  let artifact = await inspectPin(evidence, hashes);
+  if (artifact.status === 'missing') {
+    const cached = await inspectPin(
+      { path: '.helix/recovered/' + evidence.sha256, sha256: evidence.sha256 },
+      hashes,
+    );
+    if (cached.status === 'match') artifact = cached;
+  }
   const inputs: Check[] = [];
   for (const input of evidence.inputs) inputs.push(await inspectPin(input, hashes));
   const reusable =
@@ -183,6 +213,30 @@ async function inspectEvidence(evidence: Evidence, hashes: Map<string, string>) 
   };
 }
 
+function continuation(issue: Issue) {
+  if (terminal(issue) || !issue.integration) return { nextAction: issue.nextAction ?? null };
+  const git = (...args: string[]) => spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+  const head = git('rev-parse', '--verify', 'HEAD');
+  const receivingHead = head.status === 0 ? head.stdout.trim() : null;
+  const commits = issue.integration.commits.map((commit) => {
+    if (!receivingHead || git('cat-file', '-e', commit + '^{commit}').status !== 0)
+      return { commit, status: 'unknown' };
+    const result = git('merge-base', '--is-ancestor', commit, receivingHead);
+    return {
+      commit,
+      status:
+        result.status === 0 ? 'included' : result.status === 1 ? 'not-in-ancestry' : 'unknown',
+    };
+  });
+  const included = commits.every((c) => c.status === 'included');
+  return {
+    receivingHead,
+    commits,
+    nextAction: included ? issue.integration.afterIntegration : issue.nextAction,
+    basis: included ? 'required-commits-in-receiving-HEAD' : 'integration-unconfirmed',
+  };
+}
+
 export async function discrepancyCommand(
   command: string,
   pos: string[],
@@ -191,20 +245,64 @@ export async function discrepancyCommand(
   if (pos.length) throw new Error(command + ' takes named options only.');
   if (!(await directory(join(root, 'Tools', 'Helix'))))
     throw new Error('Select a Helix project checkout.');
+  if (command === 'discrepancy-recover') {
+    if (!idPattern.test(options.id ?? '')) throw new Error('Supply --id ID.');
+    const entry = await latest(options.id);
+    if (!entry) throw new Error('Unknown discrepancy: ' + options.id);
+    const directory = dirname(fileURLToPath(import.meta.url));
+    const installed = join(directory, '../recovery.py');
+    const script = existsSync(installed)
+      ? installed
+      : join(directory, '../../workflows/recovery.py');
+    const result = spawnSync(
+      'python3',
+      [script, root, options.issue ?? '', options['board-root'] ?? ''],
+      { input: JSON.stringify(entry.record), encoding: 'utf8' },
+    );
+    if (result.error || result.status !== 0) throw result.error ?? new Error(result.stderr.trim());
+    const recovery = JSON.parse(result.stdout);
+    const complete = recovery.every((e: { status: string }) =>
+      ['present', 'recovered'].includes(e.status),
+    );
+    if (!complete) process.exitCode = 1;
+    const hashes = new Map<string, string>();
+    const evidenceChecks = [];
+    for (const pin of entry.record.evidence)
+      evidenceChecks.push(await inspectEvidence(pin, hashes));
+    return {
+      id: options.id,
+      revision: entry.revision,
+      complete,
+      recovery,
+      evidenceChecks,
+      continuation: continuation(entry.record),
+    };
+  }
   if (command === 'discrepancy-rerun') {
     if (!idPattern.test(options.id ?? '') || !options.out)
       throw new Error('Supply --id ID and --out SCRATCH_DIR.');
     const entry = await latest(options.id);
     if (!entry) throw new Error('Unknown discrepancy: ' + options.id);
     const issue = entry.record;
-    if (terminal(issue) || issue.status === 'blocked' || !issue.uiCase) {
+    const routeState = continuation(issue);
+    if (
+      terminal(issue) ||
+      issue.status === 'blocked' ||
+      !issue.uiCase ||
+      routeState.basis === 'integration-unconfirmed'
+    ) {
       if (options.execute !== undefined)
-        throw new Error(issue.blocker ?? 'An open issue with an executable uiCase is required.');
+        throw new Error(
+          issue.blocker ??
+            routeState.nextAction ??
+            'An open issue with an executable uiCase is required.',
+        );
       return {
         id: issue.id,
         status: issue.status,
         runnable: false,
-        nextAction: issue.nextAction,
+        nextAction: routeState.nextAction,
+        continuation: routeState,
         blocker: issue.blocker,
       };
     }
@@ -356,7 +454,10 @@ export async function discrepancyCommand(
       const evidenceChecks = [];
       for (const evidence of item.evidence)
         evidenceChecks.push(await inspectEvidence(evidence, hashes));
-      issues.push({ ...entry, evidenceChecks });
+      const recoveryCommand = evidenceChecks.some((check) => check.artifact.status === 'missing')
+        ? ['Tools/Helix/bin/helix', 'discrepancy-recover', '--id', item.id]
+        : undefined;
+      issues.push({ ...entry, evidenceChecks, recoveryCommand, continuation: continuation(item) });
     }
   }
   return {

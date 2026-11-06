@@ -21,6 +21,7 @@ const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
   discrepancy-resume [--feature NAME] [--assignment ID] [--status active|open|blocked|resolved|accepted-deviation|all]
   discrepancy-save --spec FILE [--after REVISION]
+  discrepancy-recover --id ID [--issue ISSUE] [--board-root OWNER_CHECKOUT]
   discrepancy-rerun --id ID --out SCRATCH_DIR [--execute yes]
   fixture-list | fixture-create --spec FILE
   fixture-record ID --out NEW_DIR
@@ -120,6 +121,7 @@ async function main() {
   }
   const allowed: Record<string, string[]> = {
     'discrepancy-resume': ['feature', 'assignment', 'status'],
+    'discrepancy-recover': ['id', 'issue', 'board-root'],
     'discrepancy-rerun': ['id', 'out', 'execute', 'ai-kit'],
     'discrepancy-save': ['spec', 'after'],
     'fixture-list': [],
