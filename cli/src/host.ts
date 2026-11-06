@@ -566,6 +566,7 @@ async function dispatch(req: any) {
         scenario: selected,
         label: req.label,
         viewport: size,
+        viewportName: viewport,
         encoded,
         nativeVideo: encoded.width === size.width && encoded.height === size.height,
         observationStartedAt: startedAt,

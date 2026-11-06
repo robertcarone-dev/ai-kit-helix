@@ -16,7 +16,7 @@ import {
   realpathSync,
 } from 'node:fs';
 import { join, resolve, relative, isAbsolute } from 'node:path';
-import { emptyOutput, sha } from './config.ts';
+import { emptyOutput, projectConfig, sha } from './config.ts';
 import { compareUI, validateSpec, loadSnapshot } from './ui.ts';
 
 /** Captured process output, also attached to command failures for matrix receipts. */
@@ -181,11 +181,7 @@ function reviewCase(c: any, row: any, retained: NonNullable<MatrixOptions['retai
 export async function runMatrix(options: MatrixOptions, command = runCommand) {
   const { root, cli, specPath } = options;
   const spec = JSON.parse(readFileSync(specPath, 'utf8'));
-  const config = JSON.parse(readFileSync(join(root, 'Tools/Helix/reference.json'), 'utf8'));
-  // Local overrides are part of execution, so plan with the same effective config as the CLI.
-  const local = join(root, 'Tools/Helix/reference.local.json');
-  const override = existsSync(local) ? JSON.parse(readFileSync(local, 'utf8')) : {};
-  Object.assign(config, override);
+  const config = projectConfig(root);
   if (spec.schemaVersion !== 1 || !Array.isArray(spec.cases) || !spec.cases.length)
     throw new Error('Matrix needs schemaVersion:1 and nonempty cases.');
   const out = resolve(options.out),
@@ -274,6 +270,8 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
   const lock = join(root, '.helix/ui-matrix.lock'),
     fd = openSync(lock, 'wx', 0o600),
     matrixToken = randomUUID();
+  const matrixEnv = { ...process.env, HELIX_MATRIX_TOKEN: matrixToken };
+  const browserEnv = { ...matrixEnv, HELIX_FIXTURE_SESSION: matrixToken };
   writeFileSync(fd, JSON.stringify({ pid: process.pid, token: matrixToken }));
   let interrupted = false;
   const onSignal = () => {
@@ -306,12 +304,9 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       report.cases.push(row);
       mkdirSync(c.out);
       save();
-      const invoke = async (executable: string, args: string[], stage: string) => {
+      const invoke = async (executable: string, args: string[], stage: string, env = matrixEnv) => {
         try {
-          const r = await command(executable, args, root, 90000, {
-            ...process.env,
-            HELIX_MATRIX_TOKEN: matrixToken,
-          });
+          const r = await command(executable, args, root, 90000, env);
           let payload;
           try {
             payload = JSON.parse(r.stdout);
@@ -335,7 +330,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         }
       };
       const helix = (args: string[], stage: string) =>
-        invoke(process.execPath, [cli, ...args, '--project-root', root], stage);
+        invoke(process.execPath, [cli, ...args, '--project-root', root], stage, browserEnv);
       let browserAttempted = false,
         prepareAttempted = false,
         plan: any,
@@ -492,7 +487,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           [options.cli, 'stop', '--project-root', root],
           root,
           90000,
-          { ...process.env, HELIX_MATRIX_TOKEN: matrixToken },
+          browserEnv,
         );
       } catch (e) {
         report.cleanupFailed = true;

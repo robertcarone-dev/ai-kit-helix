@@ -2,13 +2,14 @@
 import hashlib
 import json
 import os
+import shlex
 import sys
 import tempfile
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
 
-def package(folder, note_file, destination):
+def package(folder, note_file, destination, viewports=None):
     receipt = json.loads((folder / "motion.json").read_text())
     metadata = folder / "fixture.json"
     # Earlier CLI recordings carry their scenario and identity in motion.json alone.
@@ -32,8 +33,25 @@ def package(folder, note_file, destination):
     brief = [f"# {fixture['feature']} — {fixture['label']}", "", "## Port instructions", ""]
     brief.extend(f"- {n['timeMs'] / 1000:.3f} s: {n['text']}" for n in notes)
     brief.extend(["", "Times are measured from the start of motion.webm. Inspect motion.json for source identity, inputs and observed state.",
-                  "", "Replay in the source checkout with a fresh output path:", "",
-                  f"`Tools/Helix/bin/helix fixture-record {fixture['id']} --out .helix/replay/{fixture['id']}`"])
+                  "", "Replay in the source checkout with a fresh output path:", ""])
+    cli = "Tools/Helix/bin/helix"
+    scenario = shlex.quote(fixture["id"])
+    output = shlex.quote(".helix/replay/" + fixture["id"])
+    if "viewport" in fixture:  # fixture-record supplies the registered viewport key.
+        commands = [f"{cli} fixture-record {scenario} --out {output}"]
+    else:
+        size = receipt["viewport"]
+        viewport = receipt.get("viewportName")
+        if viewport is None:
+            viewport = next((name for name, dimensions in (viewports or {}).items()
+                             if all(dimensions[key] == size[key] for key in ("width", "height"))), None)
+        if viewport is None:
+            brief.append(f"Use `{cli} fixture-list` to find or configure a {size['width']} × {size['height']} viewport, then set VIEWPORT to its key.")
+        viewport_arg = shlex.quote(viewport) if viewport is not None else '"${VIEWPORT:?Set VIEWPORT to the matching key}"'
+        brief.append("Use an idle checkout and stop the browser you started when finished.")
+        commands = [f"{cli} start --viewport {viewport_arg}", f"{cli} scenario {scenario}",
+                    f"{cli} record {scenario} --duration {shlex.quote(str(receipt['durationSeconds']))} --out {output}", f"{cli} stop"]
+    brief.extend(["", "```sh", " &&\n".join(commands), "```"])
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=destination.parent) as tmp:
         archive_path = Path(tmp) / "handoff.zip"
@@ -49,6 +67,6 @@ def package(folder, note_file, destination):
 
 if __name__ == "__main__":
     try:
-        print(json.dumps(package(*(Path(arg) for arg in sys.argv[1:]))))
+        print(json.dumps(package(*(Path(arg) for arg in sys.argv[1:4]), viewports=json.loads(sys.argv[4]) if len(sys.argv) > 4 else {})))
     except (OSError, KeyError, ValueError, TypeError) as error:
         sys.exit(str(error))

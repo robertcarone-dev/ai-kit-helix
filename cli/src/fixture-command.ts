@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { root, readConfig, loadStep, sha } from './config.ts';
+import { root, readConfig, adapterSettings, loadStep, sha } from './config.ts';
 import { fixtureContract, createFixture } from './fixtures.ts';
 
 export function fixtureCommand(command: string, pos: string[], options: Record<string, string>) {
@@ -14,13 +14,18 @@ export function fixtureCommand(command: string, pos: string[], options: Record<s
     const script = existsSync(installed)
       ? installed
       : join(dirname(fileURLToPath(import.meta.url)), '../../workflows/handoff.py');
+    const recording = resolve(root, options.recording);
+    const viewports = existsSync(join(root, 'Tools/Helix/reference.json'))
+      ? adapterSettings(root).viewports
+      : {};
     const result = spawnSync(
       'python3',
       [
         script,
-        resolve(root, options.recording),
+        recording,
         resolve(root, options.notes),
         resolve(root, options.out),
+        JSON.stringify(viewports),
       ],
       { encoding: 'utf8' },
     );
