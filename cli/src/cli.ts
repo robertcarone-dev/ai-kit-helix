@@ -36,6 +36,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   scenario NAME
   look [--match TEXT]
   scene-record --out EMPTY_DIR [--duration SECONDS] [--interval-ms MS] [--profile NAME]
+  material-keywords --out EMPTY_DIR
   sprite-usage --spec FILE --out EMPTY_DIR
   render-trace --spec FILE --out EMPTY_DIR
   vfx-compare --spec FILE --out NEW_DIR
@@ -149,6 +150,7 @@ async function main() {
     'ui-look': ['match'],
     'scene-look': ['profile'],
     'scene-record': ['out', 'duration', 'interval-ms', 'profile'],
+    'material-keywords': ['out'],
     'sprite-usage': ['spec', 'out'],
     'render-trace': ['spec', 'out'],
     'vfx-compare': ['spec', 'out'],
@@ -257,6 +259,13 @@ async function main() {
     if (command === 'ui-assets') return uiAssets(root, options.spec, out);
     if (command === 'ui-plan') return uiPlan(root, options.spec, out);
     return uiImpact(root, options.spec, options.previous, out);
+  }
+  if (command === 'material-keywords') {
+    if (pos.length || !options.out) throw new Error('material-keywords requires --out EMPTY_DIR.');
+    const { materialKeywords } = await import('./material-keywords.ts');
+    const result = materialKeywords(resolve(root, options.out));
+    if (result.mismatches) process.exitCode = 2;
+    return result;
   }
   if (command === 'sprite-usage') {
     if (pos.length || !options.spec || !options.out)

@@ -5,7 +5,9 @@ enabled: true
 tags: [assets-design, assets-tech, code, qa]
 ---
 
-During porting, inspect each affected material's shader reference, serialized keyword selections and any keywords set at runtime. Match each reachable combination to the declarations for the pass that draws it. For a keyword enum, check the default selection on older materials as well as explicitly selected values. Consider the active render pipeline, quality tier and player variant stripping. Keep strict variant matching enabled where configured.
+During porting, run `Tools/Helix/bin/helix material-keywords --out EMPTY_DIR` in the assigned checkout. Read the mismatch locations, review items and unscanned paths in `material-keywords.json`. Resolve confirmed authoring errors at the owning material, generator or shader, then rerun into a fresh directory. An unresolved parent or fallback needs source inspection before changing keywords.
+
+For the affected draw, inspect each affected material's shader reference, serialized keyword selections and any keywords set at runtime. Match each reachable combination to the declarations for the pass that draws it. For a keyword enum, check the default selection on older materials as well as explicitly selected values. Consider the active render pipeline, quality tier and player variant stripping. Keep strict variant matching enabled where configured.
 
 Use the isolated Editor for routine port comparisons. Record the affected scene, material, triggering state and target tier for the device check. Use the next scheduled or already-authorized player containing the change. Routine porting does not authorize a new player build. Until that candidate and device are available, record target-device verification as pending.
 
