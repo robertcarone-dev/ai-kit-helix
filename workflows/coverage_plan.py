@@ -9,7 +9,7 @@ from zipfile import BadZipFile, ZipFile
 
 from evidence_utils import digest, fresh, image_dimensions, inside, read, save
 from recovery import Board, attachment_path
-from workflow import owner_root
+from workflow import owner_root, recipe_plan
 
 
 def dimensions(size):
@@ -130,6 +130,39 @@ def observed(rule, receipt):
     return False
 
 
+def measure_cases(files, assessments, plan, catalogue, moments):
+    rows = {}
+    for entry in assessments:
+        view, moment = entry["view"], entry["moment"]
+        if view not in plan or moment not in moments:
+            raise ValueError("Unknown assessment case: " + view + "/" + moment)
+        if (view, moment) in rows:
+            raise ValueError("Duplicate assessment: " + view + "/" + moment)
+        row = {"record": entry["record"], "status": "unavailable"}
+        rows[view, moment] = row
+        try:
+            record = json.loads(files.get(entry["record"]))
+            if (record["view"], record["moment"]) != (view, moment):
+                raise ValueError("Assessment case identity differs")
+            for side in ("helix", "unity"):
+                pin = record[side]
+                ids = plan[view][side]["reuse"].get(moment, [])
+                if pin["id"] not in ids or pin["fingerprint"] != catalogue[pin["id"]]["fingerprint"]:
+                    raise ValueError("Assessment references different or unavailable " + side + " evidence")
+            for key in ("method", "result"):
+                if not isinstance(record[key], str) or not record[key].strip():
+                    raise ValueError("Assessment requires " + key)
+            row.update(status="measured", method=record["method"], result=record["result"])
+            if "verdict" in record:
+                if record["verdict"] not in ("PASS", "FAIL") or not isinstance(record["reviewer"], str) or not record["reviewer"].strip():
+                    raise ValueError("Reviewed measurement requires PASS or FAIL and reviewer")
+                row.update(status="reviewed", verdict=record["verdict"], reviewer=record["reviewer"])
+        except (OSError, ValueError, KeyError, TypeError, BadZipFile) as exc:
+            row.clear()
+            row.update(record=entry["record"], status="unavailable", reason=str(exc))
+    return rows
+
+
 def main(spec_path, output, root, basis, extra=None):
     spec, root = read(spec_path), Path(root)
     if spec["schemaVersion"] != 1 or basis not in ("retained", "current"):
@@ -137,7 +170,7 @@ def main(spec_path, output, root, basis, extra=None):
     inventories = [read(inside(Path(spec_path).parent / name, root)) for name in spec["inventories"]]
     if extra:
         inventories.append(read(extra))
-    archives, evidence = {}, []
+    archives, evidence, assessments = {}, [], []
     for inventory in inventories:
         if inventory["schemaVersion"] != 1 or inventory["feature"] != spec["feature"]:
             raise ValueError("Inventory feature or schema mismatch")
@@ -146,6 +179,7 @@ def main(spec_path, output, root, basis, extra=None):
                 raise ValueError("Conflicting archive pin: " + key)
             archives[key] = pin
         evidence.extend(inventory["evidence"])
+        assessments.extend(inventory.get("assessments", []))
     if evidence:
         unique([e["id"] for e in evidence], "evidence IDs")
     requirements = spec["requirements"]
@@ -186,6 +220,10 @@ def main(spec_path, output, root, basis, extra=None):
             catalogue.append(row)
             try:
                 logical, saved, receipt = inspect(files, item)
+                archive_ids = {locator["archive"] for locator in (item["receipt"], item.get("media", {})) if "archive" in locator}
+                archive_ids.update(item.get("frameArchives", []))
+                identity = [item, {key: archives[key] for key in archive_ids}]
+                row["fingerprint"] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
                 if derive:
                     matches = [m for rule in rules if observed(rule, receipt) for m in rule["covers"]]
                     row["covers"] = sorted(set(covers + matches))
@@ -223,8 +261,36 @@ def main(spec_path, output, root, basis, extra=None):
             plan[view][side] = dict(capture=capture, reuse=reuse)
     pairs = {view: {k: ("paired-for-review" if k in sides["helix"]["reuse"] and k in sides["unity"]["reuse"] else "capture-required")
                     for k in moments} for view,sides in plan.items()}
+    with ExitStack() as stack:
+        measured = measure_cases(Files(root, archives, stack), assessments, plan, {row["id"]: row for row in catalogue}, moments)
+    cases = {}
+    for view, comparisons in pairs.items():
+        cases[view] = {}
+        recipes = {}
+        for moment, capture_status in comparisons.items():
+            requirement = moments[moment]
+            recipe = requirement.get("recipeByViewport", {}).get(view)
+            if recipe is not None and recipe not in recipes:
+                result = recipe_plan(root, recipe, view, root/".aikit/scratch/coverage-plan")
+                if dimensions(result["viewport"]) != views[view]:
+                    raise ValueError("Recipe and coverage viewport dimensions differ: " + view)
+                recipes[recipe] = dict(case=recipe, unityStages=list(result["unityStages"]),
+                                       procedure=result["fixture"].get("procedure"), **result["dispatch"])
+            assessment = measured.get((view, moment))
+            if capture_status == "paired-for-review":
+                next_action = "review-measurement" if assessment and assessment["status"] == "measured" else "measure-pair"
+                if assessment and assessment["status"] == "reviewed":
+                    next_action = "retain-verdict"
+            elif recipe is None:
+                next_action = "declare-recipe"
+            else:
+                next_action = {"blocked": "resolve-prerequisites", "pilot-required": "run-pilot",
+                               "pilot-recorded": "capture-missing-side"}[recipes[recipe]["status"]]
+            cases[view][moment] = dict(capture=capture_status, recipe=recipe, assessment=assessment,
+                                       nextAction=next_action)
+        cases[view] = dict(recipes=recipes, moments=cases[view])
     report = dict(schemaVersion=1, feature=spec["feature"], basis=basis, viewports=spec["viewports"], requirements=requirements,
-                  specSha256=digest(spec_path), archives=archives, evidence=catalogue, plan=plan, comparisons=pairs, review=spec.get("review", []))
+                  specSha256=digest(spec_path), archives=archives, evidence=catalogue, plan=plan, comparisons=pairs, cases=cases, review=spec.get("review", []))
     folder = fresh(output)
     save(folder/"coverage.json", report)
     return dict(reportPath=str(folder/"coverage.json"), basis=basis, captureCounts={v:{s:len(d["capture"]) for s,d in sides.items()} for v,sides in plan.items()})

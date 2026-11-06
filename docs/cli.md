@@ -233,3 +233,20 @@ Receipt paths are relative to the spec; Assets paths are project-relative. Prese
 The command returns exact inline GUID + file ID references in Force Text prefabs, with line and serialized object ID; nested prefab and variant parents are reported separately as possible consumers. Binary prefabs are listed as unscanned. Authored .spriteatlas and .spriteatlasv2 packables can identify individual sprites, entire textures or folders. Missing, inherited and unsupported lists require Unity inspection. Dynamic references, scenes, packages, and bundle residency are outside the static scan.
 
 Omit inspection for the offline inventory. To resolve a packed page, save the JSON from `Helix.Comparison.SpriteUsageCapture.Inspect("Assets/UI/Icons.png", "SPRITE_LOCAL_ID")` in an authorized Unity Editor where the target atlas has already been packed. The helper matches the exact sprite’s bound texture object to each bindable atlas’s Editor preview pages; it records the page index, texture format and estimated mip-chain bytes. An unavailable preview API or an unmatched texture leaves the page unmeasured. It leaves source assets and packing settings alone. Include the receipt hash in the spec. The CLI verifies the captured sprite and reported atlas files and importer hashes against this checkout. Page identity is scoped to the atlas, build target and capture; instance IDs identify textures only within that Editor session. Tight/rotated sprites use normalized UV bounds. Page dimensions and format describe the observed packing, not device residency or exact occupied area. Re-export after changes to packables, platform, packing settings or other page contents.
+
+### Dispatch and measurement handoff in capture-coverage
+
+A coverage requirement may supply `recipeByViewport`, for example `{"phone":"win-enter-phone","tablet":"win-enter-tablet"}`. Each value names a configured scenario or registered fixture. `cases[view].recipes` contains the same dispatch status, gaps, owner and fingerprint as recipe-plan, plus the Unity procedure/stage names. See the installed WorkflowToolkit.md for the fixture catalog and pilot receipt contract. Older specs still produce their original plan and comparisons. A missing recipe leaves already captured pairs available to measure.
+
+Read `cases[view].moments[key].nextAction`. Resolve missing prerequisites or run one pilot before expanding captures. For an available pair, measure the requested property, retain the result, and have the reviewer record the scoped verdict. To carry the work forward, add an optional inventory entry to `assessments` with `view`, `moment` (requirement/moment), and `record` (a pinned loose file or archive-member locator). Point to one current assessment per viewport and moment. The JSON record has this shape:
+```json
+{
+  "view":"phone", "moment":"entrance/settled",
+  "helix":{"id":"reference-phone","fingerprint":"<from coverage.json evidence>"},
+  "unity":{"id":"candidate-phone","fingerprint":"<from coverage.json evidence>"},
+  "method":"Measure the settled title top in native viewport pixels",
+  "result":"Helix 154 px, Unity 156 px, delta +2 px",
+  "reviewer":"<review owner>", "verdict":"PASS"
+}
+```
+Omit reviewer and verdict for a measured pair awaiting review. Each fingerprint identifies the inventory observation, declared inputs, media/receipt locators and referenced archive pins. Inspect the resulting assessment status and capture basis. A historical review describes the recorded observations. A changed pair or inaccessible record leaves measurement open with the reason. Before releasing lane scratch, pack and upload the original captures, receipt, measurement and ledger, then verify the receiving checkout can recover the pinned members.

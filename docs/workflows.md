@@ -47,3 +47,17 @@ Delivery output paths are explicit filesystem paths (relative to cwd); they are 
 `upload` and `timings` are optional AI Kit integrations. Upload verifies package parts and reconstruction hash, attaches through the supported CLI, then verifies consumer bytes against board metadata. Matching existing attachment hashes are reused. A partial failure preserves `upload.json`; inspect it before retrying with a fresh receipt directory. The helper never deletes existing attachments or marks a task complete. The supplied archive is not automatically extracted.
 
 `reuse` uses the existing ledger format: each case's declared dependencies and evidence hashes determine whether it can be reused. It does not discover undeclared dependencies or change verdicts. Preserve valid cases and repeat only invalidated/required integration cases. `timings` reports requested/start/end wall-clock spans, run counts and provider holds from AI Kit metadata. Resumed assignments may include earlier work: request-to-latest-start is not pure queue time, and spans are not model execution or an invented phase breakdown.
+
+## Dispatch a recipe pilot
+
+Run `python3 Tools/Helix/workflow.py recipe-plan CASE --viewport VIEW --project-root DIR --out DIR/.aikit/scratch/ROUND` using absolute project and output paths. This offline command accepts configured scenarios and registered fixture IDs. Read `dispatch.gaps` before reserving a runtime. The catalog entry can declare a procedure for a manual Unity setup or the scenario can supply preflight, prepare, capture and restore stages. In the project fixture catalog, supply `trigger` (actual input or disclosed setup), `observation` (observable event/state), `measurement` (method and units) and `owner` (contact for missing prerequisites). List files influencing the route in `files`. The owner should verify a manual procedure supports the specific viewport.
+
+When status is `pilot-required`, exercise the scoped route in both authorized runtimes. Save a JSON receipt of this form and pin it under the catalog entry's `pilots[VIEW]` as a checkout-relative `{path, sha256}`:
+```json
+{
+  "recipeFingerprint": "<from dispatch>",
+  "helix": {"path": "<reference artifact>", "sha256": "<digest>", "observed": "<action, event and measured result>"},
+  "unity": {"path": "<candidate artifact>", "sha256": "<digest>", "observed": "<action, event and measured result>"}
+}
+```
+The fingerprint covers the viewport, recipe, Helix settings, catalog contract and declared file hashes. Update those inputs when relevant dependencies change. Recover archived files into their declared locations before planning. `pilot-recorded` means the owner's receipt and both pinned artifacts are accessible for this recipe. Inspect its observations and the source identity before requesting a live batch. Use the coverage report for per-moment reuse.

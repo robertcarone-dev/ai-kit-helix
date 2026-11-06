@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Project-local evidence, capture planning and isolated EditMode test utilities."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -119,6 +120,25 @@ def capture_plan(project, width, height, kind):
             'scope': 'Read-only capability plan; confirm live viewport and inspect a real pilot before expanding cases. A different viewport is a new case, never an implicit substitution.'}
 
 
+def inspect_pilot(project, pilot, fingerprint):
+    if pilot is None:
+        return 'missing'
+    path = inside(project/pilot['path'], project)
+    if not path.is_file() or digest(path) != pilot['sha256']:
+        return 'receipt unavailable or changed'
+    record = read(path)
+    if record['recipeFingerprint'] != fingerprint:
+        return 'recipe changed'
+    for side in ('helix', 'unity'):
+        locator = record[side]
+        if not isinstance(locator['observed'], str) or not locator['observed'].strip():
+            raise ValueError('Pilot requires observed input/event and measurement for ' + side)
+        artifact = inside(project/locator['path'], project)
+        if not artifact.is_file() or digest(artifact) != locator['sha256']:
+            return side + ' evidence unavailable or changed'
+    return 'recorded'
+
+
 def recipe_plan(project, case_id, viewport, output):
     project = Path(project).resolve()
     config = read(project/'Tools/Helix/reference.json')
@@ -126,9 +146,29 @@ def recipe_plan(project, case_id, viewport, output):
     if local.exists():
         override = read(local)
         config = {**config, **override, 'helix': {**config['helix'], **override.get('helix', {})}}
-    scenario = config['scenarios'][case_id]
     size = config['viewports'][viewport]
     out = inside(output, project/'.aikit/scratch')
+    catalog_path = adapter_file(project, 'fixture-catalog.json')
+    catalog = read(catalog_path).get(case_id, {}) if catalog_path.is_file() else {}
+    scenario = config.get('scenarios', {}).get(case_id)
+    if re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', case_id):
+        fixture = adapter_file(project, 'fixtures/' + case_id + '.json')
+        if fixture.is_file():
+            if scenario is not None:
+                raise ValueError('Duplicate scenario: ' + case_id)
+            scenario = read(fixture)
+            if scenario['id'] != case_id or scenario['schemaVersion'] != 1:
+                raise ValueError('Invalid registered fixture: ' + case_id)
+    gaps = []
+    if scenario is None:
+        gaps.append('Missing Helix scenario or registered fixture')
+    elif 'viewport' in scenario and scenario['viewport'] != viewport:
+        gaps.append('Fixture declares viewport ' + scenario['viewport'])
+    if catalog.get('support') == 'unsupported':
+        gaps.append(catalog['limitations'])
+    if 'viewports' in catalog and viewport not in catalog['viewports']:
+        gaps.append('Viewport outside catalog support')
+    steps = scenario['steps'] if scenario is not None else []
     values = {'out': str(out/'unity'), 'scenario': case_id, 'width': size['width'], 'height': size['height'],
               'capture': str(out/'unity/unity.png'), 'receipt': str(out/'unity/unity.json')}
     def render(arg):
@@ -136,13 +176,39 @@ def recipe_plan(project, case_id, viewport, output):
             value = values[match[1]]
             return str(value) if isinstance(value,int) else json.dumps(value)[1:-1]
         return re.sub(r'\{\{(\w+)\}\}', replace, arg)
+    unity = scenario.get('unity', {}) if scenario is not None else {}
     stages = {key: [[render(arg) for arg in argv] for argv in (commands if isinstance(commands[0],list) else [commands])]
-              for key, commands in scenario.get('unity',{}).items()}
-    catalog = read(adapter_file(project, 'fixture-catalog.json')).get(case_id, {})
-    files = list(catalog.get('files', [])) + [step['file'] for step in scenario['steps'] if 'file' in step]
-    hashes = {name: digest(inside(project/name,project)) for name in dict.fromkeys(files)}
-    return {'case':case_id, 'viewport':size, 'reference':config['helix'], 'setupKind':'fixture' if any(s.get('purpose')=='fixture' for s in scenario['steps']) else 'input',
-            'sourceCommands':[[str(project/'Tools/Helix/bin/helix'),'start','--project-root',str(project),'--viewport',viewport],[str(project/'Tools/Helix/bin/helix'),'scenario',case_id,'--project-root',str(project)]],
+              for key, commands in unity.items()}
+    procedure = catalog.get('procedure')
+    if not procedure and not {'preflight', 'prepare', 'capture', 'restore'}.issubset(stages):
+        gaps.append('Missing complete Unity stages or documented procedure')
+    capture_steps = scenario.get('captureSteps', []) if scenario is not None else []
+    files = list(catalog.get('files', [])) + [step['file'] for step in steps + capture_steps if 'file' in step]
+    hashes = {}
+    for name in dict.fromkeys(files):
+        path = inside(project/name, project)
+        if path.is_file():
+            hashes[name] = digest(path)
+        else:
+            gaps.append('Missing recipe input: ' + name)
+    contract = {field: catalog.get(field) for field in ('trigger', 'observation', 'measurement')}
+    for field, value in contract.items():
+        if not isinstance(value, str) or not value.strip():
+            gaps.append('Declare ' + field + ' in fixture catalog')
+    # Exclude pilot locators so publishing a receipt does not invalidate its recipe.
+    identity = [case_id, viewport, size, config['helix'], scenario, hashes,
+                {k:v for k,v in catalog.items() if k != 'pilots'}]
+    fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    pilot = catalog.get('pilots', {}).get(viewport)
+    pilot_status = inspect_pilot(project, pilot, fingerprint)
+    dispatch = dict(status='blocked' if gaps else ('pilot-recorded' if pilot_status == 'recorded' else 'pilot-required'),
+                    gaps=gaps, recipeFingerprint=fingerprint, required=contract, pilot=pilot, pilotStatus=pilot_status,
+                    owner=catalog.get('owner', catalog.get('unityRequirementOwner')))
+    commands = [[str(project/'Tools/Helix/bin/helix'),'start','--project-root',str(project),'--viewport',viewport],
+                [str(project/'Tools/Helix/bin/helix'),'scenario',case_id,'--project-root',str(project)]]
+    setup_kind = 'fixture' if any(s.get('purpose') == 'fixture' for s in steps) else 'input'
+    return {'case':case_id, 'viewport':size, 'reference':config['helix'], 'setupKind':setup_kind if scenario is not None else None,
+            'sourceCommands':commands if scenario is not None else [], 'dispatch':dispatch,
             'unityExecutable':'ai-kit', 'unityStages':stages, 'fixture':catalog, 'fileHashes':hashes,
             'environment':{'AIKIT_QA_VIEWPORT':str(size['width'])+'x'+str(size['height']), 'AIKIT_QA_DIR':str(out/'unity')},
             'scope':'Plan only. Execute documented guards and cleanup; incomplete Unity stages require the linked fixture procedure, not invented commands.'}
