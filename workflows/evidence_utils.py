@@ -90,7 +90,7 @@ def image_dimensions(data):
     raise ValueError(f'No JPEG frame dimensions: {path}')
 
 
-def recording_check(path, width, height, first_frame=None, last_frame=None):
+def recording_check(path, width, height, first_frame=None, last_frame=None, *, window=None):
     path = Path(path).resolve()
     record = read(path)
     expected = {'width': width, 'height': height}
@@ -115,9 +115,13 @@ def recording_check(path, width, height, first_frame=None, last_frame=None):
         raise ValueError('Recording misses the required start frame')
     if last_frame is not None and numbers[-1] < last_frame:
         raise ValueError('Recording misses the required endpoint frame')
-    return {'native': True, 'dimensions': expected, 'frames': len(frames), 'formats': sorted(formats),
+    result = {'native': True, 'dimensions': expected, 'frames': len(frames), 'formats': sorted(formats),
             'lossy': 'jpeg' in formats, 'firstFrame': numbers[0], 'lastFrame': numbers[-1],
             'maxGapSeconds': max((b-a for a,b in zip(times,times[1:])), default=0),
             'reportedDrops': record.get('droppedFrames', record.get('dropped')),
             'sha256': digest(path), 'frameHashes': hashes,
             'scope': 'Dimensions read from encoded image headers; endpoint coverage checked only when requested. No visual or timing acceptance inferred.'}
+    if window is not None:
+        from event_window import event_window
+        result['eventWindow'] = event_window(record, **window)
+    return result

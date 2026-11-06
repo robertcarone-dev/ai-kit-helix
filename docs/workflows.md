@@ -61,3 +61,21 @@ When status is `pilot-required`, exercise the scoped route in both authorized ru
 }
 ```
 The fingerprint covers the viewport, recipe, Helix settings, catalog contract and declared file hashes. Update those inputs when relevant dependencies change. Recover archived files into their declared locations before planning. `pilot-recorded` means the owner's receipt and both pinned artifacts are accessible for this recipe. Inspect its observations and the source identity before requesting a live batch. Use the coverage report for per-moment reuse.
+
+## Explain an event window in a recording
+
+Run the existing native recording check with a case-specific window in milliseconds:
+
+```sh
+python3 Tools/Helix/workflow.py recording-check RUN/record.json --width 768 --height 1024 \
+  --events RUN/events.json --event continue --before-ms 250 --after-ms 3000 \
+  --visual-samples RUN/measurement.json > timing-report.json
+```
+
+Use the events receipt from the same run. It contains an `events` array with a unique matching `action` and integer Unity `frame`. Include `recordingId` for identity validation. Older receipts without an ID require the caller to verify provenance. Elapsed times from separately started clocks are never subtracted. The event is anchored to its saved Unity frame or bracketed by the two surrounding captures. Each overlapping interval reports its endpoints and capture, unscaled and game-clock deltas, plus the count of intervening unsaved frame IDs. The realtime recorder can sample at a different point in the loop from Unity's frame-start clock. Inspect adjacent intervals. A capped recorder can skip frames with zero reported drops.
+
+Optional visual observations declare `record` (recording ID or directory), `dimensions`, `method` and `samples` (or legacy `navySamples`). List all matching saved frames with their recording index `i` and timestamp `t` in seconds. The report brackets contiguous observed runs with neighboring saved frames. Their sampled span alone cannot establish continuous display duration.
+
+For independent loop timing, a project-owned recipe can start `new Helix.Comparison.PlayerLoopTimingTrace(recordingId)` during authorized isolated Play Mode, before triggering the case. Call `Mark("continue")` on the actual action and mark transition milestones at their owning callbacks. The helper buffers one monotonically timed sample per observed Unity Update frame. Write the JSON returned by `Finish()` after the window; call `Dispose()` in the recipe’s cleanup. Use `--trace RUN/trace.json` to join the same recording by ID and frame number. If the trace contains the named event, it can also supply the events receipt. An interval has complete trace coverage only when both endpoints and every intervening Unity frame were sampled.
+
+To compare recorder overhead, replay the same action, state, viewport and quality with image capture disabled. Construct the helper with null recordingId and save its trace. Pass it as `--baseline-trace REPLAY/trace.json` with the recorded run. Its peak consecutive Update gap is measured around its own event; frame IDs from separate runs are never joined. A loop gap identifies a slowdown in that measured run. Attribution to scene loading, recorder work, GPU presentation or the physical player requires separate evidence.

@@ -367,6 +367,13 @@ def main():
     p=sub.add_parser('evidence-fetch');p.add_argument('attachments',nargs='+');p.add_argument('--project-root',type=Path,default=None);p.add_argument('--out',type=Path,required=True)
     p=sub.add_parser('ledger-check');p.add_argument('ledger',type=Path);p.add_argument('--inputs',type=Path,required=True)
     p=sub.add_parser('recording-check');p.add_argument('record',type=Path);p.add_argument('--width',type=int,required=True);p.add_argument('--height',type=int,required=True);p.add_argument('--first-frame',type=int);p.add_argument('--last-frame',type=int)
+    p.add_argument('--event', help='Unique action in the events receipt')
+    p.add_argument('--events', type=Path, help='Same-run events JSON; defaults to --trace when supplied')
+    p.add_argument('--before-ms', type=int)
+    p.add_argument('--after-ms', type=int)
+    p.add_argument('--trace', type=Path, help='Same-recording player-loop trace')
+    p.add_argument('--visual-samples', type=Path, help='Indexed observed frames and measurement method')
+    p.add_argument('--baseline-trace', type=Path, help='Separate trace-only replay of the same named event')
     p=sub.add_parser('capture-plan');p.add_argument('--project-root',type=Path,default=None);p.add_argument('--width',type=int,required=True);p.add_argument('--height',type=int,required=True);p.add_argument('--kind',choices=['still','motion'],default='motion')
     p=sub.add_parser('recipe-plan');p.add_argument('case');p.add_argument('--viewport',required=True);p.add_argument('--project-root',type=Path,default=None);p.add_argument('--out',type=Path,required=True)
     p=sub.add_parser('test-preflight');p.add_argument('--project-root',type=Path,required=True);p.add_argument('--assignment',required=True);p.add_argument('--out',type=Path,required=True);p.add_argument('--aikit',default='ai-kit')
@@ -378,7 +385,15 @@ def main():
         if hasattr(args, 'out') and not args.out.is_absolute(): args.out = args.project_root / args.out
     if args.command=='evidence-fetch':result=evidence_fetch(args.project_root,args.attachments,args.out)
     elif args.command=='ledger-check':result=ledger_check(args.ledger,args.inputs)
-    elif args.command=='recording-check':result=recording_check(args.record,args.width,args.height,args.first_frame,args.last_frame)
+    elif args.command=='recording-check':
+        window = None
+        if any(x is not None for x in (args.event, args.events, args.before_ms, args.after_ms, args.trace, args.visual_samples, args.baseline_trace)):
+            events = args.events or args.trace
+            if not args.event or not events or args.before_ms is None or args.after_ms is None:
+                parser.error('Timing requires --event, --events or --trace, --before-ms and --after-ms')
+            window = dict(events_path=events, name=args.event, before_ms=args.before_ms, after_ms=args.after_ms,
+                          trace_path=args.trace, visual_path=args.visual_samples, baseline_path=args.baseline_trace)
+        result = recording_check(args.record, args.width, args.height, args.first_frame, args.last_frame, window=window)
     elif args.command=='capture-plan':result=capture_plan(args.project_root,args.width,args.height,args.kind)
     elif args.command=='recipe-plan':result=recipe_plan(args.project_root,args.case,args.viewport,args.out)
     elif args.command=='test-preflight':result=test_preflight(args.project_root,args.assignment,args.out,args.aikit)
