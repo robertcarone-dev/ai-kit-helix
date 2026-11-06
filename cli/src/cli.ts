@@ -42,6 +42,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
   scene-report --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   scene-case --spec MATRIX --out SCRATCH_DIR [--execute yes] [--ai-kit PATH]
+  capture-coverage --spec FILE [--inventory FILE] [--basis retained|current] --out EMPTY_DIR
   conversion-plan --spec MANIFEST --out EMPTY_DIR
   ui-look [--match TEXT]          UI metrics and semantic bindings
   step JSON                     press/drag/hover/pointerDown/pointerUp/wheel/wait/assert/script
@@ -148,6 +149,7 @@ async function main() {
     'vfx-compare': ['spec', 'out'],
     'scene-motion': ['reference', 'candidate', 'spec', 'out'],
     'scene-report': ['reference', 'candidate', 'spec', 'out'],
+    'capture-coverage': ['spec', 'inventory', 'basis', 'out'],
     'conversion-plan': ['spec', 'out'],
     'scene-case': ['spec', 'out', 'execute', 'ai-kit'],
     'scene-compare': ['reference', 'candidate', 'spec', 'out'],
@@ -250,15 +252,27 @@ async function main() {
     if (command === 'ui-plan') return uiPlan(root, options.spec, out);
     return uiImpact(root, options.spec, options.previous, out);
   }
-  if (command === 'vfx-compare') {
+  if (command === 'capture-coverage' || command === 'vfx-compare') {
     if (pos.length || !options.spec || !options.out)
-      throw new Error('vfx-compare requires --spec and --out.');
+      throw new Error(command + ' requires --spec and --out.');
     const directory = dirname(fileURLToPath(import.meta.url));
-    const installed = join(directory, '../vfx.py');
-    const script = existsSync(installed) ? installed : join(directory, '../../workflows/vfx.py');
+    const filename = command === 'capture-coverage' ? 'coverage_plan.py' : 'vfx.py';
+    const installed = join(directory, '..', filename);
+    const script = existsSync(installed) ? installed : join(directory, '../../workflows', filename);
     const result = spawnSync(
       'python3',
-      [script, resolve(root, options.spec), resolve(root, options.out)],
+      [
+        script,
+        resolve(root, options.spec),
+        resolve(root, options.out),
+        ...(command === 'capture-coverage'
+          ? [
+              root,
+              options.basis ?? 'retained',
+              ...(options.inventory ? [resolve(root, options.inventory)] : []),
+            ]
+          : []),
+      ],
       { encoding: 'utf8' },
     );
     if (result.error || result.status !== 0) throw result.error ?? new Error(result.stderr.trim());

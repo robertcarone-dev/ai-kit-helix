@@ -60,7 +60,10 @@ def ledger_check(ledger_path, inputs_path):
 
 
 def image_size(path):
-    data = Path(path).read_bytes()
+    return image_dimensions(Path(path).read_bytes())
+
+
+def image_dimensions(data):
     if data.startswith(b'\x89PNG\r\n\x1a\n') and len(data) >= 24:
         return (*struct.unpack('>II', data[16:24]), 'png')
     if not data.startswith(b'\xff\xd8'):
