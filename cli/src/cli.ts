@@ -49,6 +49,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   ui-assets --spec JSON --out EMPTY_DIR
   ui-plan --spec JSON --out EMPTY_DIR
   ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR
+  visual-owner --spec FILE --out EMPTY_DIR
   ui-layout-trace --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   typography-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
@@ -154,6 +155,7 @@ async function main() {
     'ui-assets': ['spec', 'out'],
     'ui-plan': ['spec', 'out'],
     'ui-impact': ['spec', 'previous', 'out'],
+    'visual-owner': ['spec', 'out'],
     'ui-layout-trace': ['reference', 'candidate', 'spec', 'out'],
     'typography-compare': ['reference', 'candidate', 'spec', 'out'],
     'ui-compare': ['reference', 'candidate', 'spec', 'out'],
@@ -295,6 +297,12 @@ async function main() {
         resolve(root, p),
       ) as [string, string, string, string]),
     );
+  }
+  if (command === 'visual-owner') {
+    if (pos.length || !options.spec || !options.out)
+      throw new Error('visual-owner requires --spec and --out.');
+    const { visualOwner } = await import('./visual-owner.ts');
+    return visualOwner(resolve(root, options.spec), resolve(root, options.out));
   }
   if (command === 'typography-compare') {
     if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)

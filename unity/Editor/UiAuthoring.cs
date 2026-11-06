@@ -133,7 +133,7 @@ namespace Helix.Comparison
             return new JArray(paths.Where(path => path != owner && AssetDatabase.GetDependencies(path, true).Contains(owner)).OrderBy(path => path));
         }
 
-        private static Component VisualComponent(RectTransform rect, string type)
+        internal static Component VisualComponent(Transform rect, string type)
         {
             Component[] matches = rect.GetComponents<Component>().Where(c => c && IsType(c.GetType(), type)).ToArray();
             Require(matches.Length == 1, "Expected one component of type " + type + " on " + rect.name);
@@ -307,7 +307,7 @@ namespace Helix.Comparison
         }
 
         private static void Require(bool condition, string message) { if (!condition) { throw new InvalidOperationException(message); } }
-        private static string Hash(string path) { return Hash(File.ReadAllBytes(path)); }
+        internal static string Hash(string path) { return Hash(File.ReadAllBytes(path)); }
         private static string Hash(byte[] bytes) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(); } }
 
         private static void Validate(JObject plan)
@@ -395,7 +395,7 @@ namespace Helix.Comparison
             return false;
         }
         private static Component Image(RectTransform rect) { return rect.GetComponents<Component>().FirstOrDefault(c => c != null && IsType(c.GetType(), "UnityEngine.UI.Image")); }
-        private static string AssetPath(string path, string extension)
+        internal static string AssetPath(string path, string extension)
         {
             Require(path != null && path.StartsWith("Assets/", StringComparison.Ordinal) && path.EndsWith(extension, StringComparison.OrdinalIgnoreCase) && !path.Contains('\\') && !path.Split('/').Any(p => p == ".." || p == "." || p.Length == 0), "Unsafe asset path.");
             NoLinks(Path.GetFullPath(path));
@@ -424,6 +424,13 @@ namespace Helix.Comparison
         }
         private static RectTransform Target(GameObject root, string path)
         {
+            Transform target = TargetTransform(root, path);
+            Require(target is RectTransform, "Target needs an existing RectTransform.");
+            return (RectTransform)target;
+        }
+
+        internal static Transform TargetTransform(GameObject root, string path)
+        {
             Require(path != null && !path.Split('/').Any(p => p == "." || p == ".."), "Invalid target path.");
             Transform current = root.transform;
             if (path.Length > 0) {
@@ -433,8 +440,7 @@ namespace Helix.Comparison
                     current = matches[0];
                 }
             }
-            Require(current is RectTransform, "Target needs an existing RectTransform.");
-            return (RectTransform)current;
+            return current;
         }
         private static Vector2 Get(RectTransform rect, string key)
         {
