@@ -48,6 +48,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   ui-assets --spec JSON --out EMPTY_DIR
   ui-plan --spec JSON --out EMPTY_DIR
   ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR
+  ui-layout-trace --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   typography-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   batch --spec JSON --out EMPTY_DIR [--workers 1|2] [--resume yes]
@@ -151,6 +152,7 @@ async function main() {
     'ui-assets': ['spec', 'out'],
     'ui-plan': ['spec', 'out'],
     'ui-impact': ['spec', 'previous', 'out'],
+    'ui-layout-trace': ['reference', 'candidate', 'spec', 'out'],
     'typography-compare': ['reference', 'candidate', 'spec', 'out'],
     'ui-compare': ['reference', 'candidate', 'spec', 'out'],
     batch: ['spec', 'out', 'workers', 'resume'],
@@ -303,9 +305,18 @@ async function main() {
       resolve(root, options.out),
     );
   }
-  if (command === 'ui-compare') {
+  if (command === 'ui-layout-trace' || command === 'ui-compare') {
     if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)
-      throw new Error('ui-compare requires --reference, --candidate, --spec and --out.');
+      throw new Error(command + ' requires --reference, --candidate, --spec and --out.');
+    if (command === 'ui-layout-trace') {
+      const { traceLayout } = await import('./ui-layout-trace.ts');
+      return traceLayout(
+        resolve(root, options.reference),
+        resolve(root, options.candidate),
+        resolve(root, options.spec),
+        resolve(root, options.out),
+      );
+    }
     const { compareUI } = await import('./ui.ts');
     return compareUI(
       resolve(root, options.reference),

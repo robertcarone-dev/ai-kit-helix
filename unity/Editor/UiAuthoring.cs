@@ -51,6 +51,82 @@ namespace Helix.Comparison
             return result.ToString();
         }
 
+        // Resolve each serialized scalar separately: a variant can override just one axis.
+        public static string InspectLayout(string prefabPath, string target, params string[] controllerTypes)
+        {
+            string path = AssetPath(prefabPath, ".prefab");
+            GameObject root = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            Require(root, "Missing prefab: " + path);
+            RectTransform rect = Target(root, target);
+            var nodes = new JArray();
+            var hashes = new JObject { [path] = Hash(path) };
+            for (Transform current = rect; current != null; current = current.parent) {
+                var components = new JArray();
+                foreach (Component component in current.GetComponents<Component>()) {
+                    if (!component) {
+                        components.Add(new JObject { ["role"] = "missing-script" });
+                        continue;
+                    }
+                    Type type = component.GetType();
+                    string role;
+                    string[] fields;
+                    if (component is RectTransform) {
+                        role = "rect";
+                        fields = new[] { "m_AnchoredPosition.x", "m_AnchoredPosition.y", "m_SizeDelta.x", "m_SizeDelta.y",
+                            "m_AnchorMin.x", "m_AnchorMin.y", "m_AnchorMax.x", "m_AnchorMax.y", "m_Pivot.x", "m_Pivot.y" };
+                    } else if (IsType(type, "UnityEngine.UI.LayoutGroup")) {
+                        role = "child-layout";
+                        fields = new[] { "m_Padding.m_Left", "m_Padding.m_Right", "m_Padding.m_Top", "m_Padding.m_Bottom",
+                            "m_Spacing", "m_Spacing.x", "m_Spacing.y", "m_ChildAlignment", "m_ChildControlWidth", "m_ChildControlHeight",
+                            "m_ChildForceExpandWidth", "m_ChildForceExpandHeight", "m_CellSize.x", "m_CellSize.y", "m_Constraint", "m_ConstraintCount" };
+                    } else if (IsType(type, "UnityEngine.UI.ContentSizeFitter") || IsType(type, "UnityEngine.UI.AspectRatioFitter")) {
+                        role = "self-layout";
+                        fields = new[] { "m_HorizontalFit", "m_VerticalFit", "m_AspectMode", "m_AspectRatio" };
+                    } else if (IsType(type, "UnityEngine.UI.LayoutElement")) {
+                        role = "layout-input";
+                        fields = new[] { "m_IgnoreLayout", "m_PreferredWidth", "m_PreferredHeight", "m_MinWidth", "m_MinHeight",
+                            "m_FlexibleWidth", "m_FlexibleHeight", "m_LayoutPriority" };
+                    } else if (IsType(type, "UnityEngine.UI.CanvasScaler")) {
+                        role = "canvas-scale";
+                        fields = new[] { "m_UiScaleMode", "m_ReferenceResolution.x", "m_ReferenceResolution.y",
+                            "m_ScreenMatchMode", "m_MatchWidthOrHeight", "m_ScaleFactor" };
+                    } else if (IsType(type, "TMPro.TMP_Text")) {
+                        role = "text";
+                        fields = new[] { "m_margin.x", "m_margin.y", "m_margin.z", "m_margin.w", "m_fontSize", "m_enableAutoSizing",
+                            "m_HorizontalAlignment", "m_VerticalAlignment", "m_lineSpacing" };
+                    } else if (component is Animator || controllerTypes.Any(name => IsType(type, name))) {
+                        role = "controller";
+                        fields = new string[0];
+                    } else continue;
+                    var properties = new JArray();
+                    foreach (string field in fields) {
+                        var owner = component;
+                        var property = new SerializedObject(owner).FindProperty(field);
+                        if (property == null || property.propertyType == SerializedPropertyType.Vector2) continue;
+                        var chain = new JArray();
+                        while (true) {
+                            string asset = AssetDatabase.GetAssetPath(owner);
+                            if (hashes[asset] == null) hashes[asset] = Hash(asset);
+                            chain.Add(new JObject { ["prefab"] = asset,
+                                ["target"] = AnimationUtility.CalculateTransformPath(owner.transform, AssetDatabase.LoadAssetAtPath<GameObject>(asset).transform),
+                                ["override"] = property.prefabOverride });
+                            var source = PrefabUtility.GetCorrespondingObjectFromSource(owner);
+                            if (!source || property.prefabOverride) break;
+                            owner = source;
+                            property = new SerializedObject(owner).FindProperty(field);
+                        }
+                        properties.Add(new JObject { ["property"] = field, ["value"] = JToken.FromObject(property.boxedValue),
+                            ["owner"] = chain.Last.DeepClone(), ["sources"] = chain });
+                    }
+                    components.Add(new JObject { ["type"] = type.FullName, ["role"] = role,
+                        ["enabled"] = !(component is Behaviour behaviour) || behaviour.enabled, ["properties"] = properties });
+                }
+                nodes.Add(new JObject { ["target"] = AnimationUtility.CalculateTransformPath(current, root.transform), ["components"] = components });
+            }
+            return new JObject { ["schemaVersion"] = 1, ["prefab"] = path, ["target"] = target,
+                ["assetHashes"] = hashes, ["controllerTypes"] = new JArray(controllerTypes), ["nodes"] = nodes }.ToString();
+        }
+
         private static JArray Consumers(string owner)
         {
             var paths = new[] { "t:Prefab", "t:Scene" }.SelectMany(filter => AssetDatabase.FindAssets(filter, new[] { "Assets" })).Distinct().Select(AssetDatabase.GUIDToAssetPath);

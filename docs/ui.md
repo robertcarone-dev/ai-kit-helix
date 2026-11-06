@@ -133,6 +133,27 @@ A matrix lock prevents normal CLI commands from changing its browser. Commands a
 
 Optional `safeAreaInsets: {top,right,bottom,left}` uses native pixels. Nonzero insets require the scenario to declare the same `safeAreaInsets` and supply an actual device/simulator capture recipe; both resulting receipts must report the requested safe rectangle. Do not assume an Editor Game View capture reproduces a device notch or safe area. Unsupported notch cases are blocked, not passed as rectangular captures. Orientation/content/language variants are ordinary separately configured scenarios and viewports.
 
+## Layout ownership trace
+
+Run `helix ui-layout-trace --reference PATH/reference.json --candidate PATH/unity.json --spec PATH/ui.json --out EMPTY_DIR` from the consuming checkout. The command reads the same native receipt/image pairs and semantic comparison spec as ui-compare. It writes layout-trace.json and prints per-element outcomes. Inspect the usual visual crops alongside the trace.
+
+Include both an element and its mapped ancestors in the spec. Each mapping must be unique. Use matching state, safe area and viewport. The trace finds the closest measured ancestor containing the element in **both** hierarchies. It reports candidate-minus-reference deltas separately for each axis. A child displacement matching a translated parent, with unchanged extents on the relevant axis, routes back to that parent's trace. For an axis-aligned directly mapped Unity parent with runtime scale evidence, the report separates stretch, anchor and pivot contributions. A matching contribution explains the measured geometry, not necessarily the script that originally chose the value. Unmapped intermediate containers remain visible in the recorded paths. Text baseline offsets are measured relative to each rect's top when the strings and measured baselines are available. Supply optional nonnegative baselineTolerancePx on the element to override its bounds tolerance.
+
+The runtime helper records the corresponding prefab and target for linked instances. For runtime-created clones or older receipts, supply the mapping explicitly. Add a current inspection to resolve the serialized owner:
+
+```json
+"layoutOwner": {
+  "prefab": "Assets/UI/Panel.prefab",
+  "target": "Canvas/Footer/Title",
+  "controllerTypes": ["Example.PanelReveal"],
+  "inspection": ".helix/evidence/panel-title-layout.json"
+}
+```
+
+The paths are project-relative; target is relative to the prefab root. Obtain the inspection in the target checkout with the read-only Editor method `Helix.Comparison.UiAuthoring.InspectLayout("Assets/UI/Panel.prefab", "Canvas/Footer/Title", "Example.PanelReveal")`; save the JSON it returns. Omit controller types if none are declared. The inspection follows serialized scalar properties through nested prefab and variant sources and stops at the supplying override. Different axes can have different owners. It records asset hashes, active configuration, ancestor layout groups, layout elements, fitters, CanvasScaler, TMP and declared animation/custom controllers. Unknown custom runtime code requires caller inspection. A missing or stale inspection gives the agent a specific inspection action instead of an edit target.
+
+Unity adapters should attach `Helix.Comparison.UiMeasurements.LayoutContext(rect)` to the `layoutContext` field of mapped uGUI nodes during the actual capture. The existing layout object supplies pivot, anchors, sizeDelta, canvas mode and scale factor. An observed RectTransform driver takes precedence over a serialized offset. For older receipts, bounds and baseline comparisons remain available while runtime ownership can be unknown. Phaser snapshots now include local position, origin, scroll factors, container path and main-camera/canvas projection. Rotated/clipped, world-space and secondary-camera output still require scoped instrumentation. A component's presence only makes it a candidate; inspect the listed properties and relevant prefab hashes, confirm with a scoped change, then recapture before resolving a discrepancy. The trace makes no edits.
+
 ## Typography comparison
 
 Run `helix typography-compare --reference REFERENCE_JSON --candidate UNITY_JSON --spec TYPE_JSON --out EMPTY_DIR`. Use the normal UI capture adapters and native PNGs. The command verifies the receipts and PNG hashes, normalized viewport (DPR and zoom 1), safe area, declared state and optional checkpoint. Supply exact selectors for visible Phaser Text and Unity Canvas TextMeshProUGUI counterparts.

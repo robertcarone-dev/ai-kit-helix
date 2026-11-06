@@ -174,6 +174,11 @@ export const UI_INSPECTOR = String.raw`(config) => {
           text,
           sprite,
           layout: {
+            parentPath: o.parentContainer ? path.slice(0, path.lastIndexOf('/')) : null,
+            position: [o.x, o.y],
+            scrollFactor: [o.scrollFactorX, o.scrollFactorY],
+            projection: { canvas: bounds(canvas), gameSize: [game.scale.gameSize.width, game.scale.gameSize.height],
+              camera: { x: cam.x, y: cam.y, scrollX: cam.scrollX, scrollY: cam.scrollY, zoomX: cam.zoomX, zoomY: cam.zoomY, rotation: cam.rotation } },
             originX: o.originX ?? null,
             originY: o.originY ?? null,
             scaleX: o.scaleX,
