@@ -36,6 +36,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   scenario NAME
   look [--match TEXT]
   scene-record --out EMPTY_DIR [--duration SECONDS] [--interval-ms MS] [--profile NAME]
+  sprite-usage --spec FILE --out EMPTY_DIR
   render-trace --spec FILE --out EMPTY_DIR
   vfx-compare --spec FILE --out NEW_DIR
   scene-motion --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
@@ -148,6 +149,7 @@ async function main() {
     'ui-look': ['match'],
     'scene-look': ['profile'],
     'scene-record': ['out', 'duration', 'interval-ms', 'profile'],
+    'sprite-usage': ['spec', 'out'],
     'render-trace': ['spec', 'out'],
     'vfx-compare': ['spec', 'out'],
     'scene-motion': ['reference', 'candidate', 'spec', 'out'],
@@ -255,6 +257,12 @@ async function main() {
     if (command === 'ui-assets') return uiAssets(root, options.spec, out);
     if (command === 'ui-plan') return uiPlan(root, options.spec, out);
     return uiImpact(root, options.spec, options.previous, out);
+  }
+  if (command === 'sprite-usage') {
+    if (pos.length || !options.spec || !options.out)
+      throw new Error('sprite-usage requires --spec and --out.');
+    const { spriteUsage } = await import('./sprite-usage.ts');
+    return spriteUsage(resolve(root, options.spec), resolve(root, options.out));
   }
   if (command === 'render-trace') {
     if (pos.length || !options.spec || !options.out)
