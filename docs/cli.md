@@ -78,3 +78,13 @@ The batch captures native lossless PNGs using the full Chromium distribution ins
 Measure initial loading, fixture preparation, view changes and PNG capture separately. Warm capture latency excludes startup and fixture setup. The generic toolkit has no universal subsecond guarantee: benchmark the actual project and machine. Before accepting scene reuse, compare a representative reused case with a fresh-session capture at the same state, viewport and seed, then inspect the images and receipts.
 
 The required project-owned `batch` adapter is documented in `Tools/Helix/Adapter.md` (source: [project-adapter.md](project-adapter.md)).
+
+## Agent-authored fixtures
+
+From an installed project, run `helix fixture-list` for the authoring contract, configured viewports, available scenarios and registered fixtures. The agent inspects the actual prototype and its controls, authors a JSON document with schemaVersion 1 and the listed required fields, then calls `helix fixture-create --spec FILE`. Creation validates the step language and project-local script references and atomically registers a new project-owned document under Tools/Helix/fixtures. Edit that document for later revisions. The installer leaves it in place. Ready and state expressions must describe the observed outcome. A scripted fixture may prepare initial state; use ordinary player inputs for interaction claims.
+
+Run `helix fixture-record ID --out NEW_DIR` to exercise the authored case and replay it in a new recording context. This uses the project's effective adapter and its own isolated session, leaving interactive sessions alone. Inspect the returned state, motion.json, and motion.webm. A failed case retains diagnostics; fix the project fixture or report a missing source capability. Record only in trusted checkouts: fixture scripts execute in the prototype.
+
+For a Unity handoff, supply notes as a JSON array of objects with integer timeMs (from clip start) and text. The author can be an agent or designer. Run `helix fixture-handoff --recording DIR --notes FILE --out NEW_ZIP`. The portable archive includes the clip, its hash-bound receipt, fixture identity, annotations and agent brief. The commands emit machine-readable JSON and use nonzero exits on failure. Python 3 is required for archive export.
+
+The optional designer UI runs with `python3 Tools/Helix/handoff-ui/serve.py --open`. It discovers registered fixtures and uses the same record and handoff commands as the agent.

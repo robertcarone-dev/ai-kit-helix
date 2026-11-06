@@ -62,8 +62,9 @@ export function run(argv) {
   function tree(from,to) {for(const file of walk(join(source,from)))add(`${to}/${relative(join(source,from),file)}`,readFileSync(file));}
   if(command!=='remove') {
     if(unityHelper)tree('unity/Editor','Assets/HelixComparison/Editor');
+    tree('workflows/handoff-ui','Tools/Helix/handoff-ui');
     tree('cli/src','Tools/Helix/src');tree('cli/bin','Tools/Helix/bin');
-    for(const name of ['workflow.py','evidence_utils.py','capture.py','delivery.py'])add('Tools/Helix/'+name,readFileSync(join(source,'workflows',name)));
+    for(const name of ['workflow.py','evidence_utils.py','capture.py','delivery.py','handoff.py'])add('Tools/Helix/'+name,readFileSync(join(source,'workflows',name)));
     for(const [src,dest] of [['cli.md','Toolkit.md'],['ui.md','UI.md'],['ui-port.md','UIPort.md'],['scene.md','Scene.md'],['workflows.md','WorkflowToolkit.md'],['project-adapter.md','Adapter.md'],['migration.md','Migration.md']])add(`Tools/Helix/${dest}`,readFileSync(join(source,'docs',src)));
     const installed={...pkg,scripts:{'install-browser':'playwright install chromium'}};
     add('Tools/Helix/package.json',Buffer.from(JSON.stringify(installed,null,2)+'\n'));
@@ -96,7 +97,12 @@ export function run(argv) {
   const report={command,projectRoot:root,version:pkg.version,sourceHash,rules,unityHelper,changes:changes.map(({path,action,before,after})=>({path,action,before,after})),createdProjectFiles:seeds.map(x=>x.path),conflicts};
   if(command==='preview')return report;
   if(conflicts.length)throw new Error(`Locally modified or unmanaged files conflict; nothing written: ${conflicts.join(', ')}`);
-  if(changes.length && existsSync(join(root,'.helix/connection.json')))throw new Error('An owned browser session may be active. Stop it before replacing the runtime.');
+  if(changes.length) {
+    const state=join(root,'.helix'), isolated=join(state,'fixture-sessions');
+    const sessions=[state,...(existsSync(isolated)?readdirSync(isolated).map(name=>join(isolated,name)):[])];
+    if(sessions.some(dir=>existsSync(join(dir,'connection.json'))||existsSync(join(dir,'start.lock'))))
+      throw new Error('A browser session may be active. Finish the owning session before replacing the runtime.');
+  }
   // Complete validation before writing. A failed partial install leaves old manifest hashes,
   // so subsequent updates refuse unexpected bytes instead of silently accepting them.
   for(const change of changes) {

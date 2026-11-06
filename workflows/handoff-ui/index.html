@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>Create port handoff</title>
+        <link rel="stylesheet" href="/style.css" />
+    </head>
+    <body>
+        <header>
+            <span class="brand"><b aria-hidden="true">H</b> Helix</span
+            ><span class="slash">/</span> Port handoffs
+        </header>
+        <main>
+            <h1>Create port handoff</h1>
+            <p class="intro">
+                Record a fixture and mark what matters for the Unity
+                port.
+            </p>
+            <div class="workspace">
+                <section class="replay" aria-label="Fixture replay">
+                    <div class="bar">
+                        <h2 id="feature">Replay</h2>
+                        <span id="profile"></span>
+                    </div>
+                    <div class="stage">
+                        <video
+                            id="video"
+                            preload="metadata"
+                            playsinline
+                        ></video>
+                        <div id="pending" hidden>
+                            <span class="spinner"></span>Recording in Helix…
+                        </div>
+                    </div>
+                    <div class="transport">
+                        <button id="play" aria-label="Play recording" disabled>
+                            ▶</button
+                        ><output id="elapsed">0:00.000</output
+                        ><input
+                            id="seek"
+                            aria-label="Scrub recording"
+                            type="range"
+                            min="0"
+                            max="0"
+                            step="0.001"
+                            value="0"
+                            disabled
+                        /><output id="duration">0:00</output>
+                    </div>
+                </section>
+                <aside>
+                    <section>
+                        <h2>Recording</h2>
+                        <label for="scenario">Fixture</label>
+                        <select id="scenario"></select>
+                        <button disabled class="record" id="record">
+                            <span class="dot"></span
+                            ><span id="recordLabel">Record case</span>
+                        </button>
+                    </section>
+                    <section>
+                        <div class="bar">
+                            <h2>Moment notes</h2>
+                            <span id="count">0</span>
+                        </div>
+                        <p id="hint">
+                            Record a case, then scrub to the moment you want to
+                            mark.
+                        </p>
+                        <form id="noteForm">
+                            <label for="note"
+                                >Note at
+                                <output id="noteTime">0:00.000</output></label
+                            >
+                            <textarea
+                                id="note"
+                                rows="3"
+                                maxlength="4000"
+                                placeholder="What should carry over to Unity?"
+                                disabled
+                            ></textarea>
+                            <button id="add" disabled>Add note</button>
+                        </form>
+                        <ol id="notes"></ol>
+                    </section>
+                    <section>
+                        <button class="primary" id="export" disabled>
+                            Create port handoff
+                            <span aria-hidden="true">↗</span>
+                        </button>
+                        <div id="delivery" hidden>
+                            <a id="download" download>Download ZIP</a
+                            ><button id="copy">Copy agent prompt</button>
+                        </div>
+                    </section>
+                    <p role="status" id="status"></p>
+                </aside>
+            </div>
+        </main>
+        <script type="module" src="/app.js"></script>
+    </body>
+</html>

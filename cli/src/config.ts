@@ -1,3 +1,4 @@
+import { installFixtureScenarios } from './fixtures.ts';
 import { validateSceneOptions } from './scene-options.ts';
 import { readFileSync, existsSync, realpathSync, mkdirSync, readdirSync } from 'node:fs';
 import { resolve, dirname, relative, isAbsolute } from 'node:path';
@@ -26,7 +27,12 @@ export function projectRoot(args = process.argv.slice(2), cwd = process.cwd()) {
 }
 // Each process fixes its project context once; child processes receive it explicitly.
 export const root = projectRoot();
-export const stateDir = resolve(root, '.helix');
+const session = process.env.HELIX_FIXTURE_SESSION;
+if (session !== undefined && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(session))
+  throw new Error('Invalid isolated fixture session id.');
+export const stateDir = session
+  ? resolve(root, '.helix', 'fixture-sessions', session)
+  : resolve(root, '.helix');
 export const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 /** Restrict browser navigation and service requests to credential-free loopback URLs. */
 export function localUrl(raw: string) {
@@ -177,6 +183,7 @@ export function readConfig(url?: string) {
   for (const size of Object.values(config.viewports) as any[])
     if (![size.width, size.height].every((n) => Number.isInteger(n) && n > 0 && n <= 4096))
       throw new Error('Viewport dimensions must be integers 1..4096.');
+  installFixtureScenarios(root, config, loadStep);
   for (const s of Object.values(config.scenarios ?? {}) as any[]) {
     if (!Array.isArray(s.steps) || typeof s.ready !== 'string')
       throw new Error('Scenario needs steps and ready.');

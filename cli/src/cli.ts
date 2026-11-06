@@ -19,6 +19,9 @@ import { discover, assets } from './discovery.ts';
 /** Short-lived command client. The detached host owns the browser between invocations. */
 const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
+  fixture-list | fixture-create --spec FILE
+  fixture-record ID --out NEW_DIR
+  fixture-handoff --recording DIR --notes JSON_FILE --out NEW_ZIP
   doctor | resolve
   assets [--match TEXT]
   unity-plan SCENARIO --out DIR [--viewport phone|tablet]
@@ -110,6 +113,10 @@ async function main() {
     return;
   }
   const allowed: Record<string, string[]> = {
+    'fixture-list': [],
+    'fixture-create': ['spec'],
+    'fixture-record': ['out'],
+    'fixture-handoff': ['recording', 'notes', 'out'],
     doctor: [],
     resolve: [],
     assets: ['match'],
@@ -165,6 +172,10 @@ async function main() {
     JSON.parse(readFileSync(matrixLock, 'utf8')).token !== process.env.HELIX_MATRIX_TOKEN
   )
     throw new Error('A UI matrix owns this checkout session. Wait for it to restore and finish.');
+  if (command.startsWith('fixture-')) {
+    const { fixtureCommand } = await import('./fixture-command.ts');
+    return fixtureCommand(command, pos, options);
+  }
   if (command === 'resolve' || command === 'assets') {
     const { config } = readConfig();
     const identity = await discover(config);

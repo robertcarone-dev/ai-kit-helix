@@ -42,3 +42,7 @@ Deliver the shared case ledger with source-to-target mapping, reference identity
 
 
 For configured Unity/backend captures, follow `Tools/Helix/WorkflowToolkit.md` and the project's adapter. Use the readiness/motion helper only after a reviewed live pilot; do not invent hooks or copy another game's fixtures. Record before actions, verify first/last event coverage, and restore owned state. Use delivery receipts to distinguish implemented, validated and integrated work. Reuse evidence only when its declared inputs and bytes remain valid.
+
+## Author fixtures for new porting work
+
+When a requested behavior has no replay, the agent owns fixture authoring. Use `Tools/Helix/bin/helix fixture-list` to discover the project and document contract. Inspect the source caller, initial state, actual player input and outcome. Author the project fixture and any necessary project-local setup or observation hooks; register it with `fixture-create --spec`. Run `fixture-record`, inspect the evidence and correct the fixture when its observations fail. Use `fixture-handoff` to package the recording and clip-relative notes for the porting assignment. See Tools/Helix/Toolkit.md. All four commands work without the designer UI. A missing target, guard or observable result belongs in the project adapter or a blocked handoff, never in shared commands.

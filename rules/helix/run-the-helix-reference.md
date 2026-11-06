@@ -14,3 +14,5 @@ Keep normal pointer navigation evidence separate from fixtures and instrumentati
 On launch failure, retain the exact error and available console/network evidence. Retry only after a recorded prerequisite, configuration or diagnostic hypothesis changes; do not repeat unchanged startup attempts. Report an unavailable matching preview as a blocker. Stop only sessions and servers you own.
 
 The Unity pairing procedure is in `Tools/Helix/project-adapter.md`.
+
+For new porting behaviors, the assigned agent authors project-owned fixtures through the installed fixture contract and supplies replayable evidence of the requested outcome. Keep game selectors, starting state, actions and acceptance in the project; retain unsupported observations explicitly. The helix-reference skill and CLI help expose authoring, replay and handoff.
