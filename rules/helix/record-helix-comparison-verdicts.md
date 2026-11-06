@@ -15,7 +15,7 @@ Use explicit evidence status:
 - UNMEASURED: a started case could not be completed.
 - NOT TESTED: the case has not been attempted.
 
-Map these accurately into the board's supported status fields; preserve the detail in the report. Never pass by omission. Source-only inspection, compile success and prefab captures do not prove live parity.
+Assign the board verdict from the case evidence and stage reached. Retain the CLI status, capture receipts and cleanup result separately. A matrix row can report `blocked` after both captures exist. Never pass by omission. Source-only inspection, compile success and prefab captures do not prove live parity.
 
 Separate visual defects from behaviour defects. Final reports state coverage and all outstanding cases. Claim the scoped screen or feature matches only when its required cases pass; partial evidence is partial completion.
 

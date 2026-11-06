@@ -17,7 +17,7 @@ For text cases, read [Typography comparison](references/typography.md). Do not i
 
 ## Authorized implementation
 
-Follow [the port recipe](../helix-reference/references/port-recipe.md). Map source layout and sprite/font assets to the target UI framework. Implement a representative view with real content and its responsive constraints, then verify the final phone/tablet composition before extending affected states. Diagnose asset trim, typography metrics and state mismatch before compensating with layout offsets.
+Follow [the port recipe](../helix-reference/references/port-recipe.md). Map source layout and sprite/font assets to the target UI framework. Implement a representative view with real content and its responsive constraints, then verify the final phone/tablet composition before extending affected states. Diagnose asset trim, typography metrics and state mismatch before compensating with layout offsets. For an authorized shared-control change, preview the operation on the supplying prefab, apply using the reviewed plan hash, and use `ui-impact` to identify affected cases for recapture.
 
 ## Tool support
 
@@ -33,7 +33,7 @@ For broader hierarchy and grouped-element diagnosis, read `Tools/Helix/Scene.md`
 2. Map both render paths into final-output pixels, then compare element bounds, alignment, spacing, anchors and layering. Distinguish screen-space bounds from local transform values.
 3. Inspect clipping/masks, scrolling, safe-area response, sprite aspect, atlas trim and nine-slice behavior. Verify input hit regions separately from visible bounds. Identify whether mismatches originate in layout, assets, text metrics or state before proposing a cause.
 4. Check required phone/tablet, orientation, content-length and state variants. Infer responsive rules only from sufficient cases or inspected layout data; one screenshot does not establish an anchor rule.
-5. For a shared control, inspect the bound sprite, TMP font and material fields with the scoped UiAuthoring.Inspect overload in UIPort.md. Follow its source chain and check consumers before proposing a change. If a state swaps material, inspect the adapter-declared component field that supplies that state. Compare atlas GUID and file ID. Preview the operation on the supplying prefab, apply the reviewed hash, and use ui-impact for other consumers. Apply the typography reference to scoped text. Use inspection/source data for renderer properties; Phaser text is not DOM text, so do not claim CSS properties without evidence.
+5. For a shared control, inspect the bound sprite, TMP font and material fields with the scoped UiAuthoring.Inspect overload in UIPort.md. Follow its source chain and check consumers before proposing a change. If a state swaps material, inspect the adapter-declared component field that supplies that state. Compare atlas GUID and file ID. For a review, report the supplying prefab and field, effective value, proposed change and affected consumers. A read-only preview can support the proposal. Apply the typography reference to scoped text. Use inspection/source data for renderer properties; Phaser text is not DOM text, so do not claim CSS properties without evidence.
 6. Verify scoped UI state transitions, input response and gameplay-facing effects against the web behavior. Use paired images and annotations to substantiate differences. Route interaction timing to [motion](../helix-compare-motion/SKILL.md) when needed; a static screenshot does not verify a transition.
 
 ## Measurements and observations

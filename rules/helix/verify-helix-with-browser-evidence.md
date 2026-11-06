@@ -5,7 +5,7 @@ enabled: true
 tags: [assets-design, assets-tech, code, qa]
 ---
 
-For Helix work, compare browser captures with Unity captures at the same viewport and state. Never feed Helix into Figma-specific commands or invent Figma frame IDs or node maps. Missing Figma metadata is inapplicable, not a Helix verification blocker. Use Figma-specific checks only for an explicitly supplied, applicable Figma reference.
+Select the verification method per criterion from the reference named in the assignment. For Helix appearance and layout, use paired native browser and Unity captures at matching states and viewports, including phone and iPad aspects for responsive layout. Figma frame IDs, node maps and frame-based `vision check` or `vision verify` apply only to criteria with a supplied Figma reference. For prefab changes, also run the applicable prefab audit and check that the screen is reachable when the task requires it.
 
 Inspect scoped UI for:
 

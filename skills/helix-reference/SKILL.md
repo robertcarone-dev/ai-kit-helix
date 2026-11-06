@@ -9,7 +9,7 @@ Use this entry point to port or verify Helix web assets, features and UI in Unit
 
 ## Prerequisites
 
-Read [the shared comparison workflow](references/comparison-workflow.md) before collecting or accepting evidence. Follow `Tools/Helix/Toolkit.md` for installation and commands. Node.js 22.18 or later must be on the worker's `PATH`, and Helix must be installed and set up with the configured project pulled locally. `start` discovers the configured project and variant and opens Helix Desktop on macOS when needed; latest local content is accepted. No modified AI Kit app is required.
+Read [the shared comparison workflow](references/comparison-workflow.md) before collecting or accepting evidence. Follow `Tools/Helix/Toolkit.md` for installation and commands. The CLI requires Node.js 22.18 or later on the worker's `PATH`. Live browser capture also requires Helix Desktop with the configured project pulled locally. `start` discovers the configured project and variant and opens Helix Desktop on macOS when needed; latest local content is accepted. No modified AI Kit app is required.
 
 ## Route the task
 
@@ -25,9 +25,9 @@ Read only the specialty needed for the current case. A full visual audit may use
 ## Procedure
 
 1. Establish case IDs, required coverage, source-to-Unity mappings and whether the task is review-only or an authorized port/fix using the shared workflow.
-2. Run `Tools/Helix/bin/helix doctor`; inspect browser installation and catalog discovery, not just process exit status.
-3. Start or reuse the checkout's session with the required viewport. Use `status`, then a named `scenario` and `look` as appropriate.
-4. Prove one representative case, check its receipts and render, then collect the remaining required cases.
+2. For a continuation, run `discrepancy-resume --feature "FEATURE"` or `discrepancy-resume --assignment BOARD-KEY` before launch. For a routed UI case, plan `discrepancy-rerun --id ID --out .aikit/scratch/ROUND`. Inspect its retained sides and reasons. Follow its returned command when runnable: two retained sides permit offline review, one calls for capturing the missing side, and zero calls for both. For a blocked case, record the prerequisite.
+3. For fresh browser evidence, run `Tools/Helix/bin/helix doctor` and inspect browser installation and catalog discovery. A matrix or routed rerun manages its own browser. For manual capture, start or reuse your owned session at the required viewport, then use `status`, a named `scenario` and `look` as appropriate.
+4. For new coverage, prove one representative case, inspect its receipts and render, then collect the remaining required cases.
 5. Use `capture` for native PNGs, `record` for motion, and `compare` for diagnostic image pairs. `unity-plan` emits the configured argument arrays for the selected AI Kit or Unity CLI backend; execute and restore them using the shared workflow. Follow the specialist's measurement procedure.
 6. Restore owned Unity state, stop owned browser work when finished, and hand off the ledger and accessible evidence.
 
