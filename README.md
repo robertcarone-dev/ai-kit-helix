@@ -34,7 +34,7 @@ On Windows, or when invoking Node directly, replace `./install.sh` with `node sc
 | Option | Purpose |
 | --- | --- |
 | `--rules helix` | Install the six Helix reference/comparison rules when Helix is the project's chosen reference. |
-| `--rules all` | Also install the two general AI Kit lane recovery and isolated-test rules. Review overlap with existing project policy. |
+| `--rules all` | Also install AI Kit workflow rules for shared-file and delivery coordination, lane recovery, and isolated test storage. Review overlap with existing project policy. |
 | `--rules none` | Install no rules; the default when no prior installation exists. |
 | `--unity-helper` | Opt in to the generic Editor comparison helper under `Assets/HelixComparison/Editor`; requires the project’s existing Newtonsoft JSON package. |
 | `--init` | Create `reference.json` and `project-adapter.md` only when absent. |

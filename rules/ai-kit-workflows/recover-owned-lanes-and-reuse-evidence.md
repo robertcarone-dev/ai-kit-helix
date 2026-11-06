@@ -16,8 +16,9 @@ For an Editor readiness or compilation blocker:
 
 Use Unity CLI discovery with the explicit assigned project path: `unity command --query QUERY --project-path LANE` or `UNITY_PROJECT_PATH=LANE unity commands --grep PATTERN`. Inspect installed command help when syntax differs. Do not use unsupported `unity list`; its failure alone does not prove Editor unavailability. Known project eval helpers remain valid when their prerequisites are satisfied.
 
-Read-only access to this project's existing evidence archive is permitted for assigned work. Resolve board attachments from their metadata, copy them into fresh owned scratch and preserve revision labels and hashes; do not alter originals or recapture a historical baseline without authorization. Follow `Tools/Helix/Toolkit.md` for retrieval and reuse checks. Missing originals remain explicit; a similarly named file is not a substitute.
+Use the evidence archive only when the assignment grants access, and only through an authorized route. Resolve attachments from their metadata and copy them into fresh owned scratch with revision labels and hashes intact. Preserve the originals and obtain explicit authorization before recapturing a historical baseline.
 
+If access is denied, record the attachment reference and the failure. Ask an authorized owner or operator to export the evidence to accessible scratch with its revision labels and hashes. Keep missing evidence marked unavailable. Follow `Tools/Helix/Toolkit.md` for retrieval and reuse checks.
 
 Prefer one independently deliverable behavior or art family per task. At ten-minute checkpoints report the delivered artifact, remaining cases and exact blocker. At twenty to thirty minutes explicitly disposition remaining scope into a bounded continuation; do not cancel an active capture or weaken acceptance to meet a timer. Report queued/provider-held time separately from execution, and distinguish current-run span from cumulative work.
 
