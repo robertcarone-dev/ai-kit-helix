@@ -42,3 +42,5 @@ Finish when all required events and variants have supported dispositions and own
 
 
 For configured Unity/backend captures, follow `Tools/Helix/WorkflowToolkit.md` and the project's adapter. Use the readiness/motion helper only after a reviewed live pilot; do not invent hooks or copy another game's fixtures. Record before actions, verify first/last event coverage, and restore owned state. Use delivery receipts to distinguish implemented, validated and integrated work. Reuse evidence only when its declared inputs and bytes remain valid.
+
+For a designer's aligned handoff ZIP, run `handoff-owner --handoff FILE.zip --unity-project IDLE_ISOLATED_PROJECT --out NEW_EVIDENCE_DIR` on the receiving checkout. Use each note's clip paths, time range and disposition from `alignment.json`. Inspect both clips on a transition and preserve unresolved ownership. The fixture authoring contract and prerequisites are in Tools/Helix/Toolkit.md under “Aligning a scrubber pick to a Unity Animator”.

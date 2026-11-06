@@ -1,3 +1,4 @@
+import { armAlignment, readAlignment } from './event-alignment.ts';
 import { resolveSceneOptions } from './scene-options.ts';
 import { sampleScene } from './scene-sampler.ts';
 import { nativePng } from './png.ts';
@@ -538,6 +539,8 @@ async function dispatch(req: any) {
     const out = emptyOutput(req.out ?? join(stateDir, 'evidence', randomUUID()));
     try {
       await load(out);
+      const alignment = config.scenarios[selected].alignment;
+      if (alignment) await armAlignment(page, alignment.visible);
       await select(selected, false);
       const startedAt = new Date().toISOString();
       native(await facts());
@@ -569,6 +572,16 @@ async function dispatch(req: any) {
         viewportName: viewport,
         encoded,
         nativeVideo: encoded.width === size.width && encoded.height === size.height,
+        ...(alignment
+          ? {
+              alignment: {
+                event: alignment.event,
+                predicateSha256: sha(alignment.visible),
+                unity: alignment.unity,
+                ...readAlignment(videoPath),
+              },
+            }
+          : {}),
         observationStartedAt: startedAt,
         durationSeconds: seconds,
         state,

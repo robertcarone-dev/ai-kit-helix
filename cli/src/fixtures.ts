@@ -31,6 +31,8 @@ export const fixtureContract = {
   ],
   ready: 'Boolean expression for the required final outcome',
   state: 'Expression returning serializable observed state for the recording receipt',
+  alignment:
+    'Optional { event, visible, unity: { event: "prefab-animator-start", prefab, target, component, field } }. visible must rise once during the recording.',
   stepContract:
     'Existing scenario step language. Inspect actual game callers, selectors, state and input before authoring.',
 };
@@ -49,6 +51,28 @@ export function validateFixture(doc: any, config: any, loadStep: (step: any) => 
   if (!Array.isArray(doc.steps) || !doc.steps.length)
     throw new Error('Fixture requires scenario steps.');
   doc.steps.forEach(loadStep);
+  if (doc.alignment !== undefined) {
+    const a = doc.alignment;
+    const u = a?.unity;
+    if (
+      typeof a?.event !== 'string' ||
+      !a.event.trim() ||
+      typeof a.visible !== 'string' ||
+      !a.visible.trim() ||
+      u?.event !== 'prefab-animator-start' ||
+      typeof u.prefab !== 'string' ||
+      !/^Assets\/.+\.prefab$/.test(u.prefab) ||
+      u.prefab.split('/').includes('..') ||
+      typeof u.target !== 'string' ||
+      typeof u.component !== 'string' ||
+      !u.component.trim() ||
+      typeof u.field !== 'string' ||
+      !u.field.trim()
+    )
+      throw new Error(
+        'Alignment requires a named event, visible predicate and prefab-animator-start ownership binding.',
+      );
+  }
   if (doc.captureSteps) doc.captureSteps.forEach(loadStep);
 }
 

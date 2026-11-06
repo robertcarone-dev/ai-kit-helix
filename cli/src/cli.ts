@@ -25,6 +25,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   discrepancy-rerun --id ID --out SCRATCH_DIR [--execute yes]
   fixture-list | fixture-create --spec FILE
   fixture-record ID --out NEW_DIR
+  handoff-owner --handoff ZIP --unity-project IDLE_ISOLATED_DIR --out EMPTY_DIR
   fixture-handoff --recording DIR --notes JSON_FILE --out NEW_ZIP
   doctor | resolve
   assets [--match TEXT]
@@ -128,6 +129,7 @@ async function main() {
     'fixture-list': [],
     'fixture-create': ['spec'],
     'fixture-record': ['out'],
+    'handoff-owner': ['handoff', 'unity-project', 'out'],
     'fixture-handoff': ['recording', 'notes', 'out'],
     doctor: [],
     resolve: [],
@@ -296,6 +298,16 @@ async function main() {
       ...([options.reference, options.candidate, options.spec, options.out].map((p) =>
         resolve(root, p),
       ) as [string, string, string, string]),
+    );
+  }
+  if (command === 'handoff-owner') {
+    if (pos.length || !options.handoff || !options['unity-project'] || !options.out)
+      throw new Error('handoff-owner requires --handoff, --unity-project and --out.');
+    const { handoffOwner } = await import('./handoff-owner.ts');
+    return handoffOwner(
+      resolve(root, options.handoff),
+      resolve(root, options['unity-project']),
+      resolve(root, options.out),
     );
   }
   if (command === 'visual-owner') {
