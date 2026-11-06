@@ -32,7 +32,7 @@ export const fixtureContract = {
   ready: 'Boolean expression for the required final outcome',
   state: 'Expression returning serializable observed state for the recording receipt',
   alignment:
-    'Optional { event, visible, unity: { event: "prefab-animator-start", prefab, target, component, field } }. visible must rise once during the recording.',
+    'Optional { event, visible, unity }. visible must rise once. For prefab-animator-start supply prefab, target, component and field. For presenter-event supply prefab, a local Editor entryPoint and properties (target, component, field).',
   stepContract:
     'Existing scenario step language. Inspect actual game callers, selectors, state and input before authoring.',
 };
@@ -54,23 +54,32 @@ export function validateFixture(doc: any, config: any, loadStep: (step: any) => 
   if (doc.alignment !== undefined) {
     const a = doc.alignment;
     const u = a?.unity;
+    const validProperty = (b: any) =>
+      typeof b?.target === 'string' &&
+      typeof b.component === 'string' &&
+      b.component.trim() &&
+      typeof b.field === 'string' &&
+      b.field.trim();
+    const validRecipe =
+      u?.event === 'prefab-animator-start'
+        ? validProperty(u)
+        : u?.event === 'presenter-event' &&
+          /^[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+$/.test(u.entryPoint) &&
+          Array.isArray(u.properties) &&
+          u.properties.length > 0 &&
+          u.properties.every(validProperty);
     if (
+      !validRecipe ||
       typeof a?.event !== 'string' ||
       !a.event.trim() ||
       typeof a.visible !== 'string' ||
       !a.visible.trim() ||
-      u?.event !== 'prefab-animator-start' ||
       typeof u.prefab !== 'string' ||
       !/^Assets\/.+\.prefab$/.test(u.prefab) ||
-      u.prefab.split('/').includes('..') ||
-      typeof u.target !== 'string' ||
-      typeof u.component !== 'string' ||
-      !u.component.trim() ||
-      typeof u.field !== 'string' ||
-      !u.field.trim()
+      u.prefab.split('/').includes('..')
     )
       throw new Error(
-        'Alignment requires a named event, visible predicate and prefab-animator-start ownership binding.',
+        'Alignment requires a named event, visible predicate, prefab and valid replay property bindings.',
       );
   }
   if (doc.captureSteps) doc.captureSteps.forEach(loadStep);

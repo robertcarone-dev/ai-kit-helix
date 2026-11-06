@@ -8,6 +8,8 @@ using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.Animations;
+using UnityEngine.Playables;
 using Object = UnityEngine.Object;
 
 namespace Helix.Comparison
@@ -15,14 +17,24 @@ namespace Helix.Comparison
     // An explicitly bound, read-only observation window. No global searches or update loop.
     public static class VisualOwnership
     {
+        private static readonly OwnershipObservation Default = new OwnershipObservation();
+        public static string Inspect(string prefab, string target, string component, string field) => Default.Inspect(prefab, target, component, field);
+        public static string Begin(GameObject instance, string prefab, string target, string component, string field) => Default.Begin(instance, prefab, target, component, field);
+        public static void Checkpoint(string label) => Default.Checkpoint(label);
+        public static string End() => Default.End();
+        public static void Applied(Component target, string field) => Default.Applied(target, field);
+    }
+
+    internal sealed class OwnershipObservation
+    {
         private const int Limit = 256;
-        private static Component watched;
-        private static string fieldPath;
-        private static GameObject liveRoot;
-        private static JObject receipt;
-        private static readonly List<Action> releases = new List<Action>();
-        private static MethodInfo setter;
-        private static JToken lastValue;
+        private Component watched;
+        private string fieldPath;
+        private GameObject liveRoot;
+        private JObject receipt;
+        private readonly List<Action> releases = new List<Action>();
+        private MethodInfo setter;
+        private JToken lastValue;
 
         private static JObject Asset(Object value)
         {
@@ -63,6 +75,13 @@ namespace Helix.Comparison
                 hashes[path] = UiAuthoring.Hash(path);
         }
 
+        internal void IncludeInput(Object asset)
+        {
+            string path = AssetDatabase.GetAssetPath(asset);
+            if (!path.StartsWith("Assets/", StringComparison.Ordinal)) throw new ArgumentException("Expected a project asset input.");
+            Pin((JObject)receipt["assetHashes"], path);
+        }
+
         private static JObject InspectData(string prefab, string target, string type, string field)
         {
             UiAuthoring.AssetPath(prefab, ".prefab");
@@ -99,7 +118,7 @@ namespace Helix.Comparison
                 ["clipBindings"] = Clips(component, field, false, hashes), ["assetHashes"] = hashes };
         }
 
-        public static string Inspect(string prefab, string target, string component, string field)
+        public string Inspect(string prefab, string target, string component, string field)
         {
             return InspectData(prefab, target, component, field).ToString();
         }
@@ -140,7 +159,7 @@ namespace Helix.Comparison
         }
 
         // Supply the actual instance through the adapter, before the action being investigated.
-        public static string Begin(GameObject instance, string prefab, string target, string component, string field)
+        public string Begin(GameObject instance, string prefab, string target, string component, string field)
         {
             if (receipt != null) throw new InvalidOperationException("End the active ownership trace first.");
             if (!EditorApplication.isPlaying || !instance || !instance.scene.IsValid()) throw new ArgumentException("Requires a live Play Mode instance.");
@@ -188,14 +207,14 @@ namespace Helix.Comparison
             return new JObject { ["kind"] = kind, ["frame"] = Time.frameCount, ["realtime"] = Time.realtimeSinceStartupAsDouble };
         }
 
-        private static void Append(JObject e)
+        private void Append(JObject e)
         {
             var events = (JArray)receipt["events"];
             if (events.Count < Limit) events.Add(e);
             else receipt["omittedEvents"] = (int)receipt["omittedEvents"] + 1;
         }
 
-        private static void OnDirty()
+        private void OnDirty()
         {
             if (!watched) return;
             var frames = new StackTrace(true).GetFrames();
@@ -204,16 +223,17 @@ namespace Helix.Comparison
         }
 
         // Call directly after a known assignment when the engine exposes no synchronous setter notification.
-        public static void Applied(Component target, string field)
+        public void Applied(Component target, string field)
         {
             if (receipt != null && watched && target == watched && field == fieldPath)
                 Write("instrumented-write-site", new StackTrace(1, true).GetFrames());
         }
 
-        private static void Write(string kind, IEnumerable<StackFrame> frames)
+        private void Write(string kind, IEnumerable<StackFrame> frames)
         {
             var value = Value(Property(watched, fieldPath));
             if (JToken.DeepEquals(value, lastValue)) return;
+            if (value is JObject asset) Pin((JObject)receipt["assetHashes"], (string)asset["path"]);
             var stack = new JArray();
             foreach (var frame in frames.Take(24)) {
                 var method = frame.GetMethod();
@@ -235,7 +255,37 @@ namespace Helix.Comparison
             lastValue = value;
         }
 
-        public static void Checkpoint(string label)
+        // Inspect only ordinary clip/mixer outputs connected to the watched hierarchy.
+        // Other playable types can alter masks or evaluation and are marked unresolved.
+        private void GraphBindings(PlayableGraph graph, JArray bindings)
+        {
+            for (int i = 0; i < graph.GetOutputCount(); i++) {
+                var output = graph.GetOutput(i);
+                if (!output.IsOutputValid() || output.GetPlayableOutputType() != typeof(AnimationPlayableOutput)) continue;
+                var animator = ((AnimationPlayableOutput)output).GetTarget();
+                if (!animator || !animator.isActiveAndEnabled || !watched.transform.IsChildOf(animator.transform)) continue;
+                string target = AnimationUtility.CalculateTransformPath(watched.transform, animator.transform);
+                void Visit(Playable node, float weight)
+                {
+                    if (!node.IsValid() || weight <= 0) return;
+                    if (node.IsPlayableOfType<AnimationClipPlayable>()) {
+                        var clip = ((AnimationClipPlayable)node).GetAnimationClip();
+                        foreach (var b in AnimationUtility.GetCurveBindings(clip).Concat(AnimationUtility.GetObjectReferenceCurveBindings(clip))) {
+                            if (b.path != target || !b.type.IsAssignableFrom(watched.GetType()) || b.propertyName != fieldPath) continue;
+                            Pin((JObject)receipt["assetHashes"], AssetDatabase.GetAssetPath(clip));
+                            bindings.Add(new JObject { ["clip"] = Asset(clip), ["field"] = fieldPath, ["bindingPath"] = target,
+                                ["phase"] = "current", ["driver"] = "animation-playable", ["clipTime"] = node.GetTime(),
+                                ["clipWeight"] = weight, ["layerWeight"] = 1f });
+                        }
+                    } else if (node.IsPlayableOfType<AnimationMixerPlayable>()) {
+                        for (int port = 0; port < node.GetInputCount(); port++) Visit(node.GetInput(port), weight * node.GetInputWeight(port));
+                    } else receipt["unsupportedPlayable"] = true;
+                }
+                Visit(output.GetSourcePlayable(), output.GetWeight());
+            }
+        }
+
+        public void Checkpoint(string label, PlayableGraph graph = default)
         {
             if (receipt == null || !watched || !liveRoot) throw new InvalidOperationException("No live ownership target.");
             if (string.IsNullOrWhiteSpace(label)) throw new ArgumentException("Name the checkpoint.");
@@ -243,10 +293,11 @@ namespace Helix.Comparison
             lastValue = Value(Property(watched, fieldPath));
             e["label"] = label; e["value"] = lastValue;
             e["activeBindings"] = Clips(watched, fieldPath, true, (JObject)receipt["assetHashes"]);
+            if (graph.IsValid()) GraphBindings(graph, (JArray)e["activeBindings"]);
             Append(e);
         }
 
-        public static string End()
+        public string End()
         {
             if (receipt == null) throw new InvalidOperationException("No active ownership trace.");
             try {
@@ -255,12 +306,12 @@ namespace Helix.Comparison
             } finally { Release(); }
         }
 
-        private static void PlayModeChanged(PlayModeStateChange state)
+        private void PlayModeChanged(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.ExitingPlayMode) Release();
         }
 
-        private static void Release()
+        internal void Release()
         {
             if (watched) foreach (var release in releases) release();
             releases.Clear();
