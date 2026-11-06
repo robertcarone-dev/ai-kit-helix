@@ -117,6 +117,8 @@ Use real pointer steps followed by assertions to test disabled controls, scrolli
 
 Planning never starts an Editor/browser or writes evidence. Execution requires the project's supplied `preflight`, `prepare`, `capture`, `restore` recipes, an already available Editor, the selected `ai-kit` or `unity` backend on PATH, an isolated workspace, and no pre-existing reference browser session. It creates the Unity output directory, executes argument arrays without a shell, then compares `reference/reference.json` with `unity/unity.json`. The capture recipe must produce those names. Each case uses fresh output. `matrix.json` retains command results, failures, cleanup and cases not run.
 
+For scene-assisted cases, add `sceneSpec` and `sceneProfile` to the case and supply matching inline Unity scene evidence. Read the scene contract (`Tools/Helix/Scene.md` when installed; [scene.md](scene.md#paired-image-review-and-one-case-execution) in the source repository) for the request file, adapter fields and one-case command.
+
 Adjacent cases with the same viewport reuse the matrix-owned browser. Each case still runs its configured scenario setup and Unity restoration; browser reuse is not fixture reuse or permission to skip readiness. A viewport change, interruption, blocked case or restoration failure closes the owned browser. Group compatible viewports in the spec when case ordering permits, and retain every case’s separate evidence.
 
 The runner does not provision an Editor, install packages, build games, or acquire an AI Kit seat. Managed lanes are supported, as are linked Git worktrees explicitly opted in with `.helix/isolated-worktree.json`:

@@ -1,3 +1,4 @@
+import { validateSceneOptions } from './scene-options.ts';
 import { readFileSync, existsSync, realpathSync, mkdirSync, readdirSync } from 'node:fs';
 import { resolve, dirname, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -138,6 +139,15 @@ export function readConfig(url?: string) {
       )
         throw new Error('three.' + key + ' must be an expression');
     }
+  }
+  if (config.sceneProfiles !== undefined) {
+    if (
+      !config.sceneProfiles ||
+      typeof config.sceneProfiles !== 'object' ||
+      Array.isArray(config.sceneProfiles)
+    )
+      throw new Error('sceneProfiles must be an object');
+    for (const value of Object.values(config.sceneProfiles)) validateSceneOptions(value);
   }
   if (config.sceneBindings !== undefined) {
     if (!Array.isArray(config.sceneBindings)) throw new Error('sceneBindings must be a list');

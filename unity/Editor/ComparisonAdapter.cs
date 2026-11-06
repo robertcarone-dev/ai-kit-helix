@@ -24,6 +24,8 @@ namespace Helix.Comparison
         public int Width { get; set; }
         public int Height { get; set; }
         public JObject ProjectState { get; set; }
+        // Optional scene-request.json options supplied by a scene case.
+        public JObject SceneOptions { get; set; }
     }
 
     public class ComparisonFrame
@@ -31,6 +33,7 @@ namespace Helix.Comparison
         // Owned by the adapter. The helper does not destroy or resize it.
         public Texture2D Image { get; set; }
         public JObject Ui { get; set; }
+        public JObject Scene { get; set; }
         public string Source { get; set; }
     }
 }

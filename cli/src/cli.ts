@@ -27,13 +27,16 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   recover                       recheck timed-out scenario readiness; no setup replay
   scenario NAME
   look [--match TEXT]
-  scene-record --out EMPTY_DIR [--duration SECONDS] [--interval-ms MS]
+  scene-record --out EMPTY_DIR [--duration SECONDS] [--interval-ms MS] [--profile NAME]
   scene-motion --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
-  scene-look                    read-only hierarchy and scene measurements
+  scene-look [--profile NAME]    read-only hierarchy and scene measurements
   scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
+  scene-report --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
+  scene-case --spec MATRIX --out SCRATCH_DIR [--execute yes] [--ai-kit PATH]
+  conversion-plan --spec MANIFEST --out EMPTY_DIR
   ui-look [--match TEXT]          UI metrics and semantic bindings
   step JSON                     press/drag/hover/pointerDown/pointerUp/wheel/wait/assert/script
-  capture NAME [--out EMPTY_DIR]
+  capture NAME [--out EMPTY_DIR] [--scene-profile NAME]
   record NAME [--duration SECONDS] [--out EMPTY_DIR]  replays named scenario; max 30s
   ui-assets --spec JSON --out EMPTY_DIR
   ui-plan --spec JSON --out EMPTY_DIR
@@ -119,12 +122,15 @@ async function main() {
     scenario: [],
     look: ['match'],
     'ui-look': ['match'],
-    'scene-look': [],
-    'scene-record': ['out', 'duration', 'interval-ms'],
+    'scene-look': ['profile'],
+    'scene-record': ['out', 'duration', 'interval-ms', 'profile'],
     'scene-motion': ['reference', 'candidate', 'spec', 'out'],
+    'scene-report': ['reference', 'candidate', 'spec', 'out'],
+    'conversion-plan': ['spec', 'out'],
+    'scene-case': ['spec', 'out', 'execute', 'ai-kit'],
     'scene-compare': ['reference', 'candidate', 'spec', 'out'],
     step: [],
-    capture: ['out'],
+    capture: ['out', 'scene-profile'],
     record: ['out', 'duration'],
     'ui-assets': ['spec', 'out'],
     'ui-plan': ['spec', 'out'],
@@ -221,6 +227,22 @@ async function main() {
       ) as [string, string, string, string]),
     );
   }
+  if (command === 'conversion-plan') {
+    if (pos.length || !options.spec || !options.out)
+      throw new Error('conversion-plan requires --spec and --out');
+    const { conversionPlan } = await import('./conversion-plan.ts');
+    return conversionPlan(root, resolve(root, options.spec), resolve(root, options.out));
+  }
+  if (command === 'scene-report') {
+    if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)
+      throw new Error('scene-report requires --reference, --candidate, --spec and --out');
+    const { sceneReview } = await import('./scene-review.ts');
+    return sceneReview(
+      ...([options.reference, options.candidate, options.spec, options.out].map((p) =>
+        resolve(root, p),
+      ) as [string, string, string, string]),
+    );
+  }
   if (command === 'scene-compare') {
     if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)
       throw new Error('scene-compare requires --reference, --candidate, --spec and --out');
@@ -267,7 +289,12 @@ async function main() {
       notRun: report.notRun,
     };
   }
-  if (command === 'ui-matrix') {
+  if (command === 'ui-matrix' || command === 'scene-case') {
+    if (command === 'scene-case') {
+      const spec = JSON.parse(readFileSync(resolve(root, options.spec ?? ''), 'utf8'));
+      if (spec.cases?.length !== 1 || !spec.cases[0].sceneSpec)
+        throw new Error('scene-case requires exactly one case with sceneSpec');
+    }
     if (pos.length || !options.spec || !options.out)
       throw new Error('ui-matrix requires --spec and --out.');
     const { runMatrix } = await import('./ui-runner.ts');
@@ -370,6 +397,8 @@ async function main() {
       out: options.out ? resolve(root, options.out) : undefined,
       duration: options.duration,
       interval: options['interval-ms'],
+      profile: options.profile,
+      sceneProfile: options['scene-profile'],
       step: command === 'step' ? JSON.parse(pos[0]) : undefined,
     },
     command === 'record' ? 125000 : 65000,

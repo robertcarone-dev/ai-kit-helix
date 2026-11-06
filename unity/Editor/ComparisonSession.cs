@@ -31,8 +31,10 @@ namespace Helix.Comparison
                 Scenario = scenario, Output = OutputPath(output), ProjectRoot = Root,
                 Width = width, Height = height, ProjectState = new JObject()
             };
-            if (Directory.Exists(context.Output) && Directory.GetFileSystemEntries(context.Output).Length > 0)
+            if (Directory.Exists(context.Output) && Array.Exists(Directory.GetFileSystemEntries(context.Output), file => Path.GetFileName(file) != "scene-request.json" || Directory.Exists(file)))
                 throw new InvalidOperationException("Use a fresh empty comparison output directory.");
+            string sceneRequest = Path.Combine(context.Output, "scene-request.json");
+            if (File.Exists(sceneRequest)) { context.SceneOptions = JObject.Parse(File.ReadAllText(sceneRequest)); }
             ComparisonAdapter adapter = Adapter(adapterType);
             JObject proof = adapter.Preflight(context);
             if (proof == null || proof.Value<bool?>("storageIsolated") != true ||
@@ -104,6 +106,11 @@ namespace Helix.Comparison
                     (double?)ui["viewport"]?["dpr"] != 1 || (double?)ui["viewport"]?["zoom"] != 1 ||
                     !(ui["state"] is JObject) || !(ui["nodes"] is JArray) || !(ui["safeArea"] is JObject))
                     throw new InvalidOperationException("UI observations must describe the native image, state and actual safe area.");
+                if (context.SceneOptions != null && frame.Scene == null) { throw new InvalidOperationException("Requested scene observations require adapter support."); }
+                if (frame.Scene != null && (frame.Scene.Value<string>("kind") != "helix-scene" || frame.Scene.Value<bool?>("truncated") != false ||
+                    (int?)frame.Scene["viewport"]?["width"] != context.Width || (int?)frame.Scene["viewport"]?["height"] != context.Height ||
+                    !JToken.DeepEquals(frame.Scene["state"], ui["state"]) || !JToken.DeepEquals(frame.Scene["checkpoint"], ui["checkpoint"])))
+                { throw new InvalidOperationException("Scene observations must match native UI state and checkpoint."); }
                 JObject safeArea = (JObject)ui["safeArea"];
                 foreach (string key in new[] { "x", "y", "width", "height" }) {
                     JToken value = safeArea[key];
@@ -117,7 +124,7 @@ namespace Helix.Comparison
                 byte[] bytes = frame.Image.EncodeToPNG();
                 if (bytes == null || bytes.Length == 0) throw new InvalidOperationException("Native PNG encoding failed.");
                 var result = new JObject {
-                    ["schemaVersion"] = 1, ["image"] = "unity.png", ["sha256"] = Hash(bytes), ["ui"] = ui,
+                    ["schemaVersion"] = 1, ["image"] = "unity.png", ["sha256"] = Hash(bytes), ["ui"] = ui, ["scene"] = frame.Scene,
                     ["native"] = new JObject { ["width"] = context.Width, ["height"] = context.Height },
                     ["projectRoot"] = Root, ["editorId"] = "unity:" + System.Diagnostics.Process.GetCurrentProcess().Id,
                     ["scenario"] = context.Scenario, ["source"] = frame.Source, ["capturedFrame"] = frameNumber,

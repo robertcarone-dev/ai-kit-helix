@@ -1,3 +1,5 @@
+import { resolveSceneOptions } from './scene-options.ts';
+import { sceneReview } from './scene-review.ts';
 import { unityExecutable } from './unity-plan.ts';
 import { isolatedWorkspace } from './isolation.ts';
 import { randomUUID } from 'node:crypto';
@@ -147,6 +149,15 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
     if (typeof c.uiSpec !== 'string') throw new Error('Case needs uiSpec path.');
     const uiSpec = resolve(root, c.uiSpec);
     validateSpec(JSON.parse(readFileSync(uiSpec, 'utf8')));
+    if (c.sceneSpec !== undefined) {
+      if (typeof c.sceneSpec !== 'string' || typeof c.sceneProfile !== 'string')
+        throw new Error('Scene case requires sceneSpec and sceneProfile');
+      c.sceneSpec = resolve(root, c.sceneSpec);
+      const scene = JSON.parse(readFileSync(c.sceneSpec, 'utf8'));
+      if (scene.schemaVersion !== 1 || !Array.isArray(scene.mappings) || !scene.mappings.length)
+        throw new Error('Invalid scene spec');
+      c.sceneOptions = resolveSceneOptions(config, c.sceneProfile);
+    }
     return { ...c, uiSpec, out: join(out, c.id) };
   });
   if (options.execute === undefined)
@@ -268,12 +279,23 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           )
             throw new Error('Incomplete Unity lifecycle recipe: ' + stage);
         mkdirSync(join(c.out, 'unity'), { recursive: true });
+        if (c.sceneSpec)
+          writeFileSync(join(c.out, 'unity', 'scene-request.json'), JSON.stringify(c.sceneOptions));
         for (const argv of plan.stages.preflight) await invoke(executable, argv, 'preflight');
         browserAttempted = true;
         await helix(['start', '--viewport', c.viewport], 'reference-start');
         browserOwned = true;
         await helix(['scenario', c.scenario], 'reference-scenario');
-        await helix(['capture', c.id, '--out', join(c.out, 'reference')], 'reference-capture');
+        await helix(
+          [
+            'capture',
+            c.id,
+            '--out',
+            join(c.out, 'reference'),
+            ...(c.sceneSpec ? ['--scene-profile', c.sceneProfile] : []),
+          ],
+          'reference-capture',
+        );
         prepareAttempted = true;
         for (const argv of plan.stages.prepare) {
           if (interrupted) throw new Error('Interrupted');
@@ -302,6 +324,34 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           join(c.out, 'review'),
         );
         row.status = row.comparison.status;
+        if (c.sceneSpec) {
+          const review = sceneReview(
+            join(c.out, 'reference/reference.json'),
+            join(c.out, 'unity/unity.json'),
+            c.sceneSpec,
+            join(c.out, 'scene-review'),
+          );
+          row.sceneReview = { viewer: review.viewer, inputs: review.report.inputs };
+          const statuses = [
+            ...review.report.mappings,
+            ...review.report.relationships,
+            ...review.report.styles,
+            ...review.report.appearance,
+          ].map((c) => c.status);
+          for (const landmark of review.report.geometry.landmarks) {
+            statuses.push(landmark.screenStatus);
+            if (review.report.geometry.coordinates) statuses.push(landmark.worldStatus);
+          }
+          if (review.report.prerequisites.length || row.status === 'blocked')
+            row.status = 'blocked';
+          else if (row.status === 'difference' || statuses.includes('different'))
+            row.status = 'difference';
+          else if (
+            row.status === 'unmeasured' ||
+            statuses.some((s) => ['unmeasured', 'unresolved'].includes(s))
+          )
+            row.status = 'unmeasured';
+        }
       } catch (e) {
         row.status = 'blocked';
         row.error = String(e);

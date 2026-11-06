@@ -22,7 +22,7 @@ With a ready session and a selected named scenario:
 ./Tools/Helix/bin/helix scene-compare --reference .helix/reference-scene.json --candidate .helix/unity-scene.json --spec Tools/Helix/scene-case.json --out .helix/evidence/scene-01
 ```
 
-`scene-look` prints a JSON snapshot. It uses configured Phaser/Three selectors and collects semantic bindings from the UI binding files plus optional `sceneBindings` entries containing `id` and a reference-side `expression`. Expressions must resolve one intended object. The selected scenario supplies state and checkpoint. Capture the matching Unity snapshot through the project adapter; `scene-compare` reads files and does not execute either engine.
+`scene-look` prints a JSON snapshot. Use `--profile NAME` on `scene-look` or `scene-record` to select a built-in profile or a project-defined profile. It uses configured Phaser/Three selectors and collects semantic bindings from the UI binding files plus optional `sceneBindings` entries containing `id` and a reference-side `expression`. Expressions must resolve one intended object. The selected scenario supplies state and checkpoint. Capture the matching Unity snapshot through the project adapter; `scene-compare` reads files and does not execute either engine.
 
 A project-owned comparison spec selects nodes explicitly:
 
@@ -55,21 +55,78 @@ The output directory must be empty. It receives:
 - `report.json`, including input SHA-256 hashes, prerequisite failures, mapping results and name-only suggestions.
 - `reference.svg` and `candidate.svg`, transparent geometric overlays at the respective viewport dimensions. These are standalone diagrams, not composited screenshots.
 
+## Paired image review and one-case execution
+
+Use capture receipts with inline `scene` snapshots to review measured differences beside verified native images:
+
+```sh
+./Tools/Helix/bin/helix scene-report --reference .helix/reference/reference.json --candidate .aikit/scratch/case/unity/unity.json --spec Tools/Helix/scene-case.json --out .helix/evidence/scene-review-01
+```
+
+`scene-report` verifies each PNG hash and native dimensions, then checks the scene's viewport, state and checkpoint against its receipt's UI snapshot. It writes `report.json` and a self-contained `review.html` with embedded images. Open the HTML locally to select a mapping, toggle its bounds, crop both sides to the selected element, and inspect appearance, relationship, style, landmark and provenance data. Crops follow each side's own bounds; similar displayed crop sizes do not prove equal native dimensions. The original measurements remain in the report. No external service receives the evidence.
+
+To prepare and verify one case through an existing project lifecycle, create a matrix with exactly one case:
+
+```json
+{
+  "schemaVersion": 1,
+  "cases": [{
+    "id": "panel-phone",
+    "scenario": "panel",
+    "viewport": "phone",
+    "uiSpec": "Tools/Helix/ui-panel.json",
+    "sceneSpec": "Tools/Helix/scene-panel.json",
+    "sceneProfile": "panel-layout"
+  }]
+}
+```
+
+```sh
+./Tools/Helix/bin/helix scene-case --spec Tools/Helix/scene-matrix.json --out .aikit/scratch/scene-case-01
+./Tools/Helix/bin/helix scene-case --spec Tools/Helix/scene-matrix.json --out .aikit/scratch/scene-case-01 --execute yes
+```
+
+The first command plans; only explicit execution runs supplied recipes. `scene-case` reuses the UI matrix lifecycle (`Tools/Helix/UI.md` when installed; [ui.md](ui.md#matrix-plan-and-explicit-execution) in the source repository), including its storage/compatibility prerequisites, owned-session rules and restoration. It does not acquire a seat or provision an Editor. `uiSpec` remains required. For multiple cases, `ui-matrix` accepts the same optional `sceneSpec` and `sceneProfile` fields per case. Each scene-enabled case writes resolved options to `unity/scene-request.json`, captures the reference with that profile, compares UI and scene evidence, and writes its viewer under `scene-review/`.
+
+The Unity recipe must read the request and include the matching snapshot in `unity.json` as `scene`. With the optional shared helper, the adapter reads `ComparisonContext.SceneOptions` and returns `ComparisonFrame.Scene`; missing requested scene evidence blocks the case. The project chooses roots, cameras and bindings. Use the same observed state, checkpoint and dimensions as the UI snapshot. Restoration is attempted after preparation begins even if capture or comparison fails; inspect cleanup receipts before reusing the lane.
+
 ## Snapshot scope and result statuses
 
 Snapshots preserve engine-native node data alongside bounds measured in top-left viewport pixels. Comparisons require native viewport metadata with DPR and zoom both 1, a complete bounded inventory and a valid hierarchy. Matching viewport dimensions, nonempty checkpoint and equivalent state are prerequisites for measurement. Binding errors suppress only the affected semantic selectors; independent mappings continue. All observed binding errors remain in the report’s `bindingErrors` field, including errors outside the requested scope.
 
 A mapping is `unresolved` when a selector is missing, ambiguous or has a failed semantic binding. It is `unmeasured` when prerequisites fail or selected bounds are unavailable. Otherwise its x, y, width and height deltas are compared separately against the explicit nonnegative `tolerancePx`, producing `within-tolerance` or `different`. Those labels describe rectangle measurements only. The report also records normalized viewport rectangles and visibility observations.
 
-Phaser extraction uses the main camera for supported single-camera, unmasked, unrotated-camera bounds. Unsupported camera/mask cases have no bounds. Three extraction projects existing geometry bounds only when an explicit output-surface mapping and supported geometry are available. Neither engine's inventory proves occlusion or final visible pixels.
+Phaser extraction uses the main camera for supported single-camera, unmasked, unrotated-camera bounds. Unsupported camera/mask cases have no bounds. Three extraction projects supported local geometry bounds only when an explicit output-surface mapping is available. Neither engine's inventory proves occlusion or final visible pixels.
+
+## Scoped capture profiles
+
+Define reusable scopes in project configuration:
+
+```json
+{
+  "sceneProfiles": {
+    "panel-layout": {
+      "profile": "layout",
+      "semanticIds": ["example.panel", "example.label"],
+      "includeDescendants": false
+    }
+  }
+}
+```
+
+Use `scene-look --profile panel-layout` or `scene-record --profile panel-layout`. Built-in profiles are `all`, `layout`, `geometry`, `appearance` and `motion`; the default is `all`. `layout` omits Three/Unity mesh projection and focuses on UI observations. `geometry` and `motion` omit appearance inventories. `appearance` retains supported geometry plus appearance fields. Profiles do not change game state.
+
+A scoped snapshot retains selected semantic nodes and the ancestors needed to preserve hierarchy. Ancestors marked `structuralOnly` are context, not measured elements. `includeDescendants` adds descendants of selected nodes; it defaults to false. Include every node needed by mappings, relationships and style rules. Omitted fields and nodes remain unmeasured rather than being filled from another capture.
+
+`capture --out PATH --scene-profile NAME` collects the selected scene snapshot during the existing capture hold and embeds it in the receipt. It reduces preparation and transport work but does not make all engine observations atomic. Prefer a settled checkpoint for static measurements. `geometryRevision` is an optional project-defined string in the profile; change it whenever otherwise unversioned geometry edits need cache invalidation.
 
 ## Camera-aware geometry
 
 A 3D camera renders into a surface that may occupy only part of the final image. Configure `three.surface` as an expression returning `{x, y, width, height, axisAligned: true}` in final viewport pixels. Use the actual displayed output rectangle, including its offset and size. Do not substitute the full viewport for a canvas embedded in another surface. Rotated or otherwise non-axis-aligned compositing is unsupported by this rectangle contract.
 
-Three snapshots retain camera world, view and projection matrices plus the output surface. Supported existing geometry bounding boxes are projected through the observed object and camera matrices. Extraction never calls bounding-box computation or updates scene matrices. Missing bounds, skinned/instanced/morph geometry, absent surfaces and near/far clip-plane crossings remain unmeasured. Inspect `boundsMethod`; a projected box is not an exact silhouette.
+Three snapshots retain camera world, view and projection matrices plus the output surface. Supported local geometry boxes are projected through the observed object and camera matrices. When readable position attributes are available, extraction computes a local axis-aligned box from their vertices without changing the geometry or its `boundingBox`. A toolkit-owned WeakMap caches this result by attribute/buffer identity, buffer version and count. `geometryRevision` explicitly invalidates the cache when project code changes positions without advancing the buffer version. Extraction never updates scene matrices. Unsupported vertex buffers, skinned/instanced/actively morphed geometry, absent surfaces and near/far clip-plane crossings remain unmeasured. Inspect `boundsKind` and `boundsMethod`; a projected box is not an exact silhouette.
 
-Unity retains the equivalent camera matrices and projects renderer world bounds. The optional `cameraSurface` argument declares the final output rectangle. The helper infers a surface only when the camera renders directly to display 0 without a RenderTexture and the requested dimensions match `Screen`; it applies the camera viewport within that output. Other paths need an explicit surface. RectTransform measurements retain their separate canvas rules.
+Unity retains the equivalent camera matrices and projects `MeshFilter.sharedMesh.bounds` corners through the object world matrix and camera. Both 3D extractors therefore measure a transformed local axis-aligned box, avoiding the extra expansion caused by a world-axis-aligned box around a rotated object. Unsupported renderer/deformation paths remain unmeasured. The optional `cameraSurface` argument declares the final output rectangle. The helper infers a surface only when the camera renders directly to display 0 without a RenderTexture and the requested dimensions match `Screen`; it applies the camera viewport within that output. Other paths need an explicit surface. RectTransform measurements retain their separate canvas rules.
 
 All stored matrices are column-major. Camera projection uses the CPU clip convention with depth from -1 to 1. The comparison projects each side through its own camera; it does not equate FOV, Euler angles or raw transform components across engines.
 
@@ -116,7 +173,9 @@ Snapshots retain available engine-native appearance evidence:
 
 - Phaser texture/frame references, text/font fields, tint, blend mode and mask presence.
 - Three material identity, selected material values, texture slots and light properties.
-- Unity shared material/shader identity, selected shader properties, texture slots and light properties.
+- Unity material/shader identity, selected effective shader properties, texture slots and light properties, including supported renderer property-block overrides.
+
+Unity `raw.materials[].properties` holds effective supported values. `materialDefaults` retains the underlying material values, and `propertySources` identifies material, renderer property block or indexed material property block provenance. A nonempty indexed block replaces the renderer-wide block for that material slot; missing properties fall back to the material rather than merging both blocks. Texture entries also retain override and transform provenance. This is a bounded supported-property inventory: shader-specific values and interpretation belong in project adapters.
 
 When `three.renderer` is configured, snapshots also retain available output-color-space, tone-mapping, exposure and shadow-enabled observations. Unity snapshots retain active color space and selected ambient/fog settings. These snapshot-level `pipeline` fields are context for manual diagnosis, outside the node-property appearance selectors. This is a bounded property inventory, not a complete shader, texture-content, lighting or rendering-pipeline extraction. Asset names and paths identify observations; they do not prove identical asset bytes.
 
@@ -149,6 +208,34 @@ For example, the following addition compares the color of explicitly matched lig
 
 Matching normalized input values does not establish matching rendered appearance. Use native images to inspect exposure, tone mapping, shadows, compositing and effects absent from the snapshot.
 
+## Relationships and repeated styles
+
+A group union can match while its children are incorrectly spaced. Add `relationships` to the comparison spec to measure two ordered elements independently in each engine:
+
+```json
+{
+  "relationships": [{
+    "id": "label-gap",
+    "kind": "gap-x",
+    "tolerance": 1,
+    "reference": [{"semanticId": "example.icon"}, {"semanticId": "example.label"}],
+    "candidate": [{"semanticId": "example.icon"}, {"semanticId": "example.label"}]
+  }]
+}
+```
+
+Each selector names one `id` or `semanticId`. Supported kinds are:
+
+- `gap-x` and `gap-y`: the second element's leading edge minus the first element's trailing edge.
+- `align-x` and `align-y`: the second element's center minus the first element's center on that axis.
+- `ratio-width` and `ratio-height`: the second size divided by the first size; zero denominators remain unmeasured.
+- `distance`: Euclidean distance between the two element centers.
+- `baseline`: the second `raw.baseline` minus the first. Project adapters must supply measured baseline coordinates in final-output pixels; absent baselines remain unmeasured.
+
+The report compares candidate and reference measurements using the explicit nonnegative `tolerance`. Ratios are unitless; all other kinds use pixels. Missing selectors, bounds or prerequisites remain unmeasured. These diagnostics do not prove clipping, hit regions or rendered pixels.
+
+Add `styles` for project-owned repeated visual roles. Each role has a unique `id`, an appearance `mode`, its required `tolerance`, and a nonempty `members` array. Every member contains `reference` and `candidate` appearance selectors with explicit property paths and any required conversions/color spaces. The same appearance modes apply. The report compares each pair across engines, then compares every later member to the first member within each engine. This detects a role that is inconsistent even when a broad group rectangle matches. A one-member role has no within-engine repetition check. Keep intentional variations in separate roles rather than widening tolerances to hide them.
+
 ## Temporal scene sampling
 
 `scene-record` samples the current ready named scenario without replaying setup, resetting animation or changing game time:
@@ -160,7 +247,7 @@ Matching normalized input values does not establish matching rendered appearance
 
 Duration must be greater than 0 and at most 30 seconds; interval must be 16–5000 milliseconds, with at most 300 planned samples and a 64 MB collected-snapshot budget. Scheduling and probe costs can lengthen the observed interval. Inspect actual timestamps instead of treating the requested interval as a fixed frame rate.
 
-`sequence.json` contains `samples` with `sampledAtMs` and a `snapshot`. The host's `sampledAtMs` measures collection time, not a shared event clock. Supply a project-owned `sceneTimeline` expression returning `{event, elapsedMs}`; each snapshot retains this as `timeline`. Establish the same observable event in both engines and document its clock basis. A readiness marker alone does not establish animation onset or matching animation phase.
+`sequence.json` contains `samples` with `sampledAtMs` and a `snapshot`. `sampledAtMs` measures sampler-relative collection time, not a shared event clock. Browser recording runs its samples inside one browser evaluation and transfers the sequence as a batch. Browser and Unity samplers schedule against deadlines, skip missed slots instead of queuing catch-up work, and report `intervalMs` and `missedSamples`. Each sample includes `scheduledAtMs` and `captureDurationMs`. Inspect these fields before claiming temporal coverage; a requested interval is not a guaranteed sample rate. Supply a project-owned `sceneTimeline` expression returning `{event, elapsedMs}`; each snapshot retains this as `timeline`. Establish the same observable event in both engines and document its clock basis. A readiness marker alone does not establish animation onset or matching animation phase.
 
 For Unity, `SceneSampling.Start(capture, outputDirectory, durationSeconds, intervalMs)` samples a project-supplied read-only function that returns a scene snapshot. The function must attach the project's observed timeline for temporal comparison. Use `Status()` to inspect progress and `Stop()` to retain an incomplete early-stop sequence. Output must be a fresh directory under the project's `.helix` or `.aikit/scratch`. Handled probe errors and Editor reload/shutdown interruptions retain incomplete receipts; abrupt process termination is not a durable capture guarantee.
 
@@ -191,7 +278,7 @@ Bounds and overlays are diagnostic approximations. They do not resolve all masks
 
 ## Unity collection
 
-The optional reusable `SceneSnapshot.Capture(root, camera, width, height, state, checkpoint, bindings, cameraSurface)` helper returns a JSON object. It reads a supplied root, output dimensions and semantic `Transform` bindings. The camera may be omitted for hierarchy-only inventory; 3D projection then remains unmeasured. Screen-space overlay canvas bounds do not require a camera. Other projected render paths require their actual rendering camera and supported output surface. The project adapter chooses those objects and supplies semantic bindings; the generic helper does not search for a game's cameras or prepare gameplay state. Invoke it through the project's supported Unity execution route and preserve the returned snapshot with the case evidence.
+The optional reusable `SceneSnapshot.Capture(root, camera, width, height, state, checkpoint, bindings, cameraSurface, options)` helper returns a JSON object. It reads a supplied root, output dimensions and semantic `Transform` bindings. The camera may be omitted for hierarchy-only inventory; 3D projection then remains unmeasured. Screen-space overlay canvas bounds do not require a camera. Other projected render paths require their actual rendering camera and supported output surface. The project adapter chooses those objects and supplies semantic bindings; the generic helper does not search for a game's cameras or prepare gameplay state. Invoke it through the project's supported Unity execution route and preserve the returned snapshot with the case evidence.
 
 Collection does not authorize scene or prefab changes. Use the game's implementation workflow for any resulting fix, then recapture the affected case.
 

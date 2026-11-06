@@ -19,6 +19,7 @@ namespace Helix.Comparison
         private static string _error;
         private static bool _active;
         private static long _bytes;
+        private static int _missed;
 
         public static void Start(Func<JObject> capture, string outputDirectory, double durationSeconds = 1, double intervalMs = 100)
         {
@@ -35,7 +36,7 @@ namespace Helix.Comparison
             if (Directory.Exists(output) && Directory.GetFileSystemEntries(output).Length != 0) { throw new InvalidOperationException("Evidence directory must be empty."); }
             Directory.CreateDirectory(output);
             _capture = capture; _samples = new JArray(); _output = output; _duration = durationSeconds; _interval = intervalMs / 1000;
-            _started = EditorApplication.timeSinceStartup; _next = _started; _error = null; _bytes = 0; _active = true;
+            _started = EditorApplication.timeSinceStartup; _next = _started; _error = null; _bytes = 0; _missed = 0; _active = true;
             EditorApplication.update += Tick;
             AssemblyReloadEvents.beforeAssemblyReload += Interrupted;
             EditorApplication.quitting += Interrupted;
@@ -63,9 +64,12 @@ namespace Helix.Comparison
                 if (snapshot == null || snapshot.Value<string>("kind") != "helix-scene") { throw new InvalidOperationException("Probe must return a scene snapshot."); }
                 _bytes += System.Text.Encoding.UTF8.GetByteCount(snapshot.ToString());
                 if (_bytes > 64000000) { throw new InvalidOperationException("Scene recording exceeds 64MB."); }
-                _samples.Add(new JObject { ["sampledAtMs"] = (now - _started) * 1000, ["snapshot"] = snapshot });
+                _samples.Add(new JObject { ["sampledAtMs"] = (now - _started) * 1000, ["captureDurationMs"] = (EditorApplication.timeSinceStartup - now) * 1000, ["scheduledAtMs"] = (_next - _started) * 1000, ["snapshot"] = snapshot });
                 if (now - _started >= _duration || _samples.Count >= 300) { Finish(true, null); }
-                else { _next = now + _interval; }
+                else {
+                    _next += _interval;
+                    while (_next < EditorApplication.timeSinceStartup) { _next += _interval; _missed++; }
+                }
             }
             catch (Exception error)
             {
@@ -83,7 +87,7 @@ namespace Helix.Comparison
             AssemblyReloadEvents.beforeAssemblyReload -= Interrupted;
             EditorApplication.quitting -= Interrupted;
             _capture = null;
-            var sequence = new JObject { ["schemaVersion"] = 1, ["kind"] = "helix-scene-sequence", ["complete"] = complete, ["samples"] = _samples, ["error"] = error,
+            var sequence = new JObject { ["schemaVersion"] = 1, ["kind"] = "helix-scene-sequence", ["complete"] = complete, ["samples"] = _samples, ["error"] = error, ["intervalMs"] = _interval * 1000, ["missedSamples"] = _missed,
                 ["notes"] = new JArray("Observed Editor updates only. Project timeline markers, not sampledAtMs, align engines. No animation, camera or game state is changed by the sampler.") };
             using (var stream = new FileStream(Path.Combine(_output, "sequence.json"), FileMode.CreateNew, FileAccess.Write))
             using (var writer = new StreamWriter(stream)) { writer.Write(sequence.ToString()); }

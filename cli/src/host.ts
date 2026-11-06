@@ -1,3 +1,5 @@
+import { resolveSceneOptions } from './scene-options.ts';
+import { sampleScene } from './scene-sampler.ts';
 import { nativePng } from './png.ts';
 import { performance } from 'node:perf_hooks';
 import { chromium, type BrowserContext, type Page } from 'playwright';
@@ -290,82 +292,85 @@ function status() {
   };
 }
 
-async function lookScene() {
-  if (!ready || !scenario) throw new Error('scene-look requires a ready named scenario');
+function sceneConfig(profile?: string) {
+  if (!ready || !scenario) throw new Error('Scene capture requires a ready named scenario');
   const s = config.scenarios[scenario];
-  const snapshot = await page.evaluate(
-    '(' +
-      SCENE_INSPECTOR +
-      ')(' +
-      JSON.stringify({
-        phaser: config.phaser,
-        three: config.three,
-        bindings: [...(config.uiBindings ?? []), ...(config.sceneBindings ?? [])],
-        state: s.state,
-        checkpoint: s.checkpoint,
-        timeline: config.sceneTimeline,
-      }) +
-      ')',
-  );
   return {
-    ...snapshot,
-    provenance: {
-      projectRoot: root,
-      configHash,
-      referenceIdentity: config.referenceIdentity,
-      scenario,
-      sessionId,
-    },
+    phaser: config.phaser,
+    three: config.three,
+    bindings: [...(config.uiBindings ?? []), ...(config.sceneBindings ?? [])],
+    state: s.state,
+    checkpoint: s.checkpoint,
+    timeline: config.sceneTimeline,
+    options: resolveSceneOptions(config, profile),
   };
 }
-
+function sceneProvenance() {
+  return {
+    projectRoot: root,
+    configHash,
+    referenceIdentity: config.referenceIdentity,
+    scenario,
+    sessionId,
+  };
+}
+async function lookScene(profile?: string) {
+  const snapshot = await page.evaluate(
+    '(' + SCENE_INSPECTOR + ')(' + JSON.stringify(sceneConfig(profile)) + ')',
+  );
+  return { ...snapshot, provenance: sceneProvenance() };
+}
 async function recordScene(req: any) {
-  const seconds = Number(req.duration ?? 1),
-    interval = Number(req.interval ?? 100);
+  const durationMs = Number(req.duration ?? 1) * 1000,
+    intervalMs = Number(req.interval ?? 100);
   if (
-    !Number.isFinite(seconds) ||
-    seconds <= 0 ||
-    seconds > 30 ||
-    !Number.isFinite(interval) ||
-    interval < 16 ||
-    interval > 5000 ||
-    Math.ceil((seconds * 1000) / interval) + 1 > 300 ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0 ||
+    durationMs > 30000 ||
+    !Number.isFinite(intervalMs) ||
+    intervalMs < 16 ||
+    intervalMs > 5000 ||
+    Math.ceil(durationMs / intervalMs) + 1 > 300 ||
     !req.out
   )
     throw new Error(
       'scene-record requires out, duration >0..30s, interval 16..5000ms and at most 300 samples',
     );
-  if (!ready || !scenario) throw new Error('scene-record requires a ready named scenario');
-  const out = emptyOutput(req.out),
-    samples = [];
-  const start = performance.now();
-  let error = null;
-  let bytes = 0;
+  const settings = sceneConfig(req.profile),
+    out = emptyOutput(req.out);
+  let sequence;
   try {
-    while (samples.length < 300) {
-      const sample = { sampledAtMs: performance.now() - start, snapshot: await lookScene() };
-      bytes += Buffer.byteLength(JSON.stringify(sample));
-      if (bytes > 64000000) throw new Error('Scene recording exceeds 64MB');
-      samples.push(sample);
-      if (samples.length >= 2 && performance.now() - start >= seconds * 1000) break;
-      await new Promise((r) => setTimeout(r, interval));
-    }
+    sequence = await page.evaluate(
+      '(' +
+        sampleScene.toString() +
+        ')(' +
+        SCENE_INSPECTOR +
+        ',' +
+        JSON.stringify(settings) +
+        ',' +
+        JSON.stringify({ durationMs, intervalMs }) +
+        ')',
+    );
+    for (const s of sequence.samples) s.snapshot.provenance = sceneProvenance();
   } catch (e) {
-    error = String(e);
+    sequence = {
+      schemaVersion: 1,
+      kind: 'helix-scene-sequence',
+      complete: false,
+      samples: [],
+      error: String(e),
+      notes: ['Browser process failed; in-page samples could not be recovered.'],
+    };
   }
-  const sequence = {
-    schemaVersion: 1,
-    kind: 'helix-scene-sequence',
-    complete: error === null,
-    samples,
-    error,
-    notes: [
-      'Observation only. Timeline alignment requires a project sceneTimeline expression; host sampledAtMs is not a shared event clock.',
-    ],
-  };
   writeFileSync(join(out, 'sequence.json'), JSON.stringify(sequence, null, 2));
-  if (error) throw new Error('Partial scene sequence retained: ' + out + '; ' + error);
-  return { out, samples: samples.length, complete: true };
+  if (!sequence.complete)
+    throw new Error('Partial scene sequence retained: ' + out + '; ' + sequence.error);
+  return {
+    out,
+    samples: sequence.samples.length,
+    complete: true,
+    missedSamples: sequence.missedSamples,
+  };
 }
 
 async function lookUI(match = '') {
@@ -390,7 +395,7 @@ async function lookUI(match = '') {
   return snapshot;
 }
 
-async function capture(label: string, output?: string) {
+async function capture(label: string, output?: string, sceneProfile?: string) {
   if (!ready) throw new Error('Session not ready; reset after diagnosing the failure.');
   const s = scenario ? config.scenarios[scenario] : null;
   if (s) {
@@ -407,14 +412,19 @@ async function capture(label: string, output?: string) {
           config.phaser +
           ');if(!g?.loop?.sleep||!g?.loop?.wake)throw new Error("Phaser clock hold unavailable");const running=g.loop.running;g.loop.sleep();return running;})()',
       );
-    return await captureHeld(label, output, !!hold);
+    return await captureHeld(label, output, !!hold, sceneProfile);
   } finally {
     if (restore) await page.evaluate('(' + config.phaser + ').loop.wake(true)');
   }
 }
 
 /** Collect state, UI metrics and a native PNG; hash the evidence without claiming revision parity. */
-async function captureHeld(label: string, output?: string, clockHeld = false) {
+async function captureHeld(
+  label: string,
+  output?: string,
+  clockHeld = false,
+  sceneProfile?: string,
+) {
   const captureStarted = performance.now();
   if (!ready) throw new Error('Session not ready; reset after diagnosing the failure.');
   const s = scenario ? config.scenarios[scenario] : null;
@@ -424,6 +434,8 @@ async function captureHeld(label: string, output?: string, clockHeld = false) {
   const state = s?.state ? await evaluate(s.state) : null;
   const ui = await lookUI();
   ui.clockHold = clockHeld ? 'phaser-loop' : 'none';
+  const scene = sceneProfile ? await lookScene(sceneProfile) : undefined;
+  if (scene) scene.clockHold = ui.clockHold;
   const inspectionMs = performance.now() - captureStarted,
     pngStarted = performance.now();
   const png = await nativePng(page);
@@ -466,6 +478,7 @@ async function captureHeld(label: string, output?: string, clockHeld = false) {
     identity,
     inspection,
     ui,
+    scene,
     image: 'reference.png',
     timings: {
       inspectionMs,
@@ -504,7 +517,7 @@ async function dispatch(req: any) {
   }
   if (req.method === 'look') return look(req.match);
   if (req.method === 'ui-look') return lookUI(req.match);
-  if (req.method === 'scene-look') return lookScene();
+  if (req.method === 'scene-look') return lookScene(req.profile);
   if (req.method === 'scene-record') return recordScene(req);
   if (req.method === 'step') {
     readiness.invalidate();
@@ -512,7 +525,7 @@ async function dispatch(req: any) {
     if (req.step.kind !== 'wait') scenario = null;
     return look();
   }
-  if (req.method === 'capture') return capture(req.label, req.out);
+  if (req.method === 'capture') return capture(req.label, req.out, req.sceneProfile);
   if (req.method === 'record') {
     const seconds = Number(req.duration ?? 3);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 30)

@@ -1,3 +1,4 @@
+import { relationshipDiagnostics, styleDiagnostics } from './scene-relations.ts';
 import { appearanceDiagnostics } from './scene-diagnostics.ts';
 import { compareGeometry } from './scene-geometry.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -123,7 +124,11 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
       };
     const rb = union(a.nodes),
       cb = union(b.nodes);
-    const measured = prerequisites.length === 0 && rb && cb;
+    const kinds = [...a.nodes, ...b.nodes].map((n) => n.boundsKind).filter(Boolean);
+    const incompatible =
+      kinds.some((k) => k === 'projected-world-aabb-3d') &&
+      kinds.some((k) => k === 'projected-local-aabb-3d');
+    const measured = prerequisites.length === 0 && rb && cb && !incompatible;
     const delta = measured
       ? Object.fromEntries(['x', 'y', 'width', 'height'].map((k) => [k, cb[k] - rb[k]]))
       : null;
@@ -160,6 +165,7 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
         visible: b.nodes.map((n) => n.visible),
       },
       deltaPx: delta,
+      measurementIssue: incompatible ? 'incompatible-bounds-methods' : null,
       normalized: measured
         ? {
             reference: {
@@ -212,6 +218,8 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
       reference: reference.bindingErrors ?? [],
       candidate: candidate.bindingErrors ?? [],
     },
+    relationships: relationshipDiagnostics(reference, candidate, spec, prerequisites),
+    styles: styleDiagnostics(reference, candidate, spec, prerequisites),
     geometry: compareGeometry(reference, candidate, spec, prerequisites),
     appearance: appearanceDiagnostics(reference, candidate, spec, prerequisites),
     prerequisites,

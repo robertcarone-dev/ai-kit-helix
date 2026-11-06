@@ -145,3 +145,30 @@ Native top-left screen bounds are observations, not prefab-local positions. Canv
 Typography diagnostics separate known text, font, wrapping and baseline observations. They do not select replacement fonts, identify unobserved fallback glyphs or prove rasterization equivalence. Retain the original font provenance and inspect the rendered result.
 
 Never edit prefab YAML by hand. Synthetic tests validate conversion and guards; they do not establish live game parity. Adopt new tooling at the assigned agent's safe checkpoint without replacing an active capture session.
+
+## Reviewed conversion manifests
+
+Use `conversion-plan` to retain approved semantic links between source assets, layout targets and verification cases across tasks:
+
+```sh
+./Tools/Helix/bin/helix conversion-plan --spec Tools/Helix/conversion-panel.json --out .helix/evidence/conversion-panel-01
+```
+
+The project-owned manifest has this shape; replace the hash placeholders with actual SHA-256 values:
+
+```json
+{
+  "schemaVersion": 1,
+  "approved": true,
+  "assets": {"path": "Tools/Helix/assets-panel.json", "sha256": "REVIEWED_ASSET_SPEC_SHA256"},
+  "layout": {"path": "Tools/Helix/layout-panel.json", "sha256": "REVIEWED_LAYOUT_SPEC_SHA256"},
+  "elements": [{"id": "example.panel", "assetIds": ["panel-frame"], "layoutId": "example.panel"}],
+  "verification": [{"path": "Tools/Helix/panel-matrix.json", "sha256": "REVIEWED_MATRIX_SHA256"}]
+}
+```
+
+At least one of `assets` or `layout` is required. Paths resolve inside the consuming project. Each element needs a unique semantic `id` and at least one linked asset or layout operation. `assetIds` refer to exact IDs in the asset spec; `layoutId` must equal the element's semantic ID and identify exactly one layout element. Every operation in the linked specs must appear in the manifest. Hash drift, unresolved links and hidden operations block planning.
+
+The command runs the existing `ui-assets` and/or `ui-plan` contracts into `assets/` and `layout/`. `conversion.json` retains manifest/input hashes, element links, status and verification command plans. Verification entries are hash-pinned matrix specs; the command does not execute them. Run them through the supported matrix lifecycle after implementing the reviewed changes. A layout planner can produce a partial proposal when some operations remain blocked; inspect that result before authoring.
+
+`approved: true` records that the project has reviewed these links. It does not approve generated changes automatically, import assets, apply prefab edits or establish parity. Preserve the existing authoring preview, expected-value/hash checks and native verification workflow. Fonts, custom materials and gameplay behavior need their own project-owned handling when the linked tools do not support them.

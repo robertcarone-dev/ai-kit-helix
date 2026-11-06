@@ -19,7 +19,7 @@ Follow [the port recipe](../helix-reference/references/port-recipe.md). Map the 
 
 ## Scene sampling support
 
-Read `Tools/Helix/Scene.md` for `scene-record`, the optional Unity `SceneSampling` helper and `scene-motion`. Use a project-observed event timeline, not sampler start time, to align snapshots. The sampler observes the current scenario; it does not reset animations or reproduce an event automatically. Inspect actual sample timing and unmatched coverage, and keep unsampled transitions unmeasured. A fixture-readiness marker is not animation onset. Retain video and input/event evidence for rendered motion and behavior.
+Read `Tools/Helix/Scene.md` for `scene-record`, the optional Unity `SceneSampling` helper and `scene-motion`. Use a project-observed event timeline, not sampler start time, to align snapshots. The sampler observes the current scenario; it does not reset animations or reproduce an event automatically. Use a scoped motion profile containing required nodes; choose appearance only when property sampling is required. Inspect actual sample timing, capture durations, missed deadlines and unmatched coverage, and keep unsampled transitions unmeasured. A fixture-readiness marker is not animation onset. Retain video and input/event evidence for rendered motion and behavior.
 
 ## Procedure
 

@@ -41,6 +41,37 @@ public static class SceneSmoke
         Material originalMaterial = cube.GetComponent<Renderer>().sharedMaterial;
         SceneSnapshot.Capture(root, camera, 120, 240, new JObject(), "test", null, surface);
         Check(cube.GetComponent<Renderer>().sharedMaterial == originalMaterial, "Probe instantiated or replaced shared material");
+        var block = new MaterialPropertyBlock();
+        block.SetColor("_Color", Color.red);
+        cube.GetComponent<Renderer>().SetPropertyBlock(block);
+        snapshot = SceneSnapshot.Capture(root, camera, 120, 240, new JObject(), "test", null, surface);
+        Check(snapshot["nodes"][3]["raw"]["materials"][0]["properties"]["_Color"][0].Value<float>() == 1 && snapshot["nodes"][3]["raw"]["materials"][0]["properties"]["_Color"][1].Value<float>() == 0, "Renderer override color missing");
+        Check(snapshot["nodes"][3]["raw"]["materials"][0]["propertySources"].Value<string>("_Color") == "renderer-property-block", "Override source missing");
+        var indexed = new MaterialPropertyBlock(); indexed.SetFloat("_Glossiness", 0.25f);
+        cube.GetComponent<Renderer>().SetPropertyBlock(indexed, 0);
+        snapshot = SceneSnapshot.Capture(root, camera, 120, 240, new JObject(), "test", null, surface);
+        Check(snapshot["nodes"][3]["raw"]["materials"][0]["propertySources"].Value<string>("_Color") == "material", "Indexed block incorrectly merged with renderer block");
+        Check(snapshot["nodes"][3]["raw"]["materials"][0]["properties"].Value<float>("_Glossiness") == 0.25f, "Indexed override missing");
+        cube.transform.localScale = new Vector3(4, 0.2f, 0.2f);
+        cube.transform.rotation = Quaternion.Euler(0, 30, 40);
+        camera.transform.position = new Vector3(3, 2, -5); camera.transform.LookAt(Vector3.zero);
+        snapshot = SceneSnapshot.Capture(root, camera, 120, 240, new JObject(), "test", null, surface);
+        Check(snapshot["nodes"][3].Value<string>("boundsKind") == "projected-local-aabb-3d", "Local box method missing");
+        Bounds local = cube.GetComponent<MeshFilter>().sharedMesh.bounds;
+        float top = float.PositiveInfinity, bottom = float.NegativeInfinity;
+        for (int i = 0; i < 8; i++) {
+            Vector3 point = new Vector3((i & 1) == 0 ? local.min.x : local.max.x, (i & 2) == 0 ? local.min.y : local.max.y, (i & 4) == 0 ? local.min.z : local.max.z);
+            Vector3 projected = camera.WorldToViewportPoint(cube.transform.TransformPoint(point));
+            float y = 20 + (1 - projected.y) * 200; top = Mathf.Min(top, y); bottom = Mathf.Max(bottom, y);
+        }
+        Check(Math.Abs(snapshot["nodes"][3]["bounds"].Value<float>("height") - (bottom - top)) < 0.01f, "Rotated local box disagrees with native camera projection");
+        File.WriteAllText(Path.Combine(Application.dataPath, "../scene-rotated.json"), snapshot.ToString());
+        var selected = new System.Collections.Generic.Dictionary<Transform, string> { [cube.transform] = "cube" };
+        var options = new JObject { ["profile"] = "geometry", ["semanticIds"] = new JArray("cube") };
+        snapshot = SceneSnapshot.Capture(root, camera, 120, 240, new JObject(), "test", selected, surface, options);
+        Check(((JArray)snapshot["nodes"]).Count == 2 && snapshot["nodes"][1]["raw"]["materials"].Type == JTokenType.Null, "Scope/profile retained unrelated material nodes");
+        cube.transform.localScale = Vector3.one;
+        camera.transform.position = new Vector3(0, 0, -5); camera.transform.rotation = Quaternion.identity;
         cube.transform.position = camera.transform.position;
         snapshot = SceneSnapshot.Capture(root, camera, 120, 240, new JObject(), "test", null, surface);
         Check(snapshot["nodes"][3]["bounds"].Type == JTokenType.Null, "Near-plane crossing must be unmeasured");
