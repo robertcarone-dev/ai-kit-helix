@@ -21,6 +21,8 @@ Identify the catalog-resolved project and variant, preview URL, served-content h
 5. After a prerequisite failure, allow one retry only when a concrete prerequisite changes; record that change. If it fails again, mark affected cases blocked and continue independent cases. Never repeat unchanged capture or startup attempts.
 6. Use fresh output directories. Attach evidence or place executable helpers in the repository so the next lane can access them; a bare board attachment ID or another lane's temporary path is not a usable handoff.
 
+For report-only scene failures, use `scene-report` with retained valid receipts and a fresh output directory before considering recapture. Follow `Tools/Helix/Scene.md` for explicit context, outcome and observation classification. Keep actual outcome differences and missing observations visible; changing the report contract cannot create missing evidence.
+
 ## Efficient static capture
 
 For static fixture views, prefer the configured `batch` command in `Tools/Helix/Toolkit.md` over repeated full audits. Its adapter contract is in `Tools/Helix/Adapter.md`. Load once per viewport worker, request only the required views, and leave destruction and video out unless the acceptance criterion requires them. Do not infer fixture behavior from another project's adapter.

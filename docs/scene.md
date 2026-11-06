@@ -65,6 +65,8 @@ Use capture receipts with inline `scene` snapshots to review measured difference
 
 `scene-report` verifies each PNG hash and native dimensions, then checks the scene's viewport, state and checkpoint against its receipt's UI snapshot. It writes `report.json` and a self-contained `review.html` with embedded images. Open the HTML locally to select a mapping, toggle its bounds, crop both sides to the selected element, and inspect appearance, relationship, style, landmark and provenance data. Crops follow each side's own bounds; similar displayed crop sizes do not prove equal native dimensions. The original measurements remain in the report. No external service receives the evidence.
 
+For a report-only failure, rerun `scene-report` with the retained valid receipts and a fresh output directory after correcting the spec or reporting code. It does not start either engine or recapture images. Preserve the original evidence and record the new spec and report hashes. Re-review cannot supply missing observations; criteria depending on uncaptured state remain unmeasured.
+
 To prepare and verify one case through an existing project lifecycle, create a matrix with exactly one case:
 
 ```json
@@ -90,9 +92,30 @@ The first command plans; only explicit execution runs supplied recipes. `scene-c
 
 The Unity recipe must read the request and include the matching snapshot in `unity.json` as `scene`. With the optional shared helper, the adapter reads `ComparisonContext.SceneOptions` and returns `ComparisonFrame.Scene`; missing requested scene evidence blocks the case. The project chooses roots, cameras and bindings. Use the same observed state, checkpoint and dimensions as the UI snapshot. Restoration is attempted after preparation begins even if capture or comparison fails; inspect cleanup receipts before reusing the lane.
 
+## State context and measured outcomes
+
+Without `stateContract`, scene comparison requires exact equality of the complete state objects. A project may explicitly separate the context needed to compare geometry from measured game outcomes and observational metadata:
+
+```json
+"stateContract": {
+  "contextKeys": ["view", "seed", "result"],
+  "outcomeKeys": ["coins", "rewardText"],
+  "observationalKeys": ["timeline"]
+}
+```
+
+Add this optional object to the scene comparison spec. Keys are top-level property names, not nested paths. `contextKeys` must be nonempty; names must be nonempty and unique across all three lists. Choose context that identifies the actual screen or overlay, fixture and seed required by the case.
+
+- Context properties must exist on both sides and match exactly. Explicit `null` is an observed value; an absent property is unmeasured. Missing or different context blocks dependent geometry measurements.
+- Outcome properties report `same`, `different` or `unmeasured`. A missing observation remains unmeasured. Outcome differences do not block geometry, but contribute to a matrix case's difference or unmeasured verdict.
+- Observational properties remain in the report as `observed-only`. Classifying a timeline this way does not establish timing parity; use a motion comparison when timing is an acceptance criterion.
+- Any captured property absent from all three lists remains an unmeasured outcome with reason `unclassified-state-key`. New adapter fields cannot silently disappear from review.
+
+Supply actual observations from each engine. Do not rewrite balances, rewards or other outcomes to match the reference, or classify required outcomes as observational to obtain a passing result. Each receipt's scene and UI snapshots must still agree on their own complete state and checkpoint. The contract governs comparison between engines; it does not relax receipt consistency.
+
 ## Snapshot scope and result statuses
 
-Snapshots preserve engine-native node data alongside bounds measured in top-left viewport pixels. Comparisons require native viewport metadata with DPR and zoom both 1, a complete bounded inventory and a valid hierarchy. Matching viewport dimensions, nonempty checkpoint and equivalent state are prerequisites for measurement. Binding errors suppress only the affected semantic selectors; independent mappings continue. All observed binding errors remain in the report’s `bindingErrors` field, including errors outside the requested scope.
+Snapshots preserve engine-native node data alongside bounds measured in top-left viewport pixels. Comparisons require native viewport metadata with DPR and zoom both 1, a complete bounded inventory and a valid hierarchy. Matching viewport dimensions, nonempty checkpoint and equivalent state context are prerequisites for measurement; the state contract above defines which state values gate geometry. Binding errors suppress only the affected semantic selectors; independent mappings continue. All observed binding errors remain in the report’s `bindingErrors` field, including errors outside the requested scope.
 
 A mapping is `unresolved` when a selector is missing, ambiguous or has a failed semantic binding. It is `unmeasured` when prerequisites fail or selected bounds are unavailable. Otherwise its x, y, width and height deltas are compared separately against the explicit nonnegative `tolerancePx`, producing `within-tolerance` or `different`. Those labels describe rectangle measurements only. The report also records normalized viewport rectangles and visibility observations.
 

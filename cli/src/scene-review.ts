@@ -58,7 +58,7 @@ export function sceneReview(
  const d=JSON.parse(document.getElementById('data').textContent),select=document.getElementById('mapping'),imgs={};
  for(const [i,m]of d.report.mappings.entries()){const o=document.createElement('option');o.value=String(i);o.textContent=m.id+' · '+m.status;select.append(o);}
  const show=(id,v)=>document.getElementById(id).textContent=JSON.stringify(v,null,2);
- show('properties',{prerequisites:d.report.prerequisites,relationships:d.report.relationships,styles:d.report.styles,appearance:d.report.appearance});show('geometry',d.report.geometry);show('provenance',d.report.inputs);
+ show('properties',{prerequisites:d.report.prerequisites,state:d.report.state,relationships:d.report.relationships,styles:d.report.styles,appearance:d.report.appearance});show('geometry',d.report.geometry);show('provenance',d.report.inputs);
  function draw(){const chosen=select.value===''?null:d.report.mappings[Number(select.value)];show('selected',chosen??d.report.mappings);
  for(const side of ['reference','candidate']){const canvas=document.getElementById(side),ctx=canvas.getContext('2d'),v=d[side].scene.viewport,b=chosen?.[side]?.bounds;
  let r={x:0,y:0,width:v.width,height:v.height};if(document.getElementById('crop').checked&&b){const x=Math.max(0,b.x-16),y=Math.max(0,b.y-16);r={x,y,width:Math.max(1,Math.min(v.width,b.x+b.width+16)-x),height:Math.max(1,Math.min(v.height,b.y+b.height+16)-y)};}

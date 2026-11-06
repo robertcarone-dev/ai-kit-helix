@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { PNG } from 'pngjs';
@@ -142,9 +142,13 @@ for (const withScene of [false, true])
             assert.equal(result.cases.length, failRestore ? 1 : 3);
             assert.equal(
               calls.filter((c) => c === 'stop').length,
-              failRestore ? 1 : failCapture ? 3 : 2,
+              failRestore ? 1 : failCapture && !withScene ? 3 : 2,
             );
-            if (failCapture) assert.ok(result.cases.every((c: any) => c.status === 'blocked'));
+            if (failCapture) {
+              assert.ok(result.cases.every((c: any) => c.status === 'blocked'));
+              const report = JSON.parse(readFileSync(join(root, '.aikit/scratch/result/matrix.json'), 'utf8'));
+              assert.ok(report.cases.every(c => c.failureStage === (withScene ? 'review' : 'execution')));
+            }
             assert.equal(calls.filter((c) => c === 'restore').length, failRestore ? 1 : 3);
             if (failRestore) assert.equal(result.notRun.length, 2);
             if (withScene && !failCapture)

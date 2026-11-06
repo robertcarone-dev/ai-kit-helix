@@ -3,7 +3,7 @@ import { appearanceDiagnostics } from './scene-diagnostics.ts';
 import { compareGeometry } from './scene-geometry.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
+import { compareSceneState } from './scene-state.ts';
 import { emptyOutput, sha } from './config.ts';
 
 export function validateScene(s: any) {
@@ -96,12 +96,8 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
     prerequisites.push('viewport-mismatch');
   if (!reference.checkpoint || reference.checkpoint !== candidate.checkpoint)
     prerequisites.push('checkpoint-mismatch-or-missing');
-  if (
-    reference.state == null ||
-    candidate.state == null ||
-    !isDeepStrictEqual(reference.state, candidate.state)
-  )
-    prerequisites.push('state-mismatch-or-missing');
+  const state = compareSceneState(reference.state, candidate.state, spec.stateContract);
+  prerequisites.push(...state.prerequisites);
   const ids = new Set();
   const mappings = spec.mappings.map((m) => {
     if (
@@ -214,6 +210,7 @@ export function compareScenes(reference: any, candidate: any, spec: any) {
     schemaVersion: 1,
     kind: 'helix-scene-comparison',
     acceptance: 'diagnostic-only',
+    state,
     bindingErrors: {
       reference: reference.bindingErrors ?? [],
       candidate: candidate.bindingErrors ?? [],

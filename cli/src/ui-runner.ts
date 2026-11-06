@@ -1,5 +1,6 @@
 import { resolveSceneOptions } from './scene-options.ts';
 import { sceneReview } from './scene-review.ts';
+import { compareSceneState } from './scene-state.ts';
 import { unityExecutable } from './unity-plan.ts';
 import { isolatedWorkspace } from './isolation.ts';
 import { randomUUID } from 'node:crypto';
@@ -156,6 +157,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       const scene = JSON.parse(readFileSync(c.sceneSpec, 'utf8'));
       if (scene.schemaVersion !== 1 || !Array.isArray(scene.mappings) || !scene.mappings.length)
         throw new Error('Invalid scene spec');
+      compareSceneState({}, {}, scene.stateContract);
       c.sceneOptions = resolveSceneOptions(config, c.sceneProfile);
     }
     return { ...c, uiSpec, out: join(out, c.id) };
@@ -251,7 +253,8 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         prepareAttempted = false,
         plan: any,
         executable: string,
-        restoreFailed = false;
+        restoreFailed = false,
+        capturesComplete = false;
       try {
         if (
           c.safeAreaInsets &&
@@ -302,6 +305,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           await invoke(executable, argv, 'prepare');
         }
         for (const argv of plan.stages.capture) await invoke(executable, argv, 'capture');
+        capturesComplete = true;
         if (c.safeAreaInsets) {
           const v = config.viewports[c.viewport],
             i = c.safeAreaInsets,
@@ -337,6 +341,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
             ...review.report.relationships,
             ...review.report.styles,
             ...review.report.appearance,
+            ...review.report.state.outcomes,
           ].map((c) => c.status);
           for (const landmark of review.report.geometry.landmarks) {
             statuses.push(landmark.screenStatus);
@@ -355,6 +360,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       } catch (e) {
         row.status = 'blocked';
         row.error = String(e);
+        row.failureStage = capturesComplete ? 'review' : 'execution';
       } finally {
         if (prepareAttempted) {
           row.restoration = [];
@@ -378,7 +384,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           browserAttempted &&
           (interrupted ||
             restoreFailed ||
-            row.status === 'blocked' ||
+            !capturesComplete ||
             cases[caseIndex + 1]?.viewport !== c.viewport)
         ) {
           try {
