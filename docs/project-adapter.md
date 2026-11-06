@@ -136,3 +136,9 @@ Expected input is `{ "identity": { "case": "PROJECT_CASE", "seed": 7 }, "width":
 ## UI conversion adapter
 
 Keep UI asset extraction specs, element-to-prefab mappings, layout constraints, state contracts and case dependency lists in project-owned files. Shared tooling must not infer game callbacks or add game selectors to inherited code. Read the conversion contract (`Tools/Helix/UIPort.md` when installed; [ui-port.md](ui-port.md) in the source repository) for planning and optional authoring. Existing comparison bindings and capture adapters remain the source of semantic identity and live measurements.
+
+## World-space pointer evidence
+
+In an authorized isolated Play session, use the project's existing world-input probe to project an enabled interaction collider through the active gameplay camera. Confirm the viewport and coordinate origin, then inspect the ordered raycast hits at that point. If another surface wins, record the obstruction and choose an exposed point on the intended collider before sending input.
+
+Use the project's normal pointer route for the tap. Retain the press-time hit list, target and handler path where available, release and input restoration status, and the gameplay state before and after. Label a diagnostic raycast as such. Use the observed state change to establish whether the action took effect.
