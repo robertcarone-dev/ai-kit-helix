@@ -48,6 +48,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   ui-assets --spec JSON --out EMPTY_DIR
   ui-plan --spec JSON --out EMPTY_DIR
   ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR
+  typography-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   batch --spec JSON --out EMPTY_DIR [--workers 1|2] [--resume yes]
   ui-matrix --spec JSON --out EMPTY_DIR [--execute yes] [--ai-kit PATH]
@@ -150,6 +151,7 @@ async function main() {
     'ui-assets': ['spec', 'out'],
     'ui-plan': ['spec', 'out'],
     'ui-impact': ['spec', 'previous', 'out'],
+    'typography-compare': ['reference', 'candidate', 'spec', 'out'],
     'ui-compare': ['reference', 'candidate', 'spec', 'out'],
     batch: ['spec', 'out', 'workers', 'resume'],
     'ui-matrix': ['spec', 'out', 'execute', 'ai-kit'],
@@ -288,6 +290,17 @@ async function main() {
       ...([options.reference, options.candidate, options.spec, options.out].map((p) =>
         resolve(root, p),
       ) as [string, string, string, string]),
+    );
+  }
+  if (command === 'typography-compare') {
+    if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)
+      throw new Error('typography-compare requires --reference, --candidate, --spec and --out.');
+    const { compareTypography } = await import('./typography.ts');
+    return compareTypography(
+      resolve(root, options.reference),
+      resolve(root, options.candidate),
+      resolve(root, options.spec),
+      resolve(root, options.out),
     );
   }
   if (command === 'ui-compare') {

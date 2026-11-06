@@ -11,7 +11,7 @@ const rect = (b: any) =>
   ['x', 'y', 'width', 'height'].every((k) => Number.isFinite(b[k])) &&
   b.width >= 0 &&
   b.height >= 0;
-const escape = (v: any) =>
+export const escape = (v: any) =>
   String(v).replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
@@ -124,7 +124,7 @@ function measure(a: any, b: any, tolerance?: number) {
   return { status: isDeepStrictEqual(a, b) ? 'passed' : 'difference', reference: a, candidate: b };
 }
 // A stronger failure takes precedence; an empty set of checks cannot pass.
-function disposition(rows: any[]) {
+export function disposition(rows: any[]) {
   return rows.some((r) => r.status === 'blocked')
     ? 'blocked'
     : rows.some((r) => r.status === 'difference')
@@ -327,6 +327,19 @@ export function loadSnapshot(path: string) {
   return { receipt, ui, png, bytes, imagePath };
 }
 
+export function writeNativeCrop(out: string, png: PNG, bounds: any, name: string) {
+  if (!rect(bounds)) return null;
+  const x = Math.max(0, Math.floor(bounds.x) - 6),
+    y = Math.max(0, Math.floor(bounds.y) - 6),
+    right = Math.min(png.width, Math.ceil(bounds.x + bounds.width) + 6),
+    bottom = Math.min(png.height, Math.ceil(bounds.y + bounds.height) + 6);
+  if (right <= x || bottom <= y) return null;
+  const image = new PNG({ width: right - x, height: bottom - y });
+  PNG.bitblt(png, image, x, y, right - x, bottom - y, 0, 0);
+  writeFileSync(join(out, name), PNG.sync.write(image));
+  return name;
+}
+
 /** Write a review bundle with provenance, native crops and per-criterion results. */
 export function compareUI(
   referencePath: string,
@@ -354,23 +367,11 @@ export function compareUI(
   const out = emptyOutput(outPath);
   writeFileSync(join(out, 'reference.png'), a.bytes);
   writeFileSync(join(out, 'candidate.png'), b.bytes);
-  const crop = (png: any, bounds: any, name: string) => {
-    if (!rect(bounds)) return null;
-    const x = Math.max(0, Math.floor(bounds.x) - 6),
-      y = Math.max(0, Math.floor(bounds.y) - 6),
-      right = Math.min(png.width, Math.ceil(bounds.x + bounds.width) + 6),
-      bottom = Math.min(png.height, Math.ceil(bounds.y + bounds.height) + 6);
-    if (right <= x || bottom <= y) return null;
-    const image = new PNG({ width: right - x, height: bottom - y });
-    PNG.bitblt(png, image, x, y, right - x, bottom - y, 0, 0);
-    writeFileSync(join(out, name), PNG.sync.write(image));
-    return name;
-  };
   let sections = '';
   report.elements.forEach((e: any, i: number) => {
     e.crops = {
-      reference: crop(a.png, e.reference?.bounds, `element-${i}-reference.png`),
-      candidate: crop(b.png, e.candidate?.bounds, `element-${i}-candidate.png`),
+      reference: writeNativeCrop(out, a.png, e.reference?.bounds, `element-${i}-reference.png`),
+      candidate: writeNativeCrop(out, b.png, e.candidate?.bounds, `element-${i}-candidate.png`),
     };
     sections += `<section><h2>${escape(e.id)} — ${e.status}</h2><div class="pair">${Object.entries(
       e.crops,

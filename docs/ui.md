@@ -132,3 +132,28 @@ The Git backlink must match. The project adapter must independently verify stora
 A matrix lock prevents normal CLI commands from changing its browser. Commands are bounded to 90 seconds. SIGINT/SIGTERM request a stop at command boundaries with restoration; an unresponsive remote Editor may still need inspection. Once preparation is attempted, every restoration command is attempted even if one fails. Cleanup failure stops later cases. No automatic retry occurs. A crash/SIGKILL can leave a stale lock: inspect and restore the owned sessions before removing it.
 
 Optional `safeAreaInsets: {top,right,bottom,left}` uses native pixels. Nonzero insets require the scenario to declare the same `safeAreaInsets` and supply an actual device/simulator capture recipe; both resulting receipts must report the requested safe rectangle. Do not assume an Editor Game View capture reproduces a device notch or safe area. Unsupported notch cases are blocked, not passed as rectangular captures. Orientation/content/language variants are ordinary separately configured scenarios and viewports.
+
+## Typography comparison
+
+Run `helix typography-compare --reference REFERENCE_JSON --candidate UNITY_JSON --spec TYPE_JSON --out EMPTY_DIR`. Use the normal UI capture adapters and native PNGs. The command verifies the receipts and PNG hashes, normalized viewport (DPR and zoom 1), safe area, declared state and optional checkpoint. Supply exact selectors for visible Phaser Text and Unity Canvas TextMeshProUGUI counterparts.
+
+```json
+{
+  "schemaVersion": 1,
+  "stateKeys": ["view", "locale"],
+  "checkpoint": "settled",
+  "baselineTolerancePx": 1,
+  "advanceTolerancePx": 1,
+  "elements": [{
+    "id": "title",
+    "reference": {"semanticId":"panel.title"},
+    "candidate": {"semanticId":"panel.title"}
+  }]
+}
+```
+
+Choose state keys and tolerances for the actual task. An optional element-level `fontMapping` contains the expected literal Phaser `referenceFamily` stack and Unity TMP `candidateGuid`. This checks the configured mapping only. Keep font files, renderer-specific face selection and any substituted face in the project adapter. Link provided font resource hashes and TMP font/material identities when diagnosing differences.
+
+Inspect `review.html` for native crops and per-line findings; use `report.json` in agent handoffs. Compare renderer line content including casing and wrapping, keeping raw input equality separately. A signed delta is candidate minus reference; positive screen Y means lower. Measure baseline positions and typographic advance (pen displacement, excluding stroke, shadow and padding) in native pixels. Nominal Phaser size and requested weight and TMP size/style/Canvas scale remain under the original renderer's evidence. A passing geometry check covers only its own criterion. Inspect actual ink bounds, fill/stroke, clipping, rich-text spans and fallback separately.
+
+Capture adapters provide one `text.baselines` and one `text.lineAdvancePx` entry per observed line, with measurement methods. Unknown lines can contain null. For Phaser Text, the inspector measures Canvas2D line advance under the active font and projects it through world, camera and canvas scale for supported left-to-right, untracked, non-justified text. For Canvas TMP, the project capture adapter should project the first character origin and last printed advance at the baseline to screen space and measure their distance; omit line terminators. Unknown advances (including old receipts) stay unmeasured. A RectTransform width cannot establish a glyph advance. Explicit line terminators are removed only at the end of the corresponding renderer line, leaving other whitespace intact.

@@ -123,6 +123,16 @@ export const UI_INSPECTOR = String.raw`(config) => {
             );
             return project(world.x, world.y).y;
           });
+          // Project the advance along the rendered baseline, excluding padding and outline.
+          // Justification can insert spaces at draw time; RTL needs a separately measured run.
+          if (text.lines && !style.rtl && style.align !== 'justify' && o.letterSpacing === 0) {
+            const origin = matrix.transformPoint(0, 0);
+            const end = matrix.transformPoint(1, 0);
+            const a = project(origin.x, origin.y), b = project(end.x, end.y);
+            const scale = Math.hypot(b.x - a.x, b.y - a.y);
+            text.lineAdvancePx = text.lines.map(line => o.context.measureText(line).width * scale);
+            text.lineAdvanceMethod = 'Canvas2D measureText advance projected along local X, native pixels';
+          }
           text.baseline = text.baselines[0] ?? null;
           text.baselineMethod =
             'Phaser Text metrics + stroke/padding + world and main-camera transforms';
