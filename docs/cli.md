@@ -181,6 +181,32 @@ For an entrance driven by a presenter, use `unity.event: "presenter-event"`, the
 
 Property reports distinguish an observed assignment retained through the pick from a full-weight clip binding sampled across it. The graph probe follows AnimationPlayableOutput, AnimationMixerPlayable and AnimationClipPlayable on the target hierarchy. Unsupported nodes, competing drivers, changed inputs and frame gaps over 100 ms leave the answer open. Inspect the referenced property reports for actual values, call stacks, clip times and asset hashes.
 
+## Per-camera URP render trace
+
+Run `Tools/Helix/bin/helix render-trace --spec trace.json --out .helix/evidence/render-review` in an installed project. This read-only Node command writes render-trace.json. It needs no running Editor, Helix Desktop, board, or AI Kit assignment.
+
+```json
+{
+  "schemaVersion": 1,
+  "pipeline": "Assets/Settings/WorldPipeline.asset",
+  "feature": "SceneCopyFeature",
+  "pass": "Scene Color Copy",
+  "property": "_SceneCopy",
+  "captures": [{
+    "fixture": "visible consumer",
+    "camera": "WorldCamera",
+    "receipt": "captures/graph.json",
+    "sha256": "SHA256_OF_GRAPH_RECEIPT"
+  }]
+}
+```
+
+Use the actual pipeline asset, feature subasset name, exact graph pass label and shader identifier from the project. An explicit rendererIndex selects a camera override; otherwise the command follows the asset's default index. Pipeline, feature script and renderer references must resolve in text-serialized project Assets. The supplied pipeline/index is a configuration selection. Confirm which pipeline and renderer the camera actually used independently. The static trace follows the serialized GUIDs and file IDs and cites source lines worth inspecting. Shader-property matches cover .shader, .hlsl, .compute and .cginc files under Assets. Inspect indirect bindings, package sources and graph-generated shaders separately.
+
+Omit captures for configuration-only work. To add graph evidence, use a URP Render Graph Viewer debug capture for each selected camera. In a supported, authorized Editor session, save the JSON string from `Helix.Comparison.RenderTraceCapture.Inspect(cameraExecutionName, textureName)` while that camera's capture is selected. The exporter reads the existing viewer and samples matching Editor RenderTexture objects. Viewer debug serialization is Unity-version dependent. Capture receipts are relative to the spec; both direct JSON and successful Unity CLI eval receipts containing the exporter result are supported. Pin the actual file hash. Keep revision, camera selection and fixture provenance with the capture.
+
+The report lists each selected pass as absent, culled or present-unculled, resolves texture/buffer indices to named resources and graph consumers, and retains available descriptor fields in their original units. Saved graph scheduling does not prove GPU duration. Observation frame, quality, pipeline and memory describe the instant the viewer was read; the graph can be older or from a connected player. Named texture inventory is separate from graph ownership. Empty or unavailable evidence must not be used to claim device savings.
+
 ### Plan capture coverage before opening either runtime
 
 Run `helix capture-coverage --spec FILE --out EMPTY_DIR`. Supply `--inventory FILE` to add another batch of evidence. The command reads retained captures offline. In `coverage.json`, `plan[viewport][side].capture` lists missing moments, and `reuse` maps each covered moment to its evidence IDs. Multiple moments can share a recording. `comparisons` identifies pairs available for review. The default `--basis retained` includes historical observations. Use `--basis current` to require matching declared capture-time dependency hashes. The project owns the completeness of those dependencies. Both modes leave artistic acceptance to review.

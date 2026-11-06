@@ -36,6 +36,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   scenario NAME
   look [--match TEXT]
   scene-record --out EMPTY_DIR [--duration SECONDS] [--interval-ms MS] [--profile NAME]
+  render-trace --spec FILE --out EMPTY_DIR
   vfx-compare --spec FILE --out NEW_DIR
   scene-motion --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
   scene-look [--profile NAME]    read-only hierarchy and scene measurements
@@ -146,6 +147,7 @@ async function main() {
     'ui-look': ['match'],
     'scene-look': ['profile'],
     'scene-record': ['out', 'duration', 'interval-ms', 'profile'],
+    'render-trace': ['spec', 'out'],
     'vfx-compare': ['spec', 'out'],
     'scene-motion': ['reference', 'candidate', 'spec', 'out'],
     'scene-report': ['reference', 'candidate', 'spec', 'out'],
@@ -251,6 +253,12 @@ async function main() {
     if (command === 'ui-assets') return uiAssets(root, options.spec, out);
     if (command === 'ui-plan') return uiPlan(root, options.spec, out);
     return uiImpact(root, options.spec, options.previous, out);
+  }
+  if (command === 'render-trace') {
+    if (pos.length || !options.spec || !options.out)
+      throw new Error('render-trace requires --spec and --out.');
+    const { renderTrace } = await import('./render-trace.ts');
+    return renderTrace(resolve(root, options.spec), resolve(root, options.out));
   }
   if (command === 'capture-coverage' || command === 'vfx-compare') {
     if (pos.length || !options.spec || !options.out)

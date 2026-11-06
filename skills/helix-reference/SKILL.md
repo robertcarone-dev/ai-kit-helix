@@ -47,3 +47,5 @@ For configured Unity/backend captures, follow `Tools/Helix/WorkflowToolkit.md` a
 ## Author fixtures for new porting work
 
 When a requested behavior has no replay, the agent owns fixture authoring. Use `Tools/Helix/bin/helix fixture-list` to discover the project and document contract. Inspect the source caller, initial state, actual player input and outcome. Author the project fixture and any necessary project-local setup or observation hooks; register it with `fixture-create --spec`. Run `fixture-record`, inspect the evidence and correct the fixture when its observations fail. Use `fixture-handoff` to package the recording and clip-relative notes for the porting assignment. See Tools/Helix/Toolkit.md. All four commands work without the designer UI. A missing target, guard or observable result belongs in the project adapter or a blocked handoff, never in shared commands.
+
+For a Unity renderer feature, color/depth copy or custom pass investigation, use [render trace](../helix-render-trace/SKILL.md).
