@@ -88,3 +88,41 @@ Run `helix fixture-record ID --out NEW_DIR` to exercise the authored case and re
 For a Unity handoff, supply notes as a JSON array of objects with integer timeMs (from clip start) and text. The author can be an agent or designer. Run `helix fixture-handoff --recording DIR --notes FILE --out NEW_ZIP`. The portable archive includes the clip, its hash-bound receipt, fixture identity, annotations and agent brief. The commands emit machine-readable JSON and use nonzero exits on failure. Python 3 is required for archive export.
 
 The optional designer UI runs with `python3 Tools/Helix/handoff-ui/serve.py --open`. It discovers registered fixtures and uses the same record and handoff commands as the agent.
+
+## Resume a feature without the previous session
+
+Start an assignment with `helix discrepancy-resume --feature "Feature name"`. Run `helix discrepancy-resume` without a feature to discover all open and blocked work. Feature names match exactly, ignoring case. The result includes each stable ID, latest revision, case/fixture ID, expected and observed behavior, source identity, Unity revision, next action and optional owner/assignment context. A zero count means this checkout contains no matching records. Use `--status all` to include resolutions and approved deviations.
+
+Each evidence claim has its own `evidenceChecks` entry. `reusable: true` means the artifact and **all its declared inputs** match their capture-time SHA-256 values. `changed`, `missing`, and `unavailable` identify the affected files. An empty inputs list is unverified. An empty evidence list means no supporting files were recorded. Preserve independently reusable claims. Retrieve missing originals from the recorded `recoverFrom` location or recapture only the affected claim. Recheck external served content and integration when required; a local hash check cannot establish either.
+
+### Save a checkpoint
+
+Use `helix discrepancy-save --spec FILE`. Store **one expected vs observed difference or coverage gap per ID**. The JSON below illustrates the shape; replace the placeholder hashes with the actual recorded digests. Paths in evidence and inputs are relative to the checkout root, regardless of the spec file location.
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "panel-title-baseline",
+  "feature": "Panel",
+  "caseId": "panel-open-phone",
+  "status": "open",
+  "expected": "Title baseline at 220 px from the top on the reference phone.",
+  "observed": "Candidate baseline at 226 px in the same state.",
+  "reference": "Default variant, served-source identity in the reference receipt.",
+  "unityRevision": "REPLACE_WITH_CAPTURED_REVISION_AND_DIRTY_STATE",
+  "nextAction": "Inspect the title prefab's TMP margin and its parent layout before changing either. Replay panel-open-phone after the edit.",
+  "evidence": [{
+    "claim": "The recorded candidate baseline is 226 px.",
+    "path": "Evidence/panel/phone.json",
+    "sha256": "CAPTURE_TIME_ARTIFACT_SHA256",
+    "inputs": [{"path": "Assets/UI/Panel.prefab", "sha256": "CAPTURE_TIME_PREFAB_SHA256"}],
+    "recoverFrom": "Assignment attachment or durable archive locator and internal path"
+  }]
+}
+```
+
+`id` is a stable lowercase kebab-case key. Use the fixture ID for `caseId` where one exists; findings can predate fixtures. Record an explicitly unknown revision when it is unavailable. Include all relevant declared dependencies, including scripts and import settings where they affect the claim. For independent sources or criteria, supply separate evidence entries. Optional `suspectedCause` is a hypothesis; `assignment` holds the board reference or responsible seat. For `blocked`, supply both `blocker` and a next action naming what will unblock it. For `resolved` or `accepted-deviation`, supply `decision` with the verification/ruling and its owner. Resolution requires evidence. Lifecycle status is distinct from the original comparison verdict.
+
+For an update, use the latest resume result's **record** as the full spec, edit it and call `helix discrepancy-save --spec FILE --after N` with the revision you read. This also supports reopening. Keep original hashes when updating prose or status. Add new evidence with its own capture-time hashes. Revision conflicts require rereading and reconciling; earlier snapshots remain readable.
+
+Records are project files at `Tools/Helix/discrepancies/<id>/<revision>.json`. Deliver them to the receiving branch with the feature work. Make referenced evidence available in the checkout or via a durable recovery location, especially for ignored scratch outputs. The installer leaves records alone. Independent lanes editing the same finding must reconcile revisions during integration. The command does not publish to a board, retrieve evidence, or infer a new verdict.

@@ -22,3 +22,5 @@ Separate visual defects from behaviour defects. Final reports state coverage and
 Builders put their validation plan and evidence in the build handoff. QA owns board case planning and final verdicts; a builder does not need to create QA board cases before doing scoped validation.
 
 Finish bounded audit sections with explicit dispositions. Route actionable findings into implementation tasks and preserve valid unaffected evidence. A missing fixture blocks only dependent cases; do not automatically replay the whole asset library.
+
+Start or resume feature work by reading `Tools/Helix/bin/helix discrepancy-resume --feature "FEATURE"`. At a checkpoint or handoff, persist open differences and coverage gaps with stable IDs, capture-time evidence/input hashes, recoverable locations and executable next actions through `discrepancy-save`. Deliver the project-owned records to the receiving branch. A later seat checks the per-claim evidence status, preserves valid observations and updates the same ID using the revision it read. Link the record to the existing assignment; keep final QA verdict and deviation approval with their owners.

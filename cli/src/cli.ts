@@ -19,6 +19,8 @@ import { discover, assets } from './discovery.ts';
 /** Short-lived command client. The detached host owns the browser between invocations. */
 const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
+  discrepancy-resume [--feature NAME] [--status active|open|blocked|resolved|accepted-deviation|all]
+  discrepancy-save --spec FILE [--after REVISION]
   fixture-list | fixture-create --spec FILE
   fixture-record ID --out NEW_DIR
   fixture-handoff --recording DIR --notes JSON_FILE --out NEW_ZIP
@@ -113,6 +115,8 @@ async function main() {
     return;
   }
   const allowed: Record<string, string[]> = {
+    'discrepancy-resume': ['feature', 'status'],
+    'discrepancy-save': ['spec', 'after'],
     'fixture-list': [],
     'fixture-create': ['spec'],
     'fixture-record': ['out'],
@@ -172,6 +176,10 @@ async function main() {
     JSON.parse(readFileSync(matrixLock, 'utf8')).token !== process.env.HELIX_MATRIX_TOKEN
   )
     throw new Error('A UI matrix owns this checkout session. Wait for it to restore and finish.');
+  if (command.startsWith('discrepancy-')) {
+    const { discrepancyCommand } = await import('./discrepancies.ts');
+    return discrepancyCommand(command, pos, options);
+  }
   if (command.startsWith('fixture-')) {
     const { fixtureCommand } = await import('./fixture-command.ts');
     return fixtureCommand(command, pos, options);

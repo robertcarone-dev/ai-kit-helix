@@ -80,3 +80,7 @@ Ledger/evidence destination and handoff location: ...
 ## Status mapping
 
 Map `passed` to PASS, `difference` to FAIL, `blocked` to BLOCKED, and `unmeasured` to UNMEASURED. Cases not attempted are NOT TESTED. Preserve the evidence and scope when mapping to a board.
+
+### Cross-session continuation
+
+Start with `Tools/Helix/bin/helix discrepancy-resume --feature "FEATURE"` in the receiving checkout. Read each record's next action, blocker, assignment and per-claim evidence checks. During a checkpoint, save new findings and update existing IDs using `discrepancy-save --spec FILE [--after REVISION]`. The spec, statuses, file ownership and evidence recovery procedure are in Tools/Helix/Toolkit.md under “Resume a feature without the previous session”. Link these project-owned records from the assignment handoff so the next agent can recover work even when the original chat and scratch files are unavailable.
