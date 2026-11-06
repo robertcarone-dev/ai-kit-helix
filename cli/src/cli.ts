@@ -19,8 +19,9 @@ import { discover, assets } from './discovery.ts';
 /** Short-lived command client. The detached host owns the browser between invocations. */
 const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
-  discrepancy-resume [--feature NAME] [--status active|open|blocked|resolved|accepted-deviation|all]
+  discrepancy-resume [--feature NAME] [--assignment ID] [--status active|open|blocked|resolved|accepted-deviation|all]
   discrepancy-save --spec FILE [--after REVISION]
+  discrepancy-rerun --id ID --out SCRATCH_DIR [--execute yes]
   fixture-list | fixture-create --spec FILE
   fixture-record ID --out NEW_DIR
   fixture-handoff --recording DIR --notes JSON_FILE --out NEW_ZIP
@@ -116,7 +117,8 @@ async function main() {
     return;
   }
   const allowed: Record<string, string[]> = {
-    'discrepancy-resume': ['feature', 'status'],
+    'discrepancy-resume': ['feature', 'assignment', 'status'],
+    'discrepancy-rerun': ['id', 'out', 'execute', 'ai-kit'],
     'discrepancy-save': ['spec', 'after'],
     'fixture-list': [],
     'fixture-create': ['spec'],

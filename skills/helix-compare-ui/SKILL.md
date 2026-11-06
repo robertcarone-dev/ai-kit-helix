@@ -29,11 +29,11 @@ For broader hierarchy and grouped-element diagnosis, read `Tools/Helix/Scene.md`
 
 ## Procedure
 
-1. Prove one representative view at a required viewport and inspect the native receipts, visible content and equivalent state.
+1. For an existing feature, run `Tools/Helix/bin/helix discrepancy-resume --feature "FEATURE"` first. If the brief gives only a board key, use `discrepancy-resume --assignment BOARD-KEY`. Inspect the open ID, element, viewport, state and evidence checks. Plan `discrepancy-rerun --id ID --out .aikit/scratch/ROUND` for a routed issue. Follow its next command in the assigned workspace. Read the paired crops when both sides are current. Record missing fixture readiness as the next action on the same ID. For a new feature or uncovered case, prove one representative view at a required viewport and inspect the native receipts, visible content and equivalent state.
 2. Map both render paths into final-output pixels, then compare element bounds, alignment, spacing, anchors and layering. Distinguish screen-space bounds from local transform values.
 3. Inspect clipping/masks, scrolling, safe-area response, sprite aspect, atlas trim and nine-slice behavior. Verify input hit regions separately from visible bounds. Identify whether mismatches originate in layout, assets, text metrics or state before proposing a cause.
 4. Check required phone/tablet, orientation, content-length and state variants. Infer responsive rules only from sufficient cases or inspected layout data; one screenshot does not establish an anchor rule.
-5. Apply the typography reference to scoped text. Use inspection/source data for renderer properties; Phaser text is not DOM text, so do not claim CSS properties without evidence.
+5. For a shared control, inspect the bound sprite, TMP font and material fields with the scoped UiAuthoring.Inspect overload in UIPort.md. Follow its source chain and check consumers before proposing a change. If a state swaps material, inspect the adapter-declared component field that supplies that state. Compare atlas GUID and file ID. Preview the operation on the supplying prefab, apply the reviewed hash, and use ui-impact for other consumers. Apply the typography reference to scoped text. Use inspection/source data for renderer properties; Phaser text is not DOM text, so do not claim CSS properties without evidence.
 6. Verify scoped UI state transitions, input response and gameplay-facing effects against the web behavior. Use paired images and annotations to substantiate differences. Route interaction timing to [motion](../helix-compare-motion/SKILL.md) when needed; a static screenshot does not verify a transition.
 
 ## Measurements and observations

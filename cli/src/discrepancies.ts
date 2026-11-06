@@ -13,7 +13,10 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { root } from './config.ts';
 
 type Pin = { path: string; sha256: string };
@@ -33,6 +36,13 @@ type Issue = {
   decision?: string;
   suspectedCause?: string;
   assignment?: string;
+  uiCase?: {
+    matrix: string;
+    caseId: string;
+    element: string;
+    reference?: string;
+    candidate?: string;
+  };
   evidence: Evidence[];
 };
 type Check = {
@@ -49,14 +59,17 @@ function textField(value: unknown, field: string) {
   if (typeof value !== 'string' || !value.trim()) throw new Error('Expected nonempty ' + field);
 }
 
-function validatePin(pin: Pin) {
-  textField(pin.path, 'project-relative path');
+function validatePath(path: string) {
+  textField(path, 'project-relative path');
   if (
-    isAbsolute(pin.path) ||
-    pin.path.includes('\\') ||
-    pin.path.split('/').some((part) => ['', '.', '..'].includes(part))
+    isAbsolute(path) ||
+    path.includes('\\') ||
+    path.split('/').some((part) => ['', '.', '..'].includes(part))
   )
-    throw new Error('Expected a portable checkout-relative path: ' + pin.path);
+    throw new Error('Expected a portable checkout-relative path: ' + path);
+}
+function validatePin(pin: Pin) {
+  validatePath(pin.path);
   if (typeof pin.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(pin.sha256))
     throw new Error('Expected capture-time SHA-256 for ' + pin.path);
 }
@@ -82,6 +95,18 @@ function validate(issue: Issue) {
     throw new Error('Specify evidence (use [] for missing coverage).');
   if (issue.status === 'resolved' && !issue.evidence.length)
     throw new Error('A resolution requires verification evidence.');
+  if (issue.uiCase !== undefined) {
+    const route = issue.uiCase;
+    validatePath(route.matrix);
+    textField(route.caseId, 'matrix caseId');
+    textField(route.element, 'semantic element');
+    if (route.reference !== undefined && route.reference === route.candidate)
+      throw new Error('Reference and candidate must have different receipts.');
+    for (const path of [route.reference, route.candidate]) {
+      if (path !== undefined && issue.evidence.filter((e) => e.path === path).length !== 1)
+        throw new Error('Each retained receipt must identify one evidence entry.');
+    }
+  }
   for (const evidence of issue.evidence) {
     validatePin(evidence);
     textField(evidence.claim, 'evidence claim');
@@ -166,6 +191,119 @@ export async function discrepancyCommand(
   if (pos.length) throw new Error(command + ' takes named options only.');
   if (!(await directory(join(root, 'Tools', 'Helix'))))
     throw new Error('Select a Helix project checkout.');
+  if (command === 'discrepancy-rerun') {
+    if (!idPattern.test(options.id ?? '') || !options.out)
+      throw new Error('Supply --id ID and --out SCRATCH_DIR.');
+    const entry = await latest(options.id);
+    if (!entry) throw new Error('Unknown discrepancy: ' + options.id);
+    const issue = entry.record;
+    if (terminal(issue) || issue.status === 'blocked' || !issue.uiCase) {
+      if (options.execute !== undefined)
+        throw new Error(issue.blocker ?? 'An open issue with an executable uiCase is required.');
+      return {
+        id: issue.id,
+        status: issue.status,
+        runnable: false,
+        nextAction: issue.nextAction,
+        blocker: issue.blocker,
+      };
+    }
+    const route = issue.uiCase;
+    const { runMatrix, caseIdentity } = await import('./ui-runner.ts');
+    const { loadSnapshot } = await import('./ui.ts');
+    const settings = {
+      root,
+      cli: fileURLToPath(new URL('./cli.ts', import.meta.url)),
+      caseId: route.caseId,
+      specPath: resolve(root, route.matrix),
+      out: resolve(root, options.out),
+      aiKit: options['ai-kit'],
+    };
+    const plan = await runMatrix(settings);
+    const c = plan.cases[0];
+    const spec = JSON.parse(await readFile(c.uiSpec, 'utf8'));
+    const element = spec.elements.find((e: { id: string }) => e.id === route.element);
+    if (!element) throw new Error('Unknown element in the selected UI spec: ' + route.element);
+    const retained: { reference?: string; candidate?: string } = {};
+    const reasons: Record<string, unknown> = {};
+    const hashes = new Map<string, string>();
+    for (const side of ['reference', 'candidate'] as const) {
+      const evidence = issue.evidence.find((e) => e.path === route[side]);
+      if (!evidence) {
+        reasons[side] = 'No retained receipt declared';
+        continue;
+      }
+      const check = await inspectEvidence(evidence, hashes);
+      const required = [route.matrix, 'Tools/Helix/reference.json', relative(root, c.uiSpec)];
+      required.push(evidence.path + '.case.json');
+      if (c.sceneSpec) required.push(relative(root, c.sceneSpec));
+
+      if (existsSync(join(root, 'Tools/Helix/reference.local.json')))
+        required.push('Tools/Helix/reference.local.json');
+      if (
+        !check.reusable ||
+        !required.every((p) => evidence.inputs.some((i) => i.path === p)) ||
+        !evidence.inputs.some((i) => !required.includes(i.path))
+      ) {
+        reasons[side] = {
+          reason: 'Receipt, recipe, comparison spec, or source dependencies missing or stale',
+          check,
+        };
+        continue;
+      }
+      try {
+        const path = resolve(root, evidence.path);
+        const identity = JSON.parse(await readFile(path + '.case.json', 'utf8'));
+        if (!isDeepStrictEqual(identity, caseIdentity(c, side, path)))
+          throw new Error('Case, side, recipe or receipt identity changed');
+        const receipt = JSON.parse(await readFile(path, 'utf8'));
+        if (
+          !(
+            await realpath(resolve(dirname(path), receipt.image ?? receipt.capturePath))
+          ).startsWith(root + sep)
+        )
+          throw new Error('Retained image is outside checkout');
+        const snapshot = loadSnapshot(path);
+        if (snapshot.ui.viewport.width !== c.widthPx || snapshot.ui.viewport.height !== c.heightPx)
+          throw new Error('Captured viewport differs');
+        if (c.sceneSpec && !snapshot.receipt.scene)
+          throw new Error('Missing inline scene evidence');
+        retained[side] = path;
+        reasons[side] = 'Pinned receipt, image and declared dependencies verified';
+      } catch (e) {
+        reasons[side] = String(e);
+      }
+    }
+    const nextCommand = [
+      'Tools/Helix/bin/helix',
+      'discrepancy-rerun',
+      '--id',
+      issue.id,
+      '--out',
+      options.out,
+      ...(options['ai-kit'] ? ['--ai-kit', options['ai-kit']] : []),
+      '--execute',
+      'yes',
+    ];
+    return {
+      id: issue.id,
+      revision: entry.revision,
+      caseId: c.id,
+      scenario: c.scenario,
+      viewport: c.viewport,
+      element: route.element,
+      inspections: (element.visualBindings ?? []).map((b: Record<string, string>) => ({
+        method: 'Helix.Comparison.UiAuthoring.Inspect',
+        args: [b.prefab, b.target, b.component, b.field, b.kind],
+      })),
+      retained,
+      reasons,
+      nextCommand,
+      ...(options.execute === undefined
+        ? {}
+        : { result: await runMatrix({ ...settings, retained, execute: options.execute }) }),
+    };
+  }
   if (command === 'discrepancy-save') {
     if (!options.spec) throw new Error('Supply --spec FILE and, for updates, --after REVISION.');
     const record: Issue = JSON.parse(await readFile(resolve(root, options.spec), 'utf8'));
@@ -211,6 +349,7 @@ export async function discrepancyCommand(
       const entry = await latest(id);
       if (!entry) continue;
       const item = entry.record;
+      if (options.assignment && item.assignment !== options.assignment) continue;
       if (feature && item.feature.toLowerCase() !== feature) continue;
       if (status === 'active' ? terminal(item) : status !== 'all' && status !== item.status)
         continue;

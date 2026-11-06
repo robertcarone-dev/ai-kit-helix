@@ -16,7 +16,7 @@ import {
   realpathSync,
 } from 'node:fs';
 import { join, resolve, relative, isAbsolute } from 'node:path';
-import { emptyOutput } from './config.ts';
+import { emptyOutput, sha } from './config.ts';
 import { compareUI, validateSpec, loadSnapshot } from './ui.ts';
 
 /** Captured process output, also attached to command failures for matrix receipts. */
@@ -36,6 +36,8 @@ export interface MatrixOptions {
   out: string;
   /** Omit to plan. Only the literal "yes" authorizes execution. */
   execute?: string;
+  caseId?: string;
+  retained?: { reference?: string; candidate?: string };
   aiKit?: string;
   unity?: string;
 }
@@ -114,6 +116,66 @@ function inside(root: string, path: string) {
   return r !== '' && !r.startsWith('..') && !isAbsolute(r);
 }
 
+export function caseIdentity(c: any, side: 'reference' | 'candidate', receipt: string) {
+  return {
+    caseId: c.id,
+    scenario: c.scenario,
+    viewport: c.viewport,
+    side,
+    receiptSha256: sha(readFileSync(receipt)),
+    configSha256: c.configSha256,
+    uiSpecSha256: sha(readFileSync(c.uiSpec)),
+    sceneProfile: c.sceneProfile ?? null,
+    sceneSpecSha256: c.sceneSpec ? sha(readFileSync(c.sceneSpec)) : null,
+  };
+}
+
+function reviewCase(c: any, row: any, retained: NonNullable<MatrixOptions['retained']>) {
+  const reference = retained.reference ?? join(c.out, 'reference/reference.json');
+  const candidate = retained.candidate ?? join(c.out, 'unity/unity.json');
+  row.receipts = { reference, candidate };
+  if (c.safeAreaInsets) {
+    const v = { width: c.widthPx, height: c.heightPx },
+      i = c.safeAreaInsets,
+      expected = {
+        x: i.left,
+        y: i.top,
+        width: v.width - i.left - i.right,
+        height: v.height - i.top - i.bottom,
+      };
+    for (const receipt of [reference, candidate]) {
+      const actual = loadSnapshot(receipt).ui.safeArea;
+      if (!Object.entries(expected).every(([key, value]) => actual?.[key] === value))
+        throw new Error('Captured safe area does not match the requested device case.');
+    }
+  }
+  row.comparison = compareUI(reference, candidate, c.uiSpec, join(c.out, 'review'));
+  row.status = row.comparison.status;
+  if (c.sceneSpec) {
+    const review = sceneReview(reference, candidate, c.sceneSpec, join(c.out, 'scene-review'));
+    row.sceneReview = { viewer: review.viewer, inputs: review.report.inputs };
+    const statuses = [
+      ...review.report.mappings,
+      ...review.report.relationships,
+      ...review.report.styles,
+      ...review.report.appearance,
+      ...review.report.state.outcomes,
+    ].map((c) => c.status);
+    for (const landmark of review.report.geometry.landmarks) {
+      statuses.push(landmark.screenStatus);
+      if (review.report.geometry.coordinates) statuses.push(landmark.worldStatus);
+    }
+    if (review.report.prerequisites.length || row.status === 'blocked') row.status = 'blocked';
+    else if (row.status === 'difference' || statuses.includes('different'))
+      row.status = 'difference';
+    else if (
+      row.status === 'unmeasured' ||
+      statuses.some((s) => ['unmeasured', 'unresolved'].includes(s))
+    )
+      row.status = 'unmeasured';
+  }
+}
+
 /** Plan by default. Execution requires an isolated checkout and complete Unity lifecycle recipes.
  * Always attempt owned-state restoration; stop subsequent cases if cleanup fails. */
 export async function runMatrix(options: MatrixOptions, command = runCommand) {
@@ -131,7 +193,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
   if (!inside(scratch, out))
     throw new Error('Matrix output must be below this checkout’s .aikit/scratch.');
   const ids = new Set();
-  const cases = spec.cases.map((c: any) => {
+  const allCases = spec.cases.map((c: any) => {
     if (!/^[A-Za-z0-9_-]+$/.test(c.id) || ids.has(c.id))
       throw new Error('Case IDs must be unique filename-safe names.');
     ids.add(c.id);
@@ -160,8 +222,19 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       compareSceneState({}, {}, scene.stateContract);
       c.sceneOptions = resolveSceneOptions(config, c.sceneProfile);
     }
-    return { ...c, uiSpec, out: join(out, c.id) };
+    return {
+      ...c,
+      configSha256: sha(JSON.stringify(config)),
+      widthPx: config.viewports[c.viewport].width,
+      heightPx: config.viewports[c.viewport].height,
+      uiSpec,
+      out: join(out, c.id),
+    };
   });
+  const cases =
+    options.caseId === undefined ? allCases : allCases.filter((c: any) => c.id === options.caseId);
+  if (!cases.length) throw new Error('Unknown matrix case: ' + options.caseId);
+  const retained = options.retained ?? {};
   if (options.execute === undefined)
     return {
       schemaVersion: 1,
@@ -173,16 +246,30 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       ],
     };
   if (options.execute !== 'yes') throw new Error('--execute must be yes, or omitted for a plan.');
-  if (!isolatedWorkspace(root))
-    throw new Error('Execution requires an isolated managed lane or opted-in linked worktree.');
-  if (existsSync(join(root, '.helix/connection.json')))
-    throw new Error(
-      'An existing browser session is owned elsewhere; stop it explicitly before the matrix.',
-    );
   // Reject symlinked output ancestors before starting either application.
   for (let p = out; p !== root; p = resolve(p, '..'))
     if (existsSync(p) && !inside(realpathSync(root), realpathSync(p)))
       throw new Error('Output escapes the checkout through a symlink.');
+  if (retained.reference && retained.candidate) {
+    emptyOutput(out);
+    const row: any = { id: cases[0].id, commands: [], retained };
+    mkdirSync(cases[0].out);
+    try {
+      reviewCase(cases[0], row, retained);
+    } catch (error) {
+      row.status = 'blocked';
+      row.error = String(error);
+    }
+    const report = { schemaVersion: 1, status: row.status, cases: [row], notRun: [] };
+    writeFileSync(join(out, 'matrix.json'), JSON.stringify(report, null, 2));
+    return { ...report, out };
+  }
+  if (!isolatedWorkspace(root))
+    throw new Error('Execution requires an isolated managed lane or opted-in linked worktree.');
+  if (!retained.reference && existsSync(join(root, '.helix/connection.json')))
+    throw new Error(
+      'An existing browser session is owned elsewhere; stop it explicitly before the matrix.',
+    );
   mkdirSync(join(root, '.helix'), { recursive: true });
   const lock = join(root, '.helix/ui-matrix.lock'),
     fd = openSync(lock, 'wx', 0o600),
@@ -266,97 +353,68 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           throw new Error(
             'The scenario has no matching device capture recipe for these safe-area insets.',
           );
-        const planned = await helix(
-          ['unity-plan', c.scenario, '--viewport', c.viewport, '--out', join(c.out, 'unity')],
-          'plan',
-        );
-        plan = JSON.parse(planned.stdout);
-        executable = unityExecutable(plan, options);
-        for (const stage of ['preflight', 'prepare', 'capture', 'restore'])
-          if (
-            !Array.isArray(plan.stages[stage]) ||
-            !plan.stages[stage].length ||
-            plan.stages[stage].some(
-              (a: any) => !Array.isArray(a) || a.some((v: any) => typeof v !== 'string'),
-            )
-          )
-            throw new Error('Incomplete Unity lifecycle recipe: ' + stage);
-        mkdirSync(join(c.out, 'unity'), { recursive: true });
-        if (c.sceneSpec)
-          writeFileSync(join(c.out, 'unity', 'scene-request.json'), JSON.stringify(c.sceneOptions));
-        for (const argv of plan.stages.preflight) await invoke(executable, argv, 'preflight');
-        browserAttempted = true;
-        await helix(['start', '--viewport', c.viewport], 'reference-start');
-        browserOwned = true;
-        await helix(['scenario', c.scenario], 'reference-scenario');
-        await helix(
-          [
-            'capture',
-            c.id,
-            '--out',
-            join(c.out, 'reference'),
-            ...(c.sceneSpec ? ['--scene-profile', c.sceneProfile] : []),
-          ],
-          'reference-capture',
-        );
-        prepareAttempted = true;
-        for (const argv of plan.stages.prepare) {
-          if (interrupted) throw new Error('Interrupted');
-          await invoke(executable, argv, 'prepare');
-        }
-        for (const argv of plan.stages.capture) await invoke(executable, argv, 'capture');
-        capturesComplete = true;
-        if (c.safeAreaInsets) {
-          const v = config.viewports[c.viewport],
-            i = c.safeAreaInsets,
-            expected = {
-              x: i.left,
-              y: i.top,
-              width: v.width - i.left - i.right,
-              height: v.height - i.top - i.bottom,
-            };
-          for (const receipt of ['reference/reference.json', 'unity/unity.json']) {
-            const actual = loadSnapshot(join(c.out, receipt)).ui.safeArea;
-            if (!Object.entries(expected).every(([key, value]) => actual?.[key] === value))
-              throw new Error('Captured safe area does not match the requested device case.');
-          }
-        }
-        row.comparison = compareUI(
-          join(c.out, 'reference/reference.json'),
-          join(c.out, 'unity/unity.json'),
-          c.uiSpec,
-          join(c.out, 'review'),
-        );
-        row.status = row.comparison.status;
-        if (c.sceneSpec) {
-          const review = sceneReview(
-            join(c.out, 'reference/reference.json'),
-            join(c.out, 'unity/unity.json'),
-            c.sceneSpec,
-            join(c.out, 'scene-review'),
+        if (!retained.candidate) {
+          const planned = await helix(
+            ['unity-plan', c.scenario, '--viewport', c.viewport, '--out', join(c.out, 'unity')],
+            'plan',
           );
-          row.sceneReview = { viewer: review.viewer, inputs: review.report.inputs };
-          const statuses = [
-            ...review.report.mappings,
-            ...review.report.relationships,
-            ...review.report.styles,
-            ...review.report.appearance,
-            ...review.report.state.outcomes,
-          ].map((c) => c.status);
-          for (const landmark of review.report.geometry.landmarks) {
-            statuses.push(landmark.screenStatus);
-            if (review.report.geometry.coordinates) statuses.push(landmark.worldStatus);
-          }
-          if (review.report.prerequisites.length || row.status === 'blocked')
-            row.status = 'blocked';
-          else if (row.status === 'difference' || statuses.includes('different'))
-            row.status = 'difference';
-          else if (
-            row.status === 'unmeasured' ||
-            statuses.some((s) => ['unmeasured', 'unresolved'].includes(s))
-          )
-            row.status = 'unmeasured';
+          plan = JSON.parse(planned.stdout);
+          executable = unityExecutable(plan, options);
+          for (const stage of ['preflight', 'prepare', 'capture', 'restore'])
+            if (
+              !Array.isArray(plan.stages[stage]) ||
+              !plan.stages[stage].length ||
+              plan.stages[stage].some(
+                (a: any) => !Array.isArray(a) || a.some((v: any) => typeof v !== 'string'),
+              )
+            )
+              throw new Error('Incomplete Unity lifecycle recipe: ' + stage);
+          mkdirSync(join(c.out, 'unity'), { recursive: true });
+          if (c.sceneSpec)
+            writeFileSync(
+              join(c.out, 'unity', 'scene-request.json'),
+              JSON.stringify(c.sceneOptions),
+            );
+          for (const argv of plan.stages.preflight) await invoke(executable, argv, 'preflight');
         }
+        if (!retained.reference) {
+          browserAttempted = true;
+          await helix(['start', '--viewport', c.viewport], 'reference-start');
+          browserOwned = true;
+          await helix(['scenario', c.scenario], 'reference-scenario');
+          await helix(
+            [
+              'capture',
+              c.id,
+              '--out',
+              join(c.out, 'reference'),
+              ...(c.sceneSpec ? ['--scene-profile', c.sceneProfile] : []),
+            ],
+            'reference-capture',
+          );
+        }
+        if (!retained.candidate) {
+          prepareAttempted = true;
+          for (const argv of plan.stages.prepare) {
+            if (interrupted) throw new Error('Interrupted');
+            await invoke(executable, argv, 'prepare');
+          }
+          for (const argv of plan.stages.capture) await invoke(executable, argv, 'capture');
+        }
+        for (const [side, file] of [
+          ['reference', 'reference/reference.json'],
+          ['candidate', 'unity/unity.json'],
+        ] as const) {
+          if (!retained[side]) {
+            const receipt = join(c.out, file);
+            writeFileSync(
+              receipt + '.case.json',
+              JSON.stringify(caseIdentity(c, side, receipt), null, 2),
+            );
+          }
+        }
+        capturesComplete = true;
+        reviewCase(c, row, retained);
       } catch (e) {
         row.status = 'blocked';
         row.error = String(e);

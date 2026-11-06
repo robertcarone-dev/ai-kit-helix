@@ -41,11 +41,114 @@ namespace Helix.Comparison
             return new JObject { ["prefab"] = path, ["prefabSha256"] = Hash(path), ["nodes"] = nodes }.ToString();
         }
 
+        // Inspect persistent prefab assets so corresponding sources describe the containing variant
+        // and each nested source. Component and field names for runtime style bindings are adapter data.
+        public static string Inspect(string prefabPath, string target, string componentType, string field, string kind)
+        {
+            string path = AssetPath(prefabPath, ".prefab");
+            JObject result = VisualInfo(path, target, componentType, field, kind);
+            result["consumers"] = Consumers((string)result["owner"]);
+            return result.ToString();
+        }
+
+        private static JArray Consumers(string owner)
+        {
+            var paths = new[] { "t:Prefab", "t:Scene" }.SelectMany(filter => AssetDatabase.FindAssets(filter, new[] { "Assets" })).Distinct().Select(AssetDatabase.GUIDToAssetPath);
+            return new JArray(paths.Where(path => path != owner && AssetDatabase.GetDependencies(path, true).Contains(owner)).OrderBy(path => path));
+        }
+
+        private static Component VisualComponent(RectTransform rect, string type)
+        {
+            Component[] matches = rect.GetComponents<Component>().Where(c => c && IsType(c.GetType(), type)).ToArray();
+            Require(matches.Length == 1, "Expected one component of type " + type + " on " + rect.name);
+            return matches[0];
+        }
+
+        private static SerializedProperty VisualField(Component component, string field, string kind)
+        {
+            Require(kind == "sprite" || kind == "font" || kind == "material", "Unsupported visual asset kind.");
+            var property = new SerializedObject(component).FindProperty(field);
+            Require(property != null && property.propertyType == SerializedPropertyType.ObjectReference, "Expected serialized asset reference: " + field);
+            string expected = kind == "sprite" ? "UnityEngine.Sprite" : kind == "font" ? "TMPro.TMP_FontAsset" : "UnityEngine.Material";
+            System.Reflection.FieldInfo member = null;
+            for (var type = component.GetType(); type != null && member == null; type = type.BaseType)
+                member = type.GetField(field, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly);
+            Require(member != null && IsType(member.FieldType, expected), "Expected " + expected + " field: " + field);
+            return property;
+        }
+
+        private static JObject AssetIdentity(UnityEngine.Object asset)
+        {
+            if (!asset) return null;
+            Require(AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long fileId), "Expected a persistent asset.");
+            var value = new JObject { ["path"] = AssetDatabase.GetAssetPath(asset), ["guid"] = guid, ["fileId"] = fileId.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+            if (asset is Material material && material.HasProperty("_MainTex")) value["atlas"] = AssetIdentity(material.GetTexture("_MainTex"));
+            if (IsType(asset.GetType(), "TMPro.TMP_FontAsset")) {
+                var atlases = new SerializedObject(asset).FindProperty("m_AtlasTextures");
+                if (atlases != null) value["atlases"] = new JArray(Enumerable.Range(0, atlases.arraySize).Select(i => AssetIdentity(atlases.GetArrayElementAtIndex(i).objectReferenceValue)));
+            }
+            return value;
+        }
+
+        private static JObject VisualInfo(string path, string target, string componentType, string field, string kind)
+        {
+            GameObject root = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            Require(root, "Missing prefab: " + path);
+            Component component = VisualComponent(Target(root, target), componentType);
+            var chain = new JArray();
+            JObject effective = AssetIdentity(VisualField(component, field, kind).objectReferenceValue);
+            string owner;
+            while (true) {
+                var property = VisualField(component, field, kind);
+                owner = AssetDatabase.GetAssetPath(component);
+                var source = PrefabUtility.GetCorrespondingObjectFromSource(component);
+                chain.Add(new JObject { ["prefab"] = owner, ["target"] = AnimationUtility.CalculateTransformPath(component.transform, AssetDatabase.LoadAssetAtPath<GameObject>(owner).transform),
+                    ["override"] = property.prefabOverride, ["value"] = AssetIdentity(property.objectReferenceValue) });
+                if (!source || property.prefabOverride) break;
+                component = source;
+            }
+            return new JObject { ["prefab"] = path, ["prefabSha256"] = Hash(path), ["target"] = target, ["component"] = componentType,
+                ["field"] = field, ["kind"] = kind, ["effective"] = effective, ["owner"] = owner, ["sources"] = chain };
+        }
+
+        private static UnityEngine.Object Replacement(JObject op)
+        {
+            var identity = (JObject)op["replacement"];
+            Require(identity != null, "Specify replacement asset identity and hash.");
+            string path = (string)identity["path"];
+            AssetPath(path, Path.GetExtension(path));
+            Require(Hash(path) == (string)identity["sha256"], "Replacement asset changed: " + path);
+            var matches = AssetDatabase.LoadAllAssetsAtPath(path).Where(asset => asset && AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long id)
+                && guid == (string)identity["guid"] && id.ToString(System.Globalization.CultureInfo.InvariantCulture) == (string)identity["fileId"]).ToArray();
+            Require(matches.Length == 1, "Replacement asset identity changed.");
+            var value = matches[0];
+            string kind = (string)op["kind"];
+            Require(kind == "sprite" && value is Sprite || kind == "material" && value is Material || kind == "font" && IsType(value.GetType(), "TMPro.TMP_FontAsset"), "Incorrect replacement type.");
+            return value;
+        }
+
+        private static JObject ValidateVisual(JObject op)
+        {
+            string path = (string)op["prefab"];
+            var info = VisualInfo(path, (string)op["target"], (string)op["component"], (string)op["field"], (string)op["kind"]);
+            Require(op.Property("expected") != null && JToken.DeepEquals(op["expected"], info["effective"]), "Visual value changed. Inspect again.");
+            Require((string)info["owner"] == path, "Edit the supplying prefab: " + (string)info["owner"]);
+            info["replacement"] = AssetIdentity(Replacement(op));
+            return info;
+        }
+
         public static string Preview(string planJsonPath)
         {
-            JObject plan = Read(planJsonPath);
+            byte[] bytes = File.ReadAllBytes(planJsonPath);
+            JObject plan = JObject.Parse(System.Text.Encoding.UTF8.GetString(bytes));
             Validate(plan);
-            return new JObject { ["valid"] = true, ["planSha256"] = Hash(planJsonPath), ["operationCount"] = ((JArray)plan["operations"]).Count }.ToString();
+            var visuals = new JArray();
+            foreach (JObject op in ((JArray)plan["operations"]).Where(op => op["field"] != null)) {
+                var change = ValidateVisual(op);
+                change["consumers"] = Consumers((string)change["owner"]);
+                visuals.Add(change);
+            }
+            return new JObject { ["visualChanges"] = visuals, ["valid"] = true, ["planSha256"] = Hash(bytes), ["operationCount"] = ((JArray)plan["operations"]).Count }.ToString();
         }
 
         public static string Apply(string planJsonPath, string expectedPlanSha256)
@@ -99,6 +202,14 @@ namespace Helix.Comparison
                     try {
                         foreach (JObject op in group) {
                             RectTransform rect = Target(root, (string)op["target"]);
+                            if (op["field"] != null) {
+                                Component component = VisualComponent(rect, (string)op["component"]);
+                                var property = VisualField(component, (string)op["field"], (string)op["kind"]);
+                                property.objectReferenceValue = Replacement(op);
+                                property.serializedObject.ApplyModifiedProperties();
+                                if (PrefabUtility.IsPartOfPrefabInstance(component)) PrefabUtility.RecordPrefabInstancePropertyModifications(component);
+                                continue;
+                            }
                             Set(rect, (JObject)op["set"]);
                         }
                         PrefabUtility.SaveAsPrefabAsset(root, group.Key, out bool success);
@@ -119,7 +230,6 @@ namespace Helix.Comparison
             }
         }
 
-        private static JObject Read(string path) { return JObject.Parse(File.ReadAllText(path)); }
         private static void Require(bool condition, string message) { if (!condition) { throw new InvalidOperationException(message); } }
         private static string Hash(string path) { return Hash(File.ReadAllBytes(path)); }
         private static string Hash(byte[] bytes) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(); } }
@@ -167,8 +277,13 @@ namespace Helix.Comparison
             foreach (JObject op in (JArray)plan["operations"]) {
                 string path = AssetPath((string)op["prefab"], ".prefab");
                 Require(File.Exists(path) && File.Exists(path + ".meta") && Hash(path) == (string)op["prefabSha256"], "Stale or missing prefab: " + path);
-                Require(targets.Add(path + "\n" + (string)op["target"]), "Duplicate prefab target.");
+                Require(targets.Add(path + "\n" + (string)op["target"] + (op["field"] == null ? "" : "\n" + (string)op["component"] + "\n" + (string)op["field"])), "Duplicate prefab target.");
                 Require(!EditorUtility.IsDirty(AssetDatabase.LoadAssetAtPath<GameObject>(path)), "Prefab asset is dirty.");
+                if (op["field"] != null) {
+                    Require(op["set"] == null, "Use separate layout and visual operations.");
+                    ValidateVisual(op);
+                    continue;
+                }
                 JObject expected = op["expected"] as JObject;
                 JObject values = op["set"] as JObject;
                 Require(expected != null && values != null && values.Count > 0, "Expected and nonempty set are required.");

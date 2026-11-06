@@ -35,6 +35,25 @@ export function validateSpec(spec: any) {
     if (typeof e.id !== 'string' || !e.id || ids.has(e.id))
       throw new Error('Element IDs must be unique nonempty strings.');
     ids.add(e.id);
+    if (e.visualBindings !== undefined) {
+      if (!Array.isArray(e.visualBindings))
+        throw new Error('Expected visualBindings array: ' + e.id);
+      for (const binding of e.visualBindings) {
+        if (
+          !binding ||
+          typeof binding.prefab !== 'string' ||
+          !binding.prefab.startsWith('Assets/') ||
+          !binding.prefab.endsWith('.prefab') ||
+          typeof binding.target !== 'string' ||
+          typeof binding.component !== 'string' ||
+          !binding.component ||
+          typeof binding.field !== 'string' ||
+          !binding.field ||
+          !['font', 'sprite', 'material'].includes(binding.kind)
+        )
+          throw new Error('Invalid prefab visual binding: ' + e.id);
+      }
+    }
     select([], e.reference);
     select([], e.candidate);
     for (const c of e.checks ?? []) {
