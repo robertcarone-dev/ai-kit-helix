@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { resolve, join, dirname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { root, stateDir, readConfig, sha } from './config.ts';
@@ -33,6 +33,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   scenario NAME
   look [--match TEXT]
   scene-record --out EMPTY_DIR [--duration SECONDS] [--interval-ms MS] [--profile NAME]
+  vfx-compare --spec FILE --out NEW_DIR
   scene-motion --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
   scene-look [--profile NAME]    read-only hierarchy and scene measurements
   scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
@@ -135,6 +136,7 @@ async function main() {
     'ui-look': ['match'],
     'scene-look': ['profile'],
     'scene-record': ['out', 'duration', 'interval-ms', 'profile'],
+    'vfx-compare': ['spec', 'out'],
     'scene-motion': ['reference', 'candidate', 'spec', 'out'],
     'scene-report': ['reference', 'candidate', 'spec', 'out'],
     'conversion-plan': ['spec', 'out'],
@@ -235,6 +237,20 @@ async function main() {
     if (command === 'ui-assets') return uiAssets(root, options.spec, out);
     if (command === 'ui-plan') return uiPlan(root, options.spec, out);
     return uiImpact(root, options.spec, options.previous, out);
+  }
+  if (command === 'vfx-compare') {
+    if (pos.length || !options.spec || !options.out)
+      throw new Error('vfx-compare requires --spec and --out.');
+    const directory = dirname(fileURLToPath(import.meta.url));
+    const installed = join(directory, '../vfx.py');
+    const script = existsSync(installed) ? installed : join(directory, '../../workflows/vfx.py');
+    const result = spawnSync(
+      'python3',
+      [script, resolve(root, options.spec), resolve(root, options.out)],
+      { encoding: 'utf8' },
+    );
+    if (result.error || result.status !== 0) throw result.error ?? new Error(result.stderr.trim());
+    return JSON.parse(result.stdout);
   }
   if (command === 'scene-motion') {
     if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)

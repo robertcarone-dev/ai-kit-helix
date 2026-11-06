@@ -17,6 +17,7 @@ Read [the shared comparison workflow](references/comparison-workflow.md) before 
 - [Models](../helix-compare-models/SKILL.md): shape, proportions, visible surface artifacts, pivots and material-versus-geometry diagnosis.
 - [Lighting](../helix-compare-lighting/SKILL.md): illumination, shadows, reflections and output-pipeline differences.
 - [Motion](../helix-compare-motion/SKILL.md): animation, timing, trajectories and transitions.
+- [Transient VFX](../helix-compare-vfx/SKILL.md): event-relative rendered frames, effect phases, compositing and sampling gaps.
 - [UI](../helix-compare-ui/SKILL.md): layout, responsive states, sprites and typography.
 
 Read only the specialty needed for the current case. A full visual audit may use several, with one shared evidence ledger.

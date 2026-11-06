@@ -126,3 +126,23 @@ Use `helix discrepancy-save --spec FILE`. Store **one expected vs observed diffe
 For an update, use the latest resume result's **record** as the full spec, edit it and call `helix discrepancy-save --spec FILE --after N` with the revision you read. This also supports reopening. Keep original hashes when updating prose or status. Add new evidence with its own capture-time hashes. Revision conflicts require rereading and reconciling; earlier snapshots remain readable.
 
 Records are project files at `Tools/Helix/discrepancies/<id>/<revision>.json`. Deliver them to the receiving branch with the feature work. Make referenced evidence available in the checkout or via a durable recovery location, especially for ignored scratch outputs. The installer leaves records alone. Independent lanes editing the same finding must reconcile revisions during integration. The command does not publish to a board, retrieve evidence, or infer a new verdict.
+
+## Transient VFX
+
+`helix vfx-compare --spec FILE --out NEW_DIR` builds a self-contained HTML filmstrip and a JSON coverage report from existing Helix and AI Kit recordings. Python 3, ffprobe and ffmpeg must be on PATH. Input paths are relative to the spec; the output path is project-relative. Use an unused output path. On failure preserve partial evidence or diagnose the source before using a fresh path.
+
+```json
+{
+  "schemaVersion": 1,
+  "caseId": "effect-on-phone",
+  "event": "first visible contact flash",
+  "reference": {"receipt":"reference/motion.json","sha256":"RECEIPT_SHA256","anchor":{"frame":140,"observation":"First visible flash in the encoded clip."},"crop":[80,120,240,240]},
+  "candidate": {"receipt":"unity/record.json","sha256":"RECEIPT_SHA256","anchor":{"frame":8142,"observation":"First visible flash on the saved Unity frame."}},
+  "maxGapMs": 50,
+  "beats":[{"name":"Before contact","offsetMs":-80},{"name":"Contact","offsetMs":0},{"name":"Decay","offsetMs":120}]
+}
+```
+
+Mark the reference using the zero-based decoded frame ordinal in motion.webm next to motion.json; ffprobe supplies actual presentation timestamps. Unity uses the saved engine frame number (`frames[].frame`) and recorded clock (`frames[].t`). Author the common event and per-side observation from inspected images or a synchronized observer. Never substitute unrelated source and target timestamps. Source-only work omits `candidate`. A missing or incorrect anchor in a supplied recording is an input error.
+
+The report retains each side's size, clock, observed anchor, preceding anchor gap, bracketing frames with actual offsets, and hashes of selected images. A wide bracket or a request beyond recorded coverage is unmeasured; the available images are retained for diagnosis. A sample exactly at a requested time has a zero bracket width. This does not establish the instant a transient began between frames. Playback can hold the same rendered image for multiple encoded frames. Compare equivalent state, camera, viewport and time basis before drawing conclusions. Optional crops use each recording's encoded top-left pixel coordinates; full frames stay available. File actionable differences or missing coverage using the discrepancy workflow.
