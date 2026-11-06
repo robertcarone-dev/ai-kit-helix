@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
@@ -13,7 +14,7 @@ namespace Helix.Comparison
     // Deliberately edits existing objects only. Game bindings and state semantics belong to adapters.
     public static class UiAuthoring
     {
-        private static readonly string[] LayoutKeys = { "anchorMin", "anchorMax", "pivot", "anchoredPosition", "sizeDelta" };
+        private static readonly string[] _layoutKeys = { "anchorMin", "anchorMax", "pivot", "anchoredPosition", "sizeDelta" };
 
         public static string Inspect(string prefabPath)
         {
@@ -23,21 +24,46 @@ namespace Helix.Comparison
             try {
                 foreach (RectTransform rect in root.GetComponentsInChildren<RectTransform>(true)) {
                     var layout = new JObject();
-                    foreach (string key in LayoutKeys) { Vector2 value = Get(rect, key); layout[key] = new JArray(value.x, value.y); }
+                    foreach (string key in _layoutKeys) {
+                        Vector2 value = Get(rect, key);
+                        layout[key] = new JArray(value.x, value.y);
+                    }
+
                     var controllers = new JArray();
                     var componentTypes = new HashSet<string>(StringComparer.Ordinal);
                     for (Transform current = rect; current != null; current = current.parent) {
                         foreach (Component component in current.GetComponents<Component>()) {
-                            if (component == null) { controllers.Add("missing-script"); continue; }
-                            for (Type type = component.GetType(); type != null; type = type.BaseType) { componentTypes.Add(type.FullName); }
-                            if (component is Animator || IsType(component.GetType(), "UnityEngine.UI.LayoutGroup") || IsType(component.GetType(), "UnityEngine.UI.ContentSizeFitter") || IsType(component.GetType(), "UnityEngine.UI.AspectRatioFitter")) {
-                                if (!(component is Behaviour behaviour) || behaviour.enabled) { controllers.Add(component.GetType().FullName); }
+                            if (component == null) {
+                                controllers.Add("missing-script");
+                                continue;
+                            }
+                            for (Type type = component.GetType(); type != null; type = type.BaseType) {
+                                componentTypes.Add(type.FullName);
+                            }
+                            if (component is Animator ||
+                                IsType(component.GetType(), "UnityEngine.UI.LayoutGroup") ||
+                                IsType(component.GetType(), "UnityEngine.UI.ContentSizeFitter") ||
+                                IsType(component.GetType(), "UnityEngine.UI.AspectRatioFitter")) {
+                                if (!(component is Behaviour behaviour) || behaviour.enabled) {
+                                    controllers.Add(component.GetType().FullName);
+                                }
                             }
                         }
                     }
-                    nodes.Add(new JObject { ["target"] = AnimationUtility.CalculateTransformPath(rect, root.transform), ["layout"] = layout, ["nested"] = PrefabUtility.IsPartOfPrefabInstance(rect.gameObject), ["controllers"] = controllers, ["componentTypes"] = new JArray(componentTypes.OrderBy(name => name)), ["hasImage"] = Image(rect) != null });
+
+                    nodes.Add(new JObject {
+                        ["target"] = AnimationUtility.CalculateTransformPath(rect, root.transform),
+                        ["layout"] = layout,
+                        ["nested"] = PrefabUtility.IsPartOfPrefabInstance(rect.gameObject),
+                        ["controllers"] = controllers,
+                        ["componentTypes"] = new JArray(componentTypes.OrderBy(name => name)),
+                        ["hasImage"] = Image(rect) != null
+                    });
                 }
-            } finally { PrefabUtility.UnloadPrefabContents(root); }
+            }
+            finally {
+                PrefabUtility.UnloadPrefabContents(root);
+            }
             return new JObject { ["prefab"] = path, ["prefabSha256"] = Hash(path), ["nodes"] = nodes }.ToString();
         }
 
@@ -97,34 +123,62 @@ namespace Helix.Comparison
                     } else if (component is Animator || controllerTypes.Any(name => IsType(type, name))) {
                         role = "controller";
                         fields = new string[0];
-                    } else continue;
+                    } else {
+                        continue;
+                    }
                     var properties = new JArray();
                     foreach (string field in fields) {
                         var owner = component;
                         var property = new SerializedObject(owner).FindProperty(field);
-                        if (property == null || property.propertyType == SerializedPropertyType.Vector2) continue;
+                        if (property == null || property.propertyType == SerializedPropertyType.Vector2) {
+                            continue;
+                        }
                         var chain = new JArray();
                         while (true) {
                             string asset = AssetDatabase.GetAssetPath(owner);
-                            if (hashes[asset] == null) hashes[asset] = Hash(asset);
-                            chain.Add(new JObject { ["prefab"] = asset,
+                            if (hashes[asset] == null) {
+                                hashes[asset] = Hash(asset);
+                            }
+                            chain.Add(new JObject {
+                                ["prefab"] = asset,
                                 ["target"] = AnimationUtility.CalculateTransformPath(owner.transform, AssetDatabase.LoadAssetAtPath<GameObject>(asset).transform),
-                                ["override"] = property.prefabOverride });
+                                ["override"] = property.prefabOverride
+                            });
                             var source = PrefabUtility.GetCorrespondingObjectFromSource(owner);
-                            if (!source || property.prefabOverride) break;
+                            if (!source || property.prefabOverride) {
+                                break;
+                            }
                             owner = source;
                             property = new SerializedObject(owner).FindProperty(field);
                         }
-                        properties.Add(new JObject { ["property"] = field, ["value"] = JToken.FromObject(property.boxedValue),
-                            ["owner"] = chain.Last.DeepClone(), ["sources"] = chain });
+                        properties.Add(new JObject {
+                            ["property"] = field,
+                            ["value"] = JToken.FromObject(property.boxedValue),
+                            ["owner"] = chain.Last.DeepClone(),
+                            ["sources"] = chain
+                        });
                     }
-                    components.Add(new JObject { ["type"] = type.FullName, ["role"] = role,
-                        ["enabled"] = !(component is Behaviour behaviour) || behaviour.enabled, ["properties"] = properties });
+                    components.Add(new JObject {
+                        ["type"] = type.FullName,
+                        ["role"] = role,
+                        ["enabled"] = !(component is Behaviour behaviour) || behaviour.enabled,
+                        ["properties"] = properties
+                    });
                 }
-                nodes.Add(new JObject { ["target"] = AnimationUtility.CalculateTransformPath(current, root.transform), ["components"] = components });
+
+                nodes.Add(new JObject {
+                    ["target"] = AnimationUtility.CalculateTransformPath(current, root.transform),
+                    ["components"] = components
+                });
             }
-            return new JObject { ["schemaVersion"] = 1, ["prefab"] = path, ["target"] = target,
-                ["assetHashes"] = hashes, ["controllerTypes"] = new JArray(controllerTypes), ["nodes"] = nodes }.ToString();
+            return new JObject {
+                ["schemaVersion"] = 1,
+                ["prefab"] = path,
+                ["target"] = target,
+                ["assetHashes"] = hashes,
+                ["controllerTypes"] = new JArray(controllerTypes),
+                ["nodes"] = nodes
+            }.ToString();
         }
 
         private static JArray Consumers(string owner)
@@ -147,21 +201,32 @@ namespace Helix.Comparison
             Require(property != null && property.propertyType == SerializedPropertyType.ObjectReference, "Expected serialized asset reference: " + field);
             string expected = kind == "sprite" ? "UnityEngine.Sprite" : kind == "font" ? "TMPro.TMP_FontAsset" : "UnityEngine.Material";
             System.Reflection.FieldInfo member = null;
-            for (var type = component.GetType(); type != null && member == null; type = type.BaseType)
-                member = type.GetField(field, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly);
+            for (var type = component.GetType(); type != null && member == null; type = type.BaseType) {
+                member = type.GetField(field, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+            }
             Require(member != null && IsType(member.FieldType, expected), "Expected " + expected + " field: " + field);
             return property;
         }
 
         private static JObject AssetIdentity(UnityEngine.Object asset)
         {
-            if (!asset) return null;
+            if (!asset) {
+                return null;
+            }
             Require(AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long fileId), "Expected a persistent asset.");
-            var value = new JObject { ["path"] = AssetDatabase.GetAssetPath(asset), ["guid"] = guid, ["fileId"] = fileId.ToString(System.Globalization.CultureInfo.InvariantCulture) };
-            if (asset is Material material && material.HasProperty("_MainTex")) value["atlas"] = AssetIdentity(material.GetTexture("_MainTex"));
+            var value = new JObject {
+                ["path"] = AssetDatabase.GetAssetPath(asset),
+                ["guid"] = guid,
+                ["fileId"] = fileId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            };
+            if (asset is Material material && material.HasProperty("_MainTex")) {
+                value["atlas"] = AssetIdentity(material.GetTexture("_MainTex"));
+            }
             if (IsType(asset.GetType(), "TMPro.TMP_FontAsset")) {
                 var atlases = new SerializedObject(asset).FindProperty("m_AtlasTextures");
-                if (atlases != null) value["atlases"] = new JArray(Enumerable.Range(0, atlases.arraySize).Select(i => AssetIdentity(atlases.GetArrayElementAtIndex(i).objectReferenceValue)));
+                if (atlases != null) {
+                    value["atlases"] = new JArray(Enumerable.Range(0, atlases.arraySize).Select(i => AssetIdentity(atlases.GetArrayElementAtIndex(i).objectReferenceValue)));
+                }
             }
             return value;
         }
@@ -178,13 +243,28 @@ namespace Helix.Comparison
                 var property = VisualField(component, field, kind);
                 owner = AssetDatabase.GetAssetPath(component);
                 var source = PrefabUtility.GetCorrespondingObjectFromSource(component);
-                chain.Add(new JObject { ["prefab"] = owner, ["target"] = AnimationUtility.CalculateTransformPath(component.transform, AssetDatabase.LoadAssetAtPath<GameObject>(owner).transform),
-                    ["override"] = property.prefabOverride, ["value"] = AssetIdentity(property.objectReferenceValue) });
-                if (!source || property.prefabOverride) break;
+                chain.Add(new JObject {
+                    ["prefab"] = owner,
+                    ["target"] = AnimationUtility.CalculateTransformPath(component.transform, AssetDatabase.LoadAssetAtPath<GameObject>(owner).transform),
+                    ["override"] = property.prefabOverride,
+                    ["value"] = AssetIdentity(property.objectReferenceValue)
+                });
+                if (!source || property.prefabOverride) {
+                    break;
+                }
                 component = source;
             }
-            return new JObject { ["prefab"] = path, ["prefabSha256"] = Hash(path), ["target"] = target, ["component"] = componentType,
-                ["field"] = field, ["kind"] = kind, ["effective"] = effective, ["owner"] = owner, ["sources"] = chain };
+            return new JObject {
+                ["prefab"] = path,
+                ["prefabSha256"] = Hash(path),
+                ["target"] = target,
+                ["component"] = componentType,
+                ["field"] = field,
+                ["kind"] = kind,
+                ["effective"] = effective,
+                ["owner"] = owner,
+                ["sources"] = chain
+            };
         }
 
         private static UnityEngine.Object Replacement(JObject op)
@@ -224,7 +304,12 @@ namespace Helix.Comparison
                 change["consumers"] = Consumers((string)change["owner"]);
                 visuals.Add(change);
             }
-            return new JObject { ["visualChanges"] = visuals, ["valid"] = true, ["planSha256"] = Hash(bytes), ["operationCount"] = ((JArray)plan["operations"]).Count }.ToString();
+            return new JObject {
+                ["visualChanges"] = visuals,
+                ["valid"] = true,
+                ["planSha256"] = Hash(bytes),
+                ["operationCount"] = ((JArray)plan["operations"]).Count
+            }.ToString();
         }
 
         public static string Apply(string planJsonPath, string expectedPlanSha256)
@@ -235,6 +320,7 @@ namespace Helix.Comparison
             Validate(plan);
             var backups = new Dictionary<string, byte[]>();
             var created = new List<string>();
+
             var receipts = new JArray();
             foreach (JObject op in (JArray)plan["operations"]) {
                 string path = (string)op["prefab"];
@@ -283,32 +369,63 @@ namespace Helix.Comparison
                                 var property = VisualField(component, (string)op["field"], (string)op["kind"]);
                                 property.objectReferenceValue = Replacement(op);
                                 property.serializedObject.ApplyModifiedProperties();
-                                if (PrefabUtility.IsPartOfPrefabInstance(component)) PrefabUtility.RecordPrefabInstancePropertyModifications(component);
+                                if (PrefabUtility.IsPartOfPrefabInstance(component)) {
+                                    PrefabUtility.RecordPrefabInstancePropertyModifications(component);
+                                }
                                 continue;
                             }
                             Set(rect, (JObject)op["set"]);
                         }
                         PrefabUtility.SaveAsPrefabAsset(root, group.Key, out bool success);
                         Require(success, "Prefab save failed: " + group.Key);
-                    } finally { PrefabUtility.UnloadPrefabContents(root); }
-                    receipts.Add(new JObject { ["prefab"] = group.Key, ["beforeSha256"] = Hash(backups[group.Key]), ["afterSha256"] = Hash(group.Key) });
+                    }
+                    finally {
+                        PrefabUtility.UnloadPrefabContents(root);
+                    }
+                    receipts.Add(new JObject {
+                        ["prefab"] = group.Key,
+                        ["beforeSha256"] = Hash(backups[group.Key]),
+                        ["afterSha256"] = Hash(group.Key)
+                    });
                 }
                 return new JObject { ["applied"] = true, ["planSha256"] = expectedPlanSha256, ["changes"] = receipts }.ToString();
-            } catch {
-                foreach (var backup in backups) { File.WriteAllBytes(backup.Key, backup.Value); }
+            }
+            catch {
+                foreach (var backup in backups) {
+                    File.WriteAllBytes(backup.Key, backup.Value);
+                }
                 foreach (string path in created) {
                     AssetDatabase.DeleteAsset(path);
-                    if (File.Exists(path)) { File.Delete(path); }
-                    if (File.Exists(path + ".meta")) { File.Delete(path + ".meta"); }
+                    if (File.Exists(path)) {
+                        File.Delete(path);
+                    }
+                    if (File.Exists(path + ".meta")) {
+                        File.Delete(path + ".meta");
+                    }
                 }
                 AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
                 throw;
             }
         }
 
-        private static void Require(bool condition, string message) { if (!condition) { throw new InvalidOperationException(message); } }
-        internal static string Hash(string path) { return Hash(File.ReadAllBytes(path)); }
-        private static string Hash(byte[] bytes) { using (var sha = SHA256.Create()) { return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(); } }
+        private static void Require(bool condition, string message)
+        {
+            if (!condition) {
+                throw new InvalidOperationException(message);
+            }
+        }
+
+        internal static string Hash(string path)
+        {
+            return Hash(File.ReadAllBytes(path));
+        }
+
+        private static string Hash(byte[] bytes)
+        {
+            using (var sha = SHA256.Create()) {
+                return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
+            }
+        }
 
         private static void Validate(JObject plan)
         {
@@ -319,9 +436,11 @@ namespace Helix.Comparison
             }
             Require((int?)plan["schemaVersion"] == 1, "Unsupported plan schema.");
             string root = (string)plan["projectRoot"];
-            Require(!string.IsNullOrEmpty(root) && Path.IsPathRooted(root) && Path.GetFullPath(root).TrimEnd('/') == Directory.GetParent(Application.dataPath).FullName, "Plan projectRoot does not match this Editor.");
+            Require(!string.IsNullOrEmpty(root) && Path.IsPathRooted(root) &&
+                Path.GetFullPath(root).TrimEnd('/') == Directory.GetParent(Application.dataPath).FullName, "Plan projectRoot does not match this Editor.");
             Require(plan["operations"] is JArray && plan["assets"] is JArray, "Plan requires operations and assets arrays.");
             Require(plan["controllerTypes"] == null || plan["controllerTypes"] is JArray, "controllerTypes must be an array.");
+
             var controllerTypes = new List<string>();
             if (plan["controllerTypes"] is JArray declaredControllers) {
                 foreach (JToken declared in declaredControllers) {
@@ -329,6 +448,7 @@ namespace Helix.Comparison
                     controllerTypes.Add((string)declared);
                 }
             }
+
             var destinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (JObject asset in (JArray)plan["assets"]) {
                 string destination = AssetPath((string)asset["destination"], ".png");
@@ -347,8 +467,12 @@ namespace Helix.Comparison
                     byte[] bytes = File.ReadAllBytes(source);
                     Require(bytes.Length > 8 && bytes[0] == 137 && bytes[1] == 80 && bytes[2] == 78 && bytes[3] == 71 && texture.LoadImage(bytes), "Source must be a readable PNG.");
                     Require((float)border[0] + (float)border[2] <= texture.width && (float)border[1] + (float)border[3] <= texture.height, "Border exceeds image dimensions.");
-                } finally { UnityEngine.Object.DestroyImmediate(texture); }
+                }
+                finally {
+                    UnityEngine.Object.DestroyImmediate(texture);
+                }
             }
+
             var targets = new HashSet<string>();
             foreach (JObject op in (JArray)plan["operations"]) {
                 string path = AssetPath((string)op["prefab"], ".prefab");
@@ -363,13 +487,18 @@ namespace Helix.Comparison
                 JObject expected = op["expected"] as JObject;
                 JObject values = op["set"] as JObject;
                 Require(expected != null && values != null && values.Count > 0, "Expected and nonempty set are required.");
-                Require(expected.Properties().All(p => LayoutKeys.Contains(p.Name)) && values.Properties().All(p => LayoutKeys.Contains(p.Name) || p.Name == "sprite"), "Unsupported layout property.");
-                foreach (string key in LayoutKeys) { Pair(expected[key], key == "pivot" || key.StartsWith("anchor") && key != "anchoredPosition"); }
-                foreach (var value in values.Properties().Where(p => p.Name != "sprite")) { Pair(value.Value, value.Name == "pivot" || value.Name == "anchorMin" || value.Name == "anchorMax"); }
+                Require(expected.Properties().All(p => _layoutKeys.Contains(p.Name)) && values.Properties().All(p => _layoutKeys.Contains(p.Name) || p.Name == "sprite"), "Unsupported layout property.");
+                foreach (string key in _layoutKeys) {
+                    Pair(expected[key], key == "pivot" || key.StartsWith("anchor") && key != "anchoredPosition");
+                }
+                foreach (var value in values.Properties().Where(p => p.Name != "sprite")) {
+                    Pair(value.Value, value.Name == "pivot" || value.Name == "anchorMin" || value.Name == "anchorMax");
+                }
                 if (values["sprite"] != null) {
                     string sprite = AssetPath((string)values["sprite"], ".png");
                     Require(destinations.Contains(sprite) || AssetDatabase.LoadAssetAtPath<Sprite>(sprite) != null, "Sprite must be imported or part of this plan.");
                 }
+
                 GameObject prefab = PrefabUtility.LoadPrefabContents(path);
                 try {
                     RectTransform rect = Target(prefab, (string)op["target"]);
@@ -378,35 +507,59 @@ namespace Helix.Comparison
                         foreach (Component component in current.GetComponents<Component>()) {
                             Require(component != null, "Missing script on target or ancestor.");
                             string type = component.GetType().FullName;
-                            bool driver = controllerTypes.Any(name => IsType(component.GetType(), name)) || component is Animator || IsType(component.GetType(), "UnityEngine.UI.LayoutGroup") || type == "UnityEngine.UI.ContentSizeFitter" || type == "UnityEngine.UI.AspectRatioFitter";
+                            bool driver = controllerTypes.Any(name => IsType(component.GetType(), name)) ||
+                                component is Animator || IsType(component.GetType(), "UnityEngine.UI.LayoutGroup") ||
+                                type == "UnityEngine.UI.ContentSizeFitter" || type == "UnityEngine.UI.AspectRatioFitter";
                             Require(!driver || !(component is Behaviour behaviour) || !behaviour.enabled, "Layout or animation controller owns this target.");
                         }
                     }
                     Require(rect.drivenByObject == null, "RectTransform is driven.");
-                    foreach (string key in LayoutKeys) { Require((Get(rect, key) - Pair(expected[key], false)).sqrMagnitude < 0.000001f, "Layout precondition failed: " + key); }
-                    if (values["sprite"] != null) { Require(Image(rect) != null, "Sprite assignment needs an existing uGUI Image."); }
-                } finally { PrefabUtility.UnloadPrefabContents(prefab); }
+                    foreach (string key in _layoutKeys) {
+                        Require((Get(rect, key) - Pair(expected[key], false)).sqrMagnitude < 0.000001f, "Layout precondition failed: " + key);
+                    }
+                    if (values["sprite"] != null) {
+                        Require(Image(rect) != null, "Sprite assignment needs an existing uGUI Image.");
+                    }
+                }
+                finally {
+                    PrefabUtility.UnloadPrefabContents(prefab);
+                }
             }
         }
 
         private static bool IsType(Type type, string name)
         {
-            for (; type != null; type = type.BaseType) { if (type.FullName == name) { return true; } }
+            for (; type != null; type = type.BaseType) {
+                if (type.FullName == name) {
+                    return true;
+                }
+            }
             return false;
         }
-        private static Component Image(RectTransform rect) { return rect.GetComponents<Component>().FirstOrDefault(c => c != null && IsType(c.GetType(), "UnityEngine.UI.Image")); }
+
+        private static Component Image(RectTransform rect)
+        {
+            return rect.GetComponents<Component>().FirstOrDefault(c => c != null && IsType(c.GetType(), "UnityEngine.UI.Image"));
+        }
+
         internal static string AssetPath(string path, string extension)
         {
-            Require(path != null && path.StartsWith("Assets/", StringComparison.Ordinal) && path.EndsWith(extension, StringComparison.OrdinalIgnoreCase) && !path.Contains('\\') && !path.Split('/').Any(p => p == ".." || p == "." || p.Length == 0), "Unsafe asset path.");
+            Require(path != null && path.StartsWith("Assets/", StringComparison.Ordinal) &&
+                path.EndsWith(extension, StringComparison.OrdinalIgnoreCase) &&
+                !path.Contains('\\') && !path.Split('/').Any(p => p == ".." || p == "." || p.Length == 0), "Unsafe asset path.");
             NoLinks(Path.GetFullPath(path));
             return path;
         }
+
         private static void NoLinks(string path)
         {
             for (string current = Path.GetFullPath(path); !string.IsNullOrEmpty(current); current = Path.GetDirectoryName(current)) {
-                if (File.Exists(current) || Directory.Exists(current)) { Require((File.GetAttributes(current) & FileAttributes.ReparsePoint) == 0, "Symlink paths are unsupported: " + current); }
+                if (File.Exists(current) || Directory.Exists(current)) {
+                    Require((File.GetAttributes(current) & FileAttributes.ReparsePoint) == 0, "Symlink paths are unsupported: " + current);
+                }
             }
         }
+
         private static float Number(JToken value)
         {
             Require(value != null && (value.Type == JTokenType.Float || value.Type == JTokenType.Integer), "Expected a number.");
@@ -414,6 +567,7 @@ namespace Helix.Comparison
             Require(!float.IsInfinity(number) && !float.IsNaN(number), "Expected finite number.");
             return number;
         }
+
         private static Vector2 Pair(JToken value, bool normalized)
         {
             var pair = value as JArray;
@@ -422,6 +576,7 @@ namespace Helix.Comparison
             Require(!normalized || vector.x >= 0 && vector.x <= 1 && vector.y >= 0 && vector.y <= 1, "Anchors/pivots must be normalized.");
             return vector;
         }
+
         private static RectTransform Target(GameObject root, string path)
         {
             Transform target = TargetTransform(root, path);
@@ -442,16 +597,22 @@ namespace Helix.Comparison
             }
             return current;
         }
+
         private static Vector2 Get(RectTransform rect, string key)
         {
             return (Vector2)typeof(RectTransform).GetProperty(key).GetValue(rect);
         }
+
         private static void Set(RectTransform rect, JObject values)
         {
-            foreach (string key in LayoutKeys) {
-                if (values[key] != null) { typeof(RectTransform).GetProperty(key).SetValue(rect, Pair(values[key], false)); }
+            foreach (string key in _layoutKeys) {
+                if (values[key] != null) {
+                    typeof(RectTransform).GetProperty(key).SetValue(rect, Pair(values[key], false));
+                }
             }
-            if (values["sprite"] != null) { Image(rect).GetType().GetProperty("sprite").SetValue(Image(rect), AssetDatabase.LoadAssetAtPath<Sprite>((string)values["sprite"])); }
+            if (values["sprite"] != null) {
+                Image(rect).GetType().GetProperty("sprite").SetValue(Image(rect), AssetDatabase.LoadAssetAtPath<Sprite>((string)values["sprite"]));
+            }
         }
     }
 }
