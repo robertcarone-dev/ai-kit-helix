@@ -84,6 +84,10 @@ export function validateStep(s: any) {
 
 /** Expand project-owned scripts and hash their exact contents for action receipts. */
 export function loadStep(s: any) {
+  return loadProjectStep(root, s);
+}
+
+function loadProjectStep(root: string, s: any) {
   if (s?.kind !== 'script' || s.file === undefined) return validateStep(s);
   if (typeof s.file !== 'string' || s.expression !== undefined)
     throw new Error('Script needs either file or expression.');
@@ -95,8 +99,8 @@ export function loadStep(s: any) {
   return validateStep({ ...s, expression, sha256: sha(expression) });
 }
 
-/** Merge local overrides (shallow except helix), validate, then hash the effective config. */
-export function readConfig(url?: string) {
+/** Merge checkout settings and local overrides without opening any scenario scripts. */
+export function adapterSettings(root: string) {
   if (!existsSync(resolve(root, 'Tools/Helix/reference.json')))
     throw new Error(
       'No project adapter found. Run from a configured checkout or use --project-root DIR.',
@@ -104,7 +108,17 @@ export function readConfig(url?: string) {
   const base = JSON.parse(readFileSync(resolve(root, 'Tools/Helix/reference.json'), 'utf8'));
   const local = resolve(root, 'Tools/Helix/reference.local.json');
   const overrides = existsSync(local) ? JSON.parse(readFileSync(local, 'utf8')) : {};
-  const config = { ...base, ...overrides, helix: { ...base.helix, ...overrides.helix } };
+  return { ...base, ...overrides, helix: { ...base.helix, ...overrides.helix } };
+}
+
+export function projectConfig(root: string) {
+  const config = adapterSettings(root);
+  installFixtureScenarios(root, config, (step) => loadProjectStep(root, step));
+  return config;
+}
+
+export function readConfig(url?: string) {
+  const config = projectConfig(root);
   if (config.uiBindingsFile || config.uiBindingsFiles) {
     if (
       config.uiBindingsFiles !== undefined &&
@@ -183,7 +197,6 @@ export function readConfig(url?: string) {
   for (const size of Object.values(config.viewports) as any[])
     if (![size.width, size.height].every((n) => Number.isInteger(n) && n > 0 && n <= 4096))
       throw new Error('Viewport dimensions must be integers 1..4096.');
-  installFixtureScenarios(root, config, loadStep);
   for (const s of Object.values(config.scenarios ?? {}) as any[]) {
     if (!Array.isArray(s.steps) || typeof s.ready !== 'string')
       throw new Error('Scenario needs steps and ready.');

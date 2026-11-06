@@ -14,7 +14,7 @@ Identify the catalog-resolved project and variant, preview URL, served-content h
 
 ## Evidence and bounded execution
 
-1. Maintain a small Markdown or JSON evidence ledger in the task's output package. Use `Tools/Helix/WorkflowToolkit.md` for evidence retrieval and dependency checks; these checks do not establish visual acceptance or automate case execution.
+1. Include a JSON evidence ledger in the task's output package. Follow the `ledger-check` schema: a top-level `cases` array with `id`, `status`, `inputs`, and `evidence` entries containing a ledger-relative `path` and `sha256`. A Markdown summary is optional. Use `Tools/Helix/WorkflowToolkit.md` for evidence retrieval and dependency checks; these checks do not establish visual acceptance or automate case execution.
 2. Reuse evidence whose reference, state, viewport and relevant inputs are unchanged. Invalidate only cases affected by changed inputs, recording why.
 3. Prove one representative pilot with valid captures, receipts and cleanup before expanding to the required matrix. If it fails, diagnose the setup; do not silently reduce required coverage.
 4. Checkpoint the ledger and review evidence at least every 10 minutes, with a handoff target within 20 minutes or earlier when the execution ceiling requires it. Preserve partial work before another batch.
