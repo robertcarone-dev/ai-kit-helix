@@ -82,15 +82,10 @@ namespace Helix.Comparison
             Pin((JObject)receipt["assetHashes"], path);
         }
 
-        private static JObject InspectData(string prefab, string target, string type, string field)
+        internal static JArray PropertySources(Component component, string field, JObject hashes, out Component owner)
         {
-            UiAuthoring.AssetPath(prefab, ".prefab");
-            GameObject root = AssetDatabase.LoadAssetAtPath<GameObject>(prefab);
-            if (!root) throw new ArgumentException("Prefab unavailable: " + prefab);
-            Component component = UiAuthoring.VisualComponent(UiAuthoring.TargetTransform(root, target), type);
-            var hashes = new JObject();
             var chain = new JArray();
-            Component owner = component;
+            owner = component;
             while (true) {
                 var property = Property(owner, field);
                 string asset = AssetDatabase.GetAssetPath(owner);
@@ -101,6 +96,17 @@ namespace Helix.Comparison
                 if (!source || property.prefabOverride) break;
                 owner = source;
             }
+            return chain;
+        }
+
+        private static JObject InspectData(string prefab, string target, string type, string field)
+        {
+            UiAuthoring.AssetPath(prefab, ".prefab");
+            GameObject root = AssetDatabase.LoadAssetAtPath<GameObject>(prefab);
+            if (!root) throw new ArgumentException("Prefab unavailable: " + prefab);
+            Component component = UiAuthoring.VisualComponent(UiAuthoring.TargetTransform(root, target), type);
+            var hashes = new JObject();
+            var chain = PropertySources(component, field, hashes, out Component owner);
             var consumers = new JArray();
             foreach (MonoBehaviour behaviour in root.GetComponentsInChildren<MonoBehaviour>(true)) {
                 if (!behaviour) continue;

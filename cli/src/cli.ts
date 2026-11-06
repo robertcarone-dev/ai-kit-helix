@@ -54,6 +54,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR
   visual-owner --spec FILE --out EMPTY_DIR
   ui-layout-trace --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
+  ui-compositing-compare --spec FILE --out EMPTY_DIR
   typography-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   batch --spec JSON --out EMPTY_DIR [--workers 1|2] [--resume yes]
@@ -163,6 +164,7 @@ async function main() {
     'ui-impact': ['spec', 'previous', 'out'],
     'visual-owner': ['spec', 'out'],
     'ui-layout-trace': ['reference', 'candidate', 'spec', 'out'],
+    'ui-compositing-compare': ['spec', 'out'],
     'typography-compare': ['reference', 'candidate', 'spec', 'out'],
     'ui-compare': ['reference', 'candidate', 'spec', 'out'],
     batch: ['spec', 'out', 'workers', 'resume'],
@@ -337,6 +339,12 @@ async function main() {
       throw new Error('visual-owner requires --spec and --out.');
     const { visualOwner } = await import('./visual-owner.ts');
     return visualOwner(resolve(root, options.spec), resolve(root, options.out));
+  }
+  if (command === 'ui-compositing-compare') {
+    if (pos.length || !options.spec || !options.out)
+      throw new Error('ui-compositing-compare requires --spec and --out.');
+    const { uiCompositing } = await import('./ui-compositing.ts');
+    return uiCompositing(resolve(root, options.spec), resolve(root, options.out));
   }
   if (command === 'typography-compare') {
     if (pos.length || !options.reference || !options.candidate || !options.spec || !options.out)
