@@ -79,3 +79,29 @@ Optional visual observations declare `record` (recording ID or directory), `dime
 For independent loop timing, a project-owned recipe can start `new Helix.Comparison.PlayerLoopTimingTrace(recordingId)` during authorized isolated Play Mode, before triggering the case. Call `Mark("continue")` on the actual action and mark transition milestones at their owning callbacks. The helper buffers one monotonically timed sample per observed Unity Update frame. Write the JSON returned by `Finish()` after the window; call `Dispose()` in the recipe’s cleanup. Use `--trace RUN/trace.json` to join the same recording by ID and frame number. If the trace contains the named event, it can also supply the events receipt. An interval has complete trace coverage only when both endpoints and every intervening Unity frame were sampled.
 
 To compare recorder overhead, replay the same action, state, viewport and quality with image capture disabled. Construct the helper with null recordingId and save its trace. Pass it as `--baseline-trace REPLAY/trace.json` with the recorded run. Its peak consecutive Update gap is measured around its own event; frame IDs from separate runs are never joined. A loop gap identifies a slowdown in that measured run. Attribution to scene loading, recorder work, GPU presentation or the physical player requires separate evidence.
+
+## Review the actual event before declaring footage missing
+
+Run `helix recording-sheet --spec window.json --out NEW_DIR` offline. It reads a retained Helix `motion.json` with its adjacent hash-matching `motion.webm`, or a Unity frame-sequence receipt. It requires ffmpeg and ffprobe. Input paths in the spec resolve relative to the spec. No live session is needed.
+
+```json
+{
+  "recording": "run/motion.json",
+  "event": {
+    "name": "claim-started",
+    "frame": 160,
+    "observation": "First decoded frame showing the claim burst, visually inspected"
+  },
+  "beforeMs": 750,
+  "afterMs": 3000,
+  "intervalMs": 250
+}
+```
+
+The anchor must be an actual saved Unity frame ID or a zero-based decoded video frame ordinal. Describe the visual observation supporting it. Browser scenario elapsed times have their own origin and cannot be used as clip timestamps. Video setup/loading is included before the observation interval. Locate the event in the full recording before anchoring it.
+
+Open `index.html` for labeled timestamps and event-relative offsets. `sheet.json` retains the source receipt hash, video or individual source-frame hashes, requested/available bounds and all selected frame identities. Overview PNG pages sample the whole recording, including the final frame. Event PNG pages cover the requested window at the declared sampling interval and include the anchor and available endpoints. Each PNG's ordered frame list is in the JSON; use the HTML labels when reading times. Large windows paginate automatically. More than 500 requested intervals is rejected; choose a narrower window or a coarser overview. Incomplete bounds are reported explicitly even when image generation succeeds. Thumbnail sheets support review; inspect native source frames for small detail and every frame around the event for exact timing.
+
+Before claiming absent footage, inspect the overview, the event window and the recorded final state. State the inspected source interval and sampling limits. A first-page contact sheet covering only loading cannot establish an absent event. If no event can be found, inspect all relevant recording intervals and report the coverage searched. Separate missing bytes, partial review, absent event, incomplete window and a visible behavioral mismatch. Preserve accepted case results and repeat only checks whose inputs changed.
+
+For the initial search, a spec containing only `{"recording":"run/motion.json"}` generates the full overview without an event claim. Inspect all overview pages, locate the event in the original frames, then supply the observed frame anchor for the detailed window.

@@ -39,6 +39,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   material-keywords --out EMPTY_DIR
   sprite-usage --spec FILE --out EMPTY_DIR
   render-trace --spec FILE --out EMPTY_DIR
+  recording-sheet --spec FILE --out EMPTY_DIR
   vfx-compare --spec FILE --out NEW_DIR
   scene-motion --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
   scene-look [--profile NAME]    read-only hierarchy and scene measurements
@@ -153,6 +154,7 @@ async function main() {
     'material-keywords': ['out'],
     'sprite-usage': ['spec', 'out'],
     'render-trace': ['spec', 'out'],
+    'recording-sheet': ['spec', 'out'],
     'vfx-compare': ['spec', 'out'],
     'scene-motion': ['reference', 'candidate', 'spec', 'out'],
     'scene-report': ['reference', 'candidate', 'spec', 'out'],
@@ -279,11 +281,16 @@ async function main() {
     const { renderTrace } = await import('./render-trace.ts');
     return renderTrace(resolve(root, options.spec), resolve(root, options.out));
   }
-  if (command === 'capture-coverage' || command === 'vfx-compare') {
+  if (command === 'capture-coverage' || command === 'vfx-compare' || command === 'recording-sheet') {
     if (pos.length || !options.spec || !options.out)
       throw new Error(command + ' requires --spec and --out.');
     const directory = dirname(fileURLToPath(import.meta.url));
-    const filename = command === 'capture-coverage' ? 'coverage_plan.py' : 'vfx.py';
+    const filename =
+      command === 'capture-coverage'
+        ? 'coverage_plan.py'
+        : command === 'recording-sheet'
+          ? 'recording_sheet.py'
+          : 'vfx.py';
     const installed = join(directory, '..', filename);
     const script = existsSync(installed) ? installed : join(directory, '../../workflows', filename);
     const result = spawnSync(
