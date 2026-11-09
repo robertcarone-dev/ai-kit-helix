@@ -93,9 +93,13 @@ export function unityPlan(
     reference: config.helix,
     backend,
     executable: backend,
+    environment: backend === 'ai-kit'
+      ? { AIKIT_QA_VIEWPORT: `${size.width}x${size.height}`, AIKIT_QA_DIR: join(out, 'qa') }
+      : {},
     stages: rendered,
     notes: [
       'Commands are argument arrays, not shell strings. Run preflight, prepare, capture and always restore owned Unity state, including after failure.',
+      'Overlay environment on the child process environment for every lifecycle command, including restoration. Do not resize the Game view independently of the play session viewport.',
       'Project preflight must verify storage isolation and backend compatibility. A checkout path alone does not prove isolation.',
     ],
   };

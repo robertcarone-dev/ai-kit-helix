@@ -73,6 +73,7 @@ class Capture:
         self.project = project.resolve()
         self.expected_path = expected_path.resolve()
         self.expected = json.loads(self.expected_path.read_text()); validate_expected(self.expected)
+        self.environment = {**os.environ, 'AIKIT_QA_VIEWPORT': f"{self.expected['width']}x{self.expected['height']}"}
         self.config, config_hash = load_adapter(self.project, motion)
         scratch = inside(self.project/'.aikit/scratch', self.project)
         self.output = inside(output, scratch)
@@ -85,6 +86,7 @@ class Capture:
             if not profile['unityMotion']['nativeSupported'] or seconds > profile['unityMotion']['maxSeconds']:
                 raise ValueError('Native recording capability profile unverified or unsupported')
         self.output.mkdir(parents=True, exist_ok=False)
+        self.environment['AIKIT_QA_DIR'] = str(self.output/'qa')
         # Allocate id before mutation so lost start replies can still be stopped by their owner.
         self.recording = 'rec-'+datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:4]
         self.values = {'projectRoot':str(self.project),'out':str(self.output),'expected':str(self.expected_path),
@@ -120,7 +122,7 @@ class Capture:
         if remaining <= 0: raise TimeoutError('Capture deadline expired')
         entry={'hook':name,'startedAt':time.time()};self.receipt['hooks'].append(entry)
         try:
-            result=subprocess.run(argv,cwd=self.project,text=True,capture_output=True,timeout=min(30,remaining))
+            result=subprocess.run(argv,cwd=self.project,env=self.environment,text=True,capture_output=True,timeout=min(30,remaining))
             if result.returncode: raise ValueError(result.stderr or result.stdout)
             value=json.loads(result.stdout)
             if not isinstance(value,dict) or value.get('ok') is not True or Path(value.get('projectRoot','')).resolve()!=self.project:

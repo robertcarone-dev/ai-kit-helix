@@ -335,6 +335,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         prepareAttempted = false,
         plan: any,
         executable: string,
+        unityEnv: NodeJS.ProcessEnv,
         restoreFailed = false,
         capturesComplete = false;
       try {
@@ -355,6 +356,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           );
           plan = JSON.parse(planned.stdout);
           executable = unityExecutable(plan, options);
+          unityEnv = { ...matrixEnv, ...plan.environment };
           for (const stage of ['preflight', 'prepare', 'capture', 'restore'])
             if (
               !Array.isArray(plan.stages[stage]) ||
@@ -370,7 +372,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
               join(c.out, 'unity', 'scene-request.json'),
               JSON.stringify(c.sceneOptions),
             );
-          for (const argv of plan.stages.preflight) await invoke(executable, argv, 'preflight');
+          for (const argv of plan.stages.preflight) await invoke(executable, argv, 'preflight', unityEnv);
         }
         if (!retained.reference) {
           browserAttempted = true;
@@ -392,9 +394,9 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           prepareAttempted = true;
           for (const argv of plan.stages.prepare) {
             if (interrupted) throw new Error('Interrupted');
-            await invoke(executable, argv, 'prepare');
+            await invoke(executable, argv, 'prepare', unityEnv);
           }
-          for (const argv of plan.stages.capture) await invoke(executable, argv, 'capture');
+          for (const argv of plan.stages.capture) await invoke(executable, argv, 'capture', unityEnv);
         }
         for (const [side, file] of [
           ['reference', 'reference/reference.json'],
@@ -419,7 +421,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           row.restoration = [];
           for (const argv of plan.stages.restore) {
             try {
-              await invoke(executable, argv, 'restore');
+              await invoke(executable, argv, 'restore', unityEnv);
               row.restoration.push({ argv, status: 'completed' });
             } catch (e) {
               row.restoration.push({

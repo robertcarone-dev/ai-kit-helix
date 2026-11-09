@@ -29,6 +29,8 @@ Session tokens, locks, logs and evidence live in the checkout’s ignored `.heli
 
 `unity-plan SCENARIO --viewport NAME --out DIR` prints configured Unity recipe argument arrays and their `ai-kit` or `unity` backend. It never executes Unity commands. Output must be within the chosen project’s `.aikit/scratch`. Execute preflight, prepare, capture and restoration only under the project’s verified adapter procedure. Always restore owned state after failure.
 
+Overlay the plan's `environment` on the child process environment for **every** stage. AI Kit plans set `AIKIT_QA_VIEWPORT` and a round-local `AIKIT_QA_DIR`; resizing the Game view alone does not configure later play commands. The matrix runner applies this environment automatically.
+
 `compare --reference PNG --candidate PNG --out EMPTY_DIR` creates native side-by-side/diff PNGs, JSON and HTML. It refuses mismatched dimensions and existing evidence. Pixel metrics are diagnostic, not an acceptance verdict. Inspect both receipts, equivalent state, input evidence and timing.
 
 Add `--regions regions.json` for paired regional differences and per-image statistics:
@@ -114,6 +116,8 @@ Each evidence claim has its own `evidenceChecks` entry. `reusable: true` means t
 ### Save a checkpoint
 
 Use `helix discrepancy-save --spec FILE`. Store **one expected vs observed difference or coverage gap per ID**. The JSON below illustrates the shape; replace the placeholder hashes with the actual recorded digests. Paths in evidence and inputs are relative to the checkout root, regardless of the spec file location.
+
+For generated recording sheets, the authoring spec may also include `evidenceManifests: [".aikit/scratch/ROUND/sheets/evidence.json"]` alongside `evidence: []`. Save imports the manifest's artifact and dependency pins, verifies their bytes, and persists the expanded evidence array. It refuses changed, missing or duplicate artifacts instead of recalculating historical hashes. The manifest describes review artifacts, not visual acceptance; keep the finding and verdict in the discrepancy spec. Add recovery locators to the saved evidence when packaging a cross-checkout handoff.
 
 ```json
 {

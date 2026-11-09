@@ -309,7 +309,7 @@ async function main() {
               options.basis ?? 'retained',
               ...(options.inventory ? [resolve(root, options.inventory)] : []),
             ]
-          : []),
+          : command === 'recording-sheet' ? [root] : []),
       ],
       { encoding: 'utf8' },
     );

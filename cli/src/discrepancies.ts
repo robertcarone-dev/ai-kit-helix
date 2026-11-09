@@ -404,7 +404,26 @@ export async function discrepancyCommand(
   }
   if (command === 'discrepancy-save') {
     if (!options.spec) throw new Error('Supply --spec FILE and, for updates, --after REVISION.');
-    const record: Issue = JSON.parse(await readFile(resolve(root, options.spec), 'utf8'));
+    const { evidenceManifests, ...record } = JSON.parse(await readFile(resolve(root, options.spec), 'utf8'));
+    if (evidenceManifests !== undefined) {
+      if (!Array.isArray(evidenceManifests) || !Array.isArray(record.evidence))
+        throw new Error('evidenceManifests and evidence must be arrays.');
+      const hashes = new Map<string, string>();
+      for (const path of evidenceManifests) {
+        validatePath(path);
+        const manifest = JSON.parse(await readFile(resolve(root, path), 'utf8'));
+        if (manifest.schemaVersion !== 1 || manifest.pathBase !== 'projectRoot' || !Array.isArray(manifest.evidence))
+          throw new Error('Invalid evidence manifest: ' + path);
+        for (const evidence of manifest.evidence) {
+          validate({ ...record, evidence: [evidence] });
+          if (!(await inspectEvidence(evidence, hashes)).reusable)
+            throw new Error('Evidence manifest contains missing or changed bytes: ' + evidence.path);
+          if (record.evidence.some((entry: Evidence) => entry.path === evidence.path))
+            throw new Error('Duplicate evidence path: ' + evidence.path);
+          record.evidence.push(evidence);
+        }
+      }
+    }
     validate(record);
     const after = options.after ?? '0';
     if (!/^(0|[1-9]\d*)$/.test(after) || !Number.isSafeInteger(Number(after)))
