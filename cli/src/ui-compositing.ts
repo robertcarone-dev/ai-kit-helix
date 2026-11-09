@@ -2,10 +2,10 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { PNG } from 'pngjs';
 import { emptyOutput, root, sha } from './config.ts';
+import { regionMean, type RGB, type ImageRegion, type ImageFrame } from './image-regions.ts';
 
 type Pin = { sha256: string; path?: string; attachment?: string };
-type RGB = [number, number, number];
-type Region = { id: string; rect: [number, number, number, number] };
+type Region = ImageRegion;
 type View = { width: number; height: number; regions: Region[] };
 type Case = {
   id: string;
@@ -26,7 +26,7 @@ type Spec = {
   viewports: Record<string, View>;
   cases: Case[];
 };
-type Frame = { png: PNG; x: number };
+type Frame = ImageFrame;
 
 function inside(base: string, name: string) {
   const path = realpathSync(resolve(base, name));
@@ -105,20 +105,6 @@ function ownership(binding: Binding) {
   };
 }
 
-function mean(frame: Frame, [left, top, right, bottom]: Region['rect']): RGB {
-  const { png, x } = frame;
-  const sums: RGB = [0, 0, 0];
-  for (let y = top; y < bottom; y++) {
-    for (let i = left; i < right; i++) {
-      const offset = 4 * (y * png.width + x + i);
-      if (png.data[offset + 3] !== 255)
-        throw new Error('Transparent pixel in sampled region. Supply the final opaque render.');
-      for (let c = 0; c < 3; c++) sums[c] += png.data[offset + c];
-    }
-  }
-  return sums.map((v) => v / ((right - left) * (bottom - top))) as RGB;
-}
-
 const delta = (a: RGB, b: RGB): RGB => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 
 function regionMap(helix: Frame, unity: Frame, { width, height, regions }: View) {
@@ -184,11 +170,11 @@ function compare(c: Case, view: View, tolerance: number) {
       rect[1] >= rect[3]
     )
       throw new Error('Invalid region: ' + region.id);
-    const h = mean(helix, rect),
-      u = mean(unity, rect),
+    const h = regionMean(helix, rect),
+      u = regionMean(unity, rect),
       difference = delta(u, h);
-    const backgroundHelix = baseH ? mean(baseH, rect) : null;
-    const backgroundUnity = baseU ? mean(baseU, rect) : null;
+    const backgroundHelix = baseH ? regionMean(baseH, rect) : null;
+    const backgroundUnity = baseU ? regionMean(baseU, rect) : null;
     const hChange = backgroundHelix ? delta(h, backgroundHelix) : null;
     const uChange = backgroundUnity ? delta(u, backgroundUnity) : null;
     const maxAbs = Math.max(...difference.map(Math.abs));

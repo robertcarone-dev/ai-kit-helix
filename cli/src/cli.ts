@@ -64,7 +64,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   ui-matrix --spec JSON --out EMPTY_DIR [--execute yes] [--ai-kit PATH]
   debug-image --input PNG --out EMPTY_DIR
   debug-capture --view MODE --out EMPTY_DIR
-  compare --reference PNG --candidate PNG --out EMPTY_DIR
+  compare --reference PNG --candidate PNG --out EMPTY_DIR [--regions JSON]
 Every command accepts --project-root DIR; otherwise discover from the working directory.\nRelative file paths are project-relative. Config: Tools/Helix/reference.json; optional reference.local.json top-level overrides.
 Start discovers the configured project/variant and opens local Helix Desktop if needed.
 Helix serves source/assets and starts its preview on demand; stop closes only our browser.
@@ -177,7 +177,7 @@ async function main() {
     'ui-compare': ['reference', 'candidate', 'spec', 'out'],
     batch: ['spec', 'out', 'workers', 'resume'],
     'ui-matrix': ['spec', 'out', 'execute', 'ai-kit'],
-    compare: ['reference', 'candidate', 'out'],
+    compare: ['reference', 'candidate', 'out', 'regions'],
     'debug-image': ['input', 'out'],
     'debug-capture': ['view', 'out'],
   };
@@ -463,6 +463,7 @@ async function main() {
       resolve(root, options.reference),
       resolve(root, options.candidate),
       resolve(root, options.out),
+      options.regions === undefined ? undefined : resolve(root, options.regions),
     );
   }
   if (command === 'start') {

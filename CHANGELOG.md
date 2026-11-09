@@ -2,6 +2,8 @@
 
 ## 1.2.0 (unreleased)
 
+- Add optional named regions to image comparison, with per-image RGB means and regional pixel differences in JSON and the existing review page.
+
 - Add reusable rules for verified discrepancy closure, project-designated status maintenance and paired audio review; keep human-review scope and game-specific mappings project-owned.
 
 - Add paired luminance, HSV and alpha views, scoped Three.js shader diagnostics, and Unity geometry/URP captures with restoration and provenance.

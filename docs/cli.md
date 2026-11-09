@@ -31,6 +31,16 @@ Session tokens, locks, logs and evidence live in the checkout’s ignored `.heli
 
 `compare --reference PNG --candidate PNG --out EMPTY_DIR` creates native side-by-side/diff PNGs, JSON and HTML. It refuses mismatched dimensions and existing evidence. Pixel metrics are diagnostic, not an acceptance verdict. Inspect both receipts, equivalent state, input evidence and timing.
 
+Add `--regions regions.json` for paired regional differences and per-image statistics:
+
+```json
+{"schemaVersion":1,"regions":[{"id":"label","rect":[130,640,180,685]}]}
+```
+
+Rectangles use native top-left pixels: `[left, top, right, bottom]`, with right and bottom excluded. Both images use the same rectangle. IDs must be distinct nonempty strings; rectangles must contain integer coordinates, have positive area, and fit inside the images. Invalid regions are refused, never clamped. A 1×1 rectangle measures a point. Regional measurements require 8-bit PNG inputs and opaque pixels inside every sampled region; ordinary whole-image comparison retains its RGBA behavior.
+
+`comparison.json` retains the whole-image results and adds `regionsSource` (absolute path and SHA256 of the supplied JSON) and `regions`. Each region reports `pixelCount`, `referenceMeanRgb`, `candidateMeanRgb`, `meanDeltaRgb`, `changedPixels`, `changedFraction`, `meanAbsoluteDeltaRgb`, and `maxAbsoluteDeltaRgb`. Means use encoded 8-bit RGB without gamma conversion. Signed mean delta is candidate minus reference; mean absolute delta averages absolute per-pixel differences, so opposing changes cannot cancel. Changed pixels have at least one different RGB channel. The existing review page includes a regional measurement table; the images remain full-size. Regions may overlap and are reported independently. No threshold, alignment, resizing or acceptance verdict is inferred.
+
 Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix/WorkflowToolkit.md` for optional AI Kit workflows. No game build or Production check is required.
 
 ## UI comparison
