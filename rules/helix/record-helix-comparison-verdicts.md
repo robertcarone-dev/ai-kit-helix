@@ -25,8 +25,22 @@ Finish bounded audit sections with explicit dispositions. Route actionable findi
 
 Start or resume feature work by reading `Tools/Helix/bin/helix discrepancy-resume --feature "FEATURE"`. At a checkpoint or handoff, persist open differences and coverage gaps with stable IDs, capture-time evidence/input hashes, recoverable locations and executable next actions through `discrepancy-save`. Deliver the project-owned records to the receiving branch. A later seat checks the per-claim evidence status, preserves valid observations and updates the same ID using the revision it read. Link the record to the existing assignment; keep final QA verdict and deviation approval with their owners.
 
+## Persist completion in the discrepancy register
+
+When a discrepancy's scoped acceptance is satisfied and applicable receiving-revision verification is complete, its verdict owner (QA where assigned) must record completion before handoff, without a separate user prompt. A build handoff or board Done status alone does not close the register entry.
+
+Read the latest revision, then append a new revision of the same stable ID using `Tools/Helix/bin/helix discrepancy-save --spec FILE --after READ_REVISION`. Set `status` to `resolved`; the schema has no `completed` status. `--after` must equal the revision read: on a conflict, resume and reconcile the intervening record rather than overwrite it. Use `accepted-deviation` only for an explicitly approved difference, recording that approval.
+
+Include the resolution `decision`, fix identity, tested receiving revision in `unityRevision`, and recoverable verification evidence with capture-time evidence/input hashes. A resolved record requires a nonempty evidence array. Clear obsolete `blocker` and `nextAction` fields in the new revision. Do not delete records or rewrite earlier revisions.
+
+Do not close a partly unmet scope. If residual coverage is genuinely independent of the completed defect, retain or create separately linked stable cases and explain the split in the decision; do not leave a fixed scoped defect open solely for unrelated coverage. Deliver the new revision and verify its status and evidence readback from the receiving checkout before recounting the project status summary.
+
+## Continuation and evidence recovery
+
 For a UI continuation, the AI Kit assignment or build handoff includes the exact feature name and stable discrepancy IDs in the board task. The receiving seat can retrieve evidence, case routing and next actions from the checkout with those identifiers. Keep case selectors and prefab field names in the project adapter.
 
 Missing evidence must carry a recoverable board attachment ID or package manifest ID and member path. Check recovery from the receiving checkout before delivery. Use the returned evidenceChecks to distinguish recovered bytes from reusable observations. For a merge-dependent handoff, pin the required commits and supply an afterIntegration action; the receiving agent follows continuation.nextAction against its own HEAD.
 
 At handoff, distinguish pairs captured, pairs measured and measurements reviewed. Attach the case ledger, exact input and capture identities, measurement method and result, and durable originals before releasing scratch. Verify readback from the receiving checkout. Preserve passes with matching declared inputs and evidence. Assign remaining measurement work against retained pairs before requesting another reference slot.
+
+After a relevant verdict, deviation or blocker change, follow [comparison status maintenance](maintain-comparison-status.md) at the next checkpoint before handoff.

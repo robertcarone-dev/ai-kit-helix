@@ -33,12 +33,14 @@ On Windows, or when invoking Node directly, replace `./install.sh` with `node sc
 
 | Option | Purpose |
 | --- | --- |
-| `--rules helix` | Install the six Helix reference/comparison rules when Helix is the project's chosen reference. |
+| `--rules helix` | Install the Helix reference/comparison rules when Helix is the project's chosen reference. |
 | `--rules all` | Also install AI Kit workflow rules for shared-file and delivery coordination, lane recovery, and isolated test storage. Review overlap with existing project policy. |
 | `--rules none` | Install no rules; the default when no prior installation exists. |
 | `--unity-helper` | Opt in to the generic Editor comparison helper under `Assets/HelixComparison/Editor`; requires the project’s existing Newtonsoft JSON and URP packages. |
 | `--init` | Create `reference.json` and `project-adapter.md` only when absent. |
 | `--copy-skills` | Install copies for Codex instead of checkout-local aliases. |
+
+The optional Helix rules cover discrepancy closure, comparison-status maintenance and paired audio review. To use status maintenance, designate the status document, its scope and owner in the project adapter or a project-local rule. The toolkit does not choose or create that document. Keep project-specific reference exclusions and audio mappings in local rules.
 
 Existing unmanaged or locally edited files are reported as conflicts. Resolve the specific difference; there is no force-overwrite option. `--adopt-legacy` is only for the original exact-hash extraction migration, not general conflict resolution.
 

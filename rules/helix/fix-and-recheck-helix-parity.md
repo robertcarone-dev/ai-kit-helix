@@ -13,6 +13,7 @@ After a fix:
 2. Repeat the failing case against the same Helix reference and capture new evidence.
 3. Recheck affected states and responsive aspects for regressions.
 4. Link the defect, fix and verification evidence in the issue handoff.
+5. Once scoped acceptance and applicable receiving verification are complete, have the verdict owner [persist discrepancy completion](record-helix-comparison-verdicts.md#persist-completion-in-the-discrepancy-register) before handoff.
 
 Do not close a defect merely because the code or asset changed. Preserve unresolved valid finding IDs; document approved deviations explicitly.
 

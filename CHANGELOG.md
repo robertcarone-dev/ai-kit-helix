@@ -2,6 +2,8 @@
 
 ## 1.2.0 (unreleased)
 
+- Add reusable rules for verified discrepancy closure, project-designated status maintenance and paired audio review; keep human-review scope and game-specific mappings project-owned.
+
 - Add paired luminance, HSV and alpha views, scoped Three.js shader diagnostics, and Unity geometry/URP captures with restoration and provenance.
 - Custom Unity shaders declare debug support through the `HelixDebugViews=1` tag; project shader implementations and native Game-view readiness remain adapter-owned.
 - Install the debug guide and require the existing URP dependency when the optional Unity helper is selected.
