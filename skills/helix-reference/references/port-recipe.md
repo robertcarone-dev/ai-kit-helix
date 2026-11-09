@@ -2,6 +2,8 @@
 
 Use this recipe for authorized implementation. Keep review-only findings as a port brief.
 
+For animation work, follow [editable animation authoring](animation-porting.md): sparse curves, explicit motion ownership, shared clocks and overlap composition, and visible Edit Mode preview are required alongside live comparison.
+
 1. Inspect the source asset or generator and its caller. Record parameters, textures, shaders and state dependencies; map each to an existing Unity counterpart or a scoped missing component.
 2. Translate conventions before tuning appearance. Establish units, coordinate axes, pivots, parent transforms, camera projection, texture channels and the relevant color/time basis from actual source and target code.
 3. Implement one representative counterpart through the project’s existing architecture. Follow the target repository’s asset-authoring rules. Preserve source behavior and unrelated Unity work.

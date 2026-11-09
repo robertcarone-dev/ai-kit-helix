@@ -15,6 +15,8 @@ Use a named scenario with reproducible actions for transient interactions. `reco
 
 ## Authorized implementation
 
+Follow the [editable animation authoring contract](../helix-reference/references/animation-porting.md). Sparse source-aligned curves, shared clocks, current-pose overlap, explicit dynamic ownership, and visible Edit Mode preview/restoration are implementation requirements. Audit obsolete clips, controller parameters, and state timing owners before reusing an old port.
+
 Follow [the port recipe](../helix-reference/references/port-recipe.md). Map the source tween, mixer or procedural update into the existing Unity motion system. Translate time units, easing, delays and interruption behavior explicitly; prove one event from matched initial state through its final pose before extending affected variants. Keep observation instrumentation separate from the shipped motion logic.
 
 ## Scene sampling support

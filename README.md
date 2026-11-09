@@ -40,7 +40,7 @@ On Windows, or when invoking Node directly, replace `./install.sh` with `node sc
 | `--init` | Create `reference.json` and `project-adapter.md` only when absent. |
 | `--copy-skills` | Install copies for Codex instead of checkout-local aliases. |
 
-The optional Helix rules cover discrepancy closure, comparison-status maintenance and paired audio review. To use status maintenance, designate the status document, its scope and owner in the project adapter or a project-local rule. The toolkit does not choose or create that document. Keep project-specific reference exclusions and audio mappings in local rules.
+The optional Helix rules cover discrepancy closure, comparison-status maintenance, paired audio review, and [editable animation authoring](skills/helix-reference/references/animation-porting.md). The motion contract requires sparse curves, explicit clock/property ownership, overlap composition, and visible Edit Mode preview; active asset mappings remain project-owned. To use status maintenance, designate the status document, its scope and owner in the project adapter or a project-local rule. The toolkit does not choose or create that document. Keep project-specific reference exclusions and audio mappings in local rules.
 
 Existing unmanaged or locally edited files are reported as conflicts. Resolve the specific difference; there is no force-overwrite option. `--adopt-legacy` is only for the original exact-hash extraction migration, not general conflict resolution.
 
