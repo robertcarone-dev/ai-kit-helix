@@ -23,6 +23,17 @@ Identify the catalog-resolved project and variant, preview URL, served-content h
 
 For report-only scene failures, use `scene-report` with retained valid receipts and a fresh output directory before considering recapture. Follow `Tools/Helix/Scene.md` for explicit context, outcome and observation classification. Keep actual outcome differences and missing observations visible; changing the report contract cannot create missing evidence.
 
+## Offline image and recording review
+
+Use the existing Helix commands for image diagnostics and frame sheets before writing custom image-processing scripts. Run them from the consuming checkout with `Tools/Helix/bin/helix`; preserve source images and receipts and use a fresh output directory.
+
+- Native PNG pairs: `compare --reference REFERENCE.png --candidate CANDIDATE.png --out NEW_DIR` generates side-by-side, diff and HTML review output. Use `--regions FILE` for corresponding-region measurements; see `Tools/Helix/DebugViews.md` for the schema. Inputs must have matching native dimensions.
+- Image channels: `debug-image --input IMAGE.png --out NEW_DIR` exports luminance, hue, saturation, value and alpha views; see `Tools/Helix/DebugViews.md`.
+- Recording overviews and event windows: `recording-sheet --spec FILE --out NEW_DIR` generates PNG contact sheets and timestamped HTML from retained recording receipts. Start with `{"recording":"run/motion.json"}` to locate the event, then add the observed frame anchor and window as documented in `Tools/Helix/WorkflowToolkit.md`.
+- Paired transient effects: `vfx-compare --spec FILE --out NEW_DIR` generates event-aligned filmstrips and a coverage report; see `Tools/Helix/Toolkit.md` for the spec.
+
+PNG diagnostics use the installed Node `pngjs` dependency. Recording review uses Python 3.10+, ffmpeg and ffprobe on PATH. These commands do not require Pillow (`PIL`); do not replace them with ad hoc PIL scripts or install Pillow to perform these supported operations. `doctor` checks browser/catalog readiness, not offline image-tool prerequisites. If a required executable is missing, report that dependency rather than retrying unchanged commands. For a measurement outside these commands, inspect the available tools and dependencies before choosing a custom implementation, and retain its method and source provenance.
+
 ## Efficient static capture
 
 For static fixture views, prefer the configured `batch` command in `Tools/Helix/Toolkit.md` over repeated full audits. Its adapter contract is in `Tools/Helix/Adapter.md`. Load once per viewport worker, request only the required views, and leave destruction and video out unless the acceptance criterion requires them. Do not infer fixture behavior from another project's adapter.

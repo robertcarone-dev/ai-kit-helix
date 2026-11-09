@@ -2,6 +2,8 @@
 
 Requires Node >=22.18 and a configured local Helix service. Install dependencies with `npm ci --prefix Tools/Helix` and Chromium with `npm run install-browser --prefix Tools/Helix`. The browser workflow does not require AI Kit. Automatic Helix Desktop launch is macOS-only; on other platforms start the local service first.
 
+For offline image review, use `compare` for native PNG pairs and regional measurements, `debug-image` for image channels, `recording-sheet` for recording contact sheets, and `vfx-compare` for paired event filmstrips. PNG diagnostics use the installed `pngjs` dependency; recording review requires Python 3.10+, ffmpeg and ffprobe. None requires Pillow (`PIL`). Prefer these commands over custom PIL scripts. See `Tools/Helix/DebugViews.md` and the recording-sheet spec in `Tools/Helix/WorkflowToolkit.md` in the installed snapshot. `doctor` does not check these offline dependencies.
+
 From a configured checkout:
 
 ```sh
