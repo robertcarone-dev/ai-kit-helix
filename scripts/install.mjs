@@ -54,6 +54,7 @@ export function run(argv) {
   if(unityHelper && command!=='remove') {
     const packages=safe(root,'Packages/manifest.json');
     if(!existsSync(packages) || !read(packages).dependencies?.['com.unity.nuget.newtonsoft-json']) throw new Error('Unity helper requires an existing com.unity.nuget.newtonsoft-json dependency; no packages were changed.');
+    if(!read(packages).dependencies?.['com.unity.render-pipelines.universal']) throw new Error('Unity debug views require an existing com.unity.render-pipelines.universal dependency; no packages were changed.');
   }
   if(!['helix','all','none'].includes(rules))throw new Error('Invalid rule selection');
   if(command==='update'&&!previous)throw new Error('No installation to update');
@@ -65,7 +66,7 @@ export function run(argv) {
     tree('workflows/handoff-ui','Tools/Helix/handoff-ui');
     tree('cli/src','Tools/Helix/src');tree('cli/bin','Tools/Helix/bin');
     for(const name of ['workflow.py','evidence_utils.py','event_window.py','recording_sheet.py','capture.py','delivery.py','handoff.py','coverage_plan.py','vfx.py','recovery.py'])add('Tools/Helix/'+name,readFileSync(join(source,'workflows',name)));
-    for(const [src,dest] of [['cli.md','Toolkit.md'],['ui.md','UI.md'],['ui-port.md','UIPort.md'],['scene.md','Scene.md'],['workflows.md','WorkflowToolkit.md'],['project-adapter.md','Adapter.md'],['migration.md','Migration.md']])add(`Tools/Helix/${dest}`,readFileSync(join(source,'docs',src)));
+    for(const [src,dest] of [['cli.md','Toolkit.md'],['ui.md','UI.md'],['ui-port.md','UIPort.md'],['scene.md','Scene.md'],['workflows.md','WorkflowToolkit.md'],['project-adapter.md','Adapter.md'],['migration.md','Migration.md'],['DebugViews.md','DebugViews.md']])add(`Tools/Helix/${dest}`,readFileSync(join(source,'docs',src)));
     const installed={...pkg,scripts:{'install-browser':'playwright install chromium'}};
     add('Tools/Helix/package.json',Buffer.from(JSON.stringify(installed,null,2)+'\n'));
     add('Tools/Helix/package-lock.json',readFileSync(join(source,'package-lock.json')));

@@ -2,6 +2,10 @@
 
 ## 1.2.0 (unreleased)
 
+- Add paired luminance, HSV and alpha views, scoped Three.js shader diagnostics, and Unity geometry/URP captures with restoration and provenance.
+- Custom Unity shaders declare debug support through the `HelixDebugViews=1` tag; project shader implementations and native Game-view readiness remain adapter-owned.
+- Install the debug guide and require the existing URP dependency when the optional Unity helper is selected.
+
 - Add adapter-driven readiness and synchronized motion workflows with explicit execution, isolation/compatibility preflight, one-shot mutations, endpoint validation and restoration.
 - Add integration receipts, evidence packaging/upload readback, selective reuse and honest assignment timing helpers.
 - Install these helpers with existing manifest/conflict protection; keep game hooks and capture profiles project-owned.

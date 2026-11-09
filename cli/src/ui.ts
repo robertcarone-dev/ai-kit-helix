@@ -1,3 +1,4 @@
+import { debugImageData, imageDebugControls } from './image-debug.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -367,12 +368,16 @@ export function compareUI(
   const out = emptyOutput(outPath);
   writeFileSync(join(out, 'reference.png'), a.bytes);
   writeFileSync(join(out, 'candidate.png'), b.bytes);
+  const debugImages = {};
   let sections = '';
   report.elements.forEach((e: any, i: number) => {
     e.crops = {
       reference: writeNativeCrop(out, a.png, e.reference?.bounds, `element-${i}-reference.png`),
       candidate: writeNativeCrop(out, b.png, e.candidate?.bounds, `element-${i}-candidate.png`),
     };
+    for (const file of Object.values(e.crops))
+      if (file)
+        debugImages[file as string] = debugImageData(readFileSync(join(out, file as string)));
     sections += `<section><h2>${escape(e.id)} — ${e.status}</h2><div class="pair">${Object.entries(
       e.crops,
     )
@@ -383,6 +388,8 @@ export function compareUI(
       )
       .join('')}</div><pre>${escape(JSON.stringify(e.checks, null, 2))}</pre></section>`;
   });
+  debugImages['reference.png'] = debugImageData(a.bytes);
+  debugImages['candidate.png'] = debugImageData(b.bytes);
   const overlay = (side: string, png: any) =>
     `<svg viewBox="0 0 ${png.width} ${png.height}" xmlns="http://www.w3.org/2000/svg"><image href="${side}.png" width="${png.width}" height="${png.height}"/>${report.elements
       .map((e: any) => {
@@ -395,11 +402,18 @@ export function compareUI(
   writeFileSync(join(out, 'comparison.json'), JSON.stringify(report, null, 2));
   writeFileSync(
     join(out, 'review.html'),
-    `<!doctype html><meta charset="utf-8"><title>UI comparison</title><style>body{background:#16191e;color:#eee;font:15px system-ui;margin:24px}.pair{display:flex;gap:16px;overflow:auto}.pair>svg{width:48%;flex-shrink:0}section{border-top:1px solid #555;padding:16px 0}pre{white-space:pre-wrap}figure{margin:0}img{image-rendering:auto}button{padding:8px}</style><h1>UI comparison: ${report.status}</h1><p>Native coordinates. Overview scales for viewing; crops retain native pixels. Criteria are separate from visual acceptance.</p><h2>State and capture prerequisites</h2><pre>${escape(JSON.stringify(report.prerequisites, null, 2))}</pre><div class="pair">${overlay('reference', a.png)}${overlay('candidate', b.png)}</div><h2>Spacing and alignment</h2><pre>${escape(JSON.stringify(report.relations, null, 2))}</pre>${sections}`,
+    `<!doctype html><meta charset="utf-8"><title>UI comparison</title><style>body{background:#16191e;color:#eee;font:15px system-ui;margin:24px}.pair{display:flex;gap:16px;overflow:auto}.pair>svg{width:48%;flex-shrink:0}section{border-top:1px solid #555;padding:16px 0}pre{white-space:pre-wrap}figure{margin:0}img{image-rendering:auto}button{padding:8px}</style><h1>UI comparison: ${report.status}</h1><p>Native coordinates. Overview scales for viewing; crops retain native pixels. Criteria are separate from visual acceptance.</p>${imageDebugControls()}<h2>State and capture prerequisites</h2><pre>${escape(JSON.stringify(report.prerequisites, null, 2))}</pre><div class="pair">${overlay('reference', a.png)}${overlay('candidate', b.png)}</div><h2>Spacing and alignment</h2><pre>${escape(JSON.stringify(report.relations, null, 2))}</pre>${sections}<script>
+const images=${JSON.stringify(debugImages)};
+const targets=[...document.querySelectorAll('img,image')].map(el=>({el,attribute:el.tagName.toLowerCase()==='image'?'href':'src',key:el.getAttribute('src')||el.getAttribute('href')}));
+document.getElementById('image-debug-view').onchange=e=>{for(const t of targets)t.el.setAttribute(t.attribute,images[t.key][e.target.value]);};
+</script>`,
   );
   return {
     status: report.status,
     out,
-    elements: report.elements.map(({ id, status }: any) => ({ id, status })),
+    elements: report.elements.map(({ id, status }: any) => ({
+      id,
+      status,
+    })),
   };
 }

@@ -62,6 +62,8 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
   batch --spec JSON --out EMPTY_DIR [--workers 1|2] [--resume yes]
   ui-matrix --spec JSON --out EMPTY_DIR [--execute yes] [--ai-kit PATH]
+  debug-image --input PNG --out EMPTY_DIR
+  debug-capture --view MODE --out EMPTY_DIR
   compare --reference PNG --candidate PNG --out EMPTY_DIR
 Every command accepts --project-root DIR; otherwise discover from the working directory.\nRelative file paths are project-relative. Config: Tools/Helix/reference.json; optional reference.local.json top-level overrides.
 Start discovers the configured project/variant and opens local Helix Desktop if needed.
@@ -176,6 +178,8 @@ async function main() {
     batch: ['spec', 'out', 'workers', 'resume'],
     'ui-matrix': ['spec', 'out', 'execute', 'ai-kit'],
     compare: ['reference', 'candidate', 'out'],
+    'debug-image': ['input', 'out'],
+    'debug-capture': ['view', 'out'],
   };
   if (!allowed[command]) throw new Error('Unknown command ' + command);
   for (const k of Object.keys(options))
@@ -444,6 +448,13 @@ async function main() {
       aiKit: options['ai-kit'],
     });
   }
+  if (command === 'debug-image') {
+    if (!options.input || !options.out) throw new Error('debug-image requires --input and --out.');
+    const { exportImageViews } = await import('./image-debug.ts');
+    return exportImageViews(resolve(root, options.input), resolve(root, options.out));
+  }
+  if (command === 'debug-capture' && (!options.view || !options.out))
+    throw new Error('debug-capture requires --view and --out.');
   if (command === 'compare') {
     if (!options.reference || !options.candidate || !options.out)
       throw new Error('compare requires --reference, --candidate and --out.');
@@ -528,6 +539,7 @@ async function main() {
     owned,
     {
       method: command,
+      view: options.view,
       name: pos[0],
       label: pos[0],
       match: options.match,

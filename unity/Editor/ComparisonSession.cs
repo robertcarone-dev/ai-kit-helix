@@ -191,6 +191,14 @@ namespace Helix.Comparison
             }
         }
 
+        public static string CaptureDebugImage(string output, string view)
+        {
+            ComparisonContext context = Context(Owned(output));
+            if (Array.IndexOf(new[] { "final", "luminance", "hue", "saturation", "value", "alpha" }, view) < 0)
+                throw new ArgumentException("Unknown image debug view: " + view);
+            return DebugViewCapture.ExportImage(Path.Combine(context.Output, "unity.png"), Path.Combine(context.Output, "debug-" + view), view);
+        }
+
         public static string Restore(string output)
         {
             if (SessionState.GetString(OwnerKey, string.Empty).Length == 0) {
@@ -283,7 +291,7 @@ namespace Helix.Comparison
             }
         }
 
-        private static string Hash(byte[] bytes)
+        internal static string Hash(byte[] bytes)
         {
             using (SHA256 hash = SHA256.Create()) {
                 return BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", string.Empty).ToLowerInvariant();

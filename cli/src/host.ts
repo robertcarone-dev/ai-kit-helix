@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { armAlignment, readAlignment } from './event-alignment.ts';
 import { resolveSceneOptions } from './scene-options.ts';
 import { sampleScene } from './scene-sampler.ts';
@@ -498,7 +499,52 @@ async function captureHeld(
   return { capturePath, manifestPath, native: size, scenario };
 }
 
+async function captureDebug(req: any) {
+  if (!ready || !scenario) throw new Error('Select a ready named scenario before debug capture.');
+  if (!config.three)
+    throw new Error('Configure explicit Three scene, camera and renderer expressions.');
+  const out = emptyOutput(req.out);
+  const instrumentation = readFileSync(fileURLToPath(new URL('./browser/three-debug.js', import.meta.url)), 'utf8');
+  await page.evaluate(instrumentation);
+  const result = await page.evaluate(
+    ({ three, view, stateExpression }) => {
+      const evaluate = (expression) => (0, eval)('(' + expression + ')');
+      const state = stateExpression ? evaluate(stateExpression) : null;
+      return { state, ...window.helixThreeDebug.capture({
+        scene: evaluate(three.scene),
+        camera: evaluate(three.camera),
+        renderer: evaluate(three.renderer),
+        materialIds: three.debugMaterialIds,
+        root: three.debugRoot ? evaluate(three.debugRoot) : evaluate(three.scene),
+        view,
+      }) };
+    },
+    { three: config.three, view: req.view, stateExpression: config.scenarios[scenario].state },
+  );
+  const bytes = Buffer.from(result.png.split(',')[1], 'base64');
+  delete result.png;
+  const receipt = {
+    schemaVersion: 1,
+    kind: 'helix-render-debug',
+    ...result,
+    instrumentationSha256: sha(instrumentation),
+    sources: [...sources.values()].sort((a, b) => a.url.localeCompare(b.url)),
+    image: 'reference.png',
+    sha256: sha(bytes),
+    scenario,
+    viewport,
+    reference: config.referenceIdentity,
+    configHash,
+    capturedUtc: new Date().toISOString(),
+    restored: true,
+  };
+  writeFileSync(join(out, 'reference.png'), bytes);
+  writeFileSync(join(out, 'debug.json'), JSON.stringify(receipt, null, 2));
+  return { out, ...receipt };
+}
+
 async function dispatch(req: any) {
+  if (req.method === 'debug-capture') return captureDebug(req);
   if (req.method === 'status') return status();
   if (req.method === 'stop') {
     setTimeout(() => void close(), 50);

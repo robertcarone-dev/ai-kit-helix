@@ -32,7 +32,7 @@ The arrays above are placeholders, not executable recipes. `backend` is `ai-kit`
 
 ## Optional Unity comparison helper
 
-Install with `--unity-helper` after previewing the change. The installer copies `unity/Editor` into `Assets/HelixComparison/Editor` and tracks those files in its manifest. This opt-in persists during updates; unchanged managed files are removed by toolkit removal. The consuming project must already declare `com.unity.nuget.newtonsoft-json`; no package is installed or changed automatically.
+Install with `--unity-helper` after previewing the change. The installer copies `unity/Editor` into `Assets/HelixComparison/Editor` and tracks those files in its manifest. This opt-in persists during updates; unchanged managed files are removed by toolkit removal. The consuming project must already declare `com.unity.nuget.newtonsoft-json` and `com.unity.render-pipelines.universal`; no package is installed or changed automatically.
 
 Create a project-owned Editor class deriving from `Helix.Comparison.ComparisonAdapter`. The adapter is recreated on each call, including after a domain reload. `ComparisonContext.ProjectState` (`JObject`) is the saved restoration baseline returned by `SaveState`, not mutable ongoing session storage. Changes made to it by later hooks are not persisted. Keep ongoing requested-view or readiness state in project-owned session storage that survives the required reloads, not adapter instance fields. Implement:
 

@@ -306,3 +306,7 @@ The optional reusable `SceneSnapshot.Capture(root, camera, width, height, state,
 Collection does not authorize scene or prefab changes. Use the game's implementation workflow for any resulting fix, then recapture the affected case.
 
 Snapshots and images are separate observations, not an atomic capture. Use a settled checkpoint and retain capture provenance; moving content needs a timed comparison workflow.
+
+## Debug views
+
+See [debug view capture and review](DebugViews.md) for paired luminance, HSV and alpha views, Three.js renderer captures, and the Unity geometry/material capture APIs.

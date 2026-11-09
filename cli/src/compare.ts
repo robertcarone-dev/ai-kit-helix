@@ -1,3 +1,4 @@
+import { debugImageData, imageDebugControls } from './image-debug.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { PNG } from 'pngjs';
@@ -13,8 +14,14 @@ export function compare(referencePath: string, candidatePath: string, output: st
     throw new Error(
       'Native dimensions differ; recapture at matching dimensions. Images are never resized.',
     );
-  const sideBySide = new PNG({ width: reference.width * 2, height: reference.height }),
-    difference = new PNG({ width: reference.width, height: reference.height });
+  const sideBySide = new PNG({
+      width: reference.width * 2,
+      height: reference.height,
+    }),
+    difference = new PNG({
+      width: reference.width,
+      height: reference.height,
+    });
   PNG.bitblt(reference, sideBySide, 0, 0, reference.width, reference.height, 0, 0);
   PNG.bitblt(candidate, sideBySide, 0, 0, candidate.width, candidate.height, reference.width, 0);
   let changedPixels = 0;
@@ -36,8 +43,14 @@ export function compare(referencePath: string, candidatePath: string, output: st
   writeFileSync(join(out, 'diff.png'), PNG.sync.write(difference));
   const result = {
     schemaVersion: 1,
-    reference: { path: resolve(referencePath), sha256: sha(referenceBytes) },
-    candidate: { path: resolve(candidatePath), sha256: sha(candidateBytes) },
+    reference: {
+      path: resolve(referencePath),
+      sha256: sha(referenceBytes),
+    },
+    candidate: {
+      path: resolve(candidatePath),
+      sha256: sha(candidateBytes),
+    },
     width: reference.width,
     height: reference.height,
     changedPixels,
@@ -52,7 +65,10 @@ export function compare(referencePath: string, candidatePath: string, output: st
   writeFileSync(join(out, 'comparison.json'), JSON.stringify(result, null, 2));
   writeFileSync(
     join(out, 'review.html'),
-    '<!doctype html><meta charset="utf-8"><title>Helix comparison</title><style>body{background:#222;color:white;font:16px sans-serif}img{max-width:100%;height:auto}</style><h1>Reference / Unity candidate</h1><p>Review state, provenance and motion separately. No automatic acceptance verdict.</p><img src="side-by-side.png"><h2>Exact pixel difference</h2><img src="diff.png">',
+    `<!doctype html><meta charset="utf-8"><title>Helix comparison</title><style>body{background:#222;color:white;font:16px sans-serif}.pair{display:flex}img{max-width:50%;height:auto;object-fit:contain;align-self:start}</style><h1>Reference / Unity candidate</h1>${imageDebugControls()}<div class="pair"><img id="reference"><img id="candidate"></div><h2>Exact RGBA pixel difference</h2><img src="diff.png"><script>
+const images=${JSON.stringify({ reference: debugImageData(referenceBytes), candidate: debugImageData(candidateBytes) })};
+function draw(){for(const side of ['reference','candidate'])document.getElementById(side).src=images[side][document.getElementById('image-debug-view').value];}
+document.getElementById('image-debug-view').onchange=draw;draw();</script>`,
   );
   return result;
 }

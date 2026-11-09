@@ -36,7 +36,7 @@ On Windows, or when invoking Node directly, replace `./install.sh` with `node sc
 | `--rules helix` | Install the six Helix reference/comparison rules when Helix is the project's chosen reference. |
 | `--rules all` | Also install AI Kit workflow rules for shared-file and delivery coordination, lane recovery, and isolated test storage. Review overlap with existing project policy. |
 | `--rules none` | Install no rules; the default when no prior installation exists. |
-| `--unity-helper` | Opt in to the generic Editor comparison helper under `Assets/HelixComparison/Editor`; requires the project’s existing Newtonsoft JSON package. |
+| `--unity-helper` | Opt in to the generic Editor comparison helper under `Assets/HelixComparison/Editor`; requires the project’s existing Newtonsoft JSON and URP packages. |
 | `--init` | Create `reference.json` and `project-adapter.md` only when absent. |
 | `--copy-skills` | Install copies for Codex instead of checkout-local aliases. |
 
@@ -66,7 +66,7 @@ Every CLI command accepts `--project-root DIR`. Otherwise it discovers the neare
 
 **Unity pairing requires the game's own adapter.** Browser capture works independently, but the toolkit cannot infer Unity navigation, scenes, save isolation or cleanup. Choose AI Kit or Unity CLI for Unity recipe argument arrays and supply reviewed verifier/profile files as described in [the adapter contract](docs/project-adapter.md), installed as `Tools/Helix/Adapter.md`. Do not copy another game's isolation claims or compatibility hashes without review.
 
-To add the optional Unity comparison helper, include `--unity-helper` in a reviewed installer preview and install/update. It requires an existing `com.unity.nuget.newtonsoft-json` dependency; the installer does not change Unity packages. The selection persists on updates and the helper files are protected by the same manifest/conflict checks. A project-owned adapter must implement setup, readiness, capture and restoration; installation does not enable Unity execution. See [the helper contract](docs/project-adapter.md#optional-unity-comparison-helper).
+To add the optional Unity comparison helper, include `--unity-helper` in a reviewed installer preview and install/update. It requires an existing `com.unity.nuget.newtonsoft-json` and `com.unity.render-pipelines.universal` dependencies; the installer does not change Unity packages. The selection persists on updates and the helper files are protected by the same manifest/conflict checks. A project-owned adapter must implement setup, readiness, capture and restoration; installation does not enable Unity execution. See [the helper contract](docs/project-adapter.md#optional-unity-comparison-helper).
 
 ## Use with Claude and Codex
 
