@@ -29,7 +29,7 @@ Session tokens, locks, logs and evidence live in the checkout’s ignored `.heli
 
 `assets --match TEXT` reads the project-wide asset catalog, not variant usage. `look` uses configured Phaser/Three mappings; it is not a universal model or font probe. Phaser bounds approximate main-camera output and do not resolve masks/occlusion.
 
-`unity-plan SCENARIO --viewport NAME --out DIR` prints configured Unity recipe argument arrays and their `ai-kit` or `unity` backend. It never executes Unity commands. Output must be within the chosen project’s `.aikit/scratch`. Execute preflight, prepare, capture and restoration only under the project’s verified adapter procedure. Always restore owned state after failure.
+`unity-plan SCENARIO --viewport NAME --out DIR` prints configured Unity recipe argument arrays, Git metadata in `revision`, and their `ai-kit` or `unity` backend. It never executes Unity commands. Output must be within the chosen project’s `.aikit/scratch`. Before executing a plan manually, save `revision` as `DIR/unity-revision.json`; matrix and shop-motion runners do this automatically. Alternatively, `unity-revision` prints fresh metadata for redirection to that file from the lane root. Git commands run outside Unity with a 10-second deadline. Execute preflight, prepare, capture and restoration only under the project’s verified adapter procedure. Always restore owned state after failure.
 
 Overlay the plan's `environment` on the child process environment for **every** stage. AI Kit plans set `AIKIT_QA_VIEWPORT` and a round-local `AIKIT_QA_DIR`; resizing the Game view alone does not configure later play commands. The matrix runner applies this environment automatically.
 

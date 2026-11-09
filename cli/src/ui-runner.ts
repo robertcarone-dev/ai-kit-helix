@@ -4,14 +4,13 @@ import { compareSceneState } from './scene-state.ts';
 import { unityExecutable } from './unity-plan.ts';
 import { isolatedWorkspace } from './isolation.ts';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
   existsSync,
   readFileSync,
   writeFileSync,
   mkdirSync,
-  openSync,
-  closeSync,
   unlinkSync,
   realpathSync,
 } from 'node:fs';
@@ -27,6 +26,7 @@ export interface CommandRecord {
   stdout: string;
   stderr: string;
   elapsedMs: number;
+  timedOut?: boolean;
 }
 
 export interface MatrixOptions {
@@ -101,6 +101,7 @@ export function runCommand(
         stdout: stdout.slice(0, 8_000_000),
         stderr: stderr.slice(0, 1_000_000),
         elapsedMs: Date.now() - started,
+        timedOut: failure?.startsWith('Command timeout') === true,
       };
       if (failure || code !== 0) {
         const e: any = new Error(failure ?? `Command exited ${code}: ${stderr.slice(-2000)}`);
@@ -109,6 +110,71 @@ export function runCommand(
       } else done(record);
     });
   });
+}
+
+async function checkedCommand(command: typeof runCommand, executable: string, args: string[], root: string, env: NodeJS.ProcessEnv) {
+  let record: CommandRecord;
+  try {
+    record = await command(executable, args, root, 90000, env);
+  } catch (error) {
+    const e = error as any;
+    e.timedOut = e.record?.timedOut === true || /timed out|timeout|ETIMEDOUT/i.test(String(e));
+    if (e.record) {
+      try {
+        const payload = JSON.parse(e.record.stdout);
+        e.timedOut ||= responseTimedOut(payload);
+      } catch {}
+    }
+    throw e;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(record.stdout);
+    if (payload === null || typeof payload !== 'object') throw new Error('Expected a command response object.');
+  } catch {
+    const error: any = new Error('Command returned invalid JSON; execution outcome is unknown.');
+    error.record = record;
+    error.uncertain = true;
+    throw error;
+  }
+  const result = payload.data?.result;
+  if (payload.success === false || payload.ok === false || result?.success === false || result?.met === false || responseTimedOut(payload)) {
+    const error: any = new Error('Command returned a failure response.');
+    error.record = record;
+    error.timedOut = responseTimedOut(payload);
+    throw error;
+  }
+  return record;
+}
+
+function responseTimedOut(payload: any) {
+  const result = payload.data?.result;
+  return result?.timedOut === true || result?.state === 'timedOut' ||
+    /timed out|timeout|ETIMEDOUT/i.test(JSON.stringify([payload.errors, payload.error, result?.error, result?.errorDetails]));
+}
+
+function processExited(pid: number) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Invalid retained owner PID.');
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true;
+    throw error;
+  }
+}
+
+function acquireMatrixLock(lock: string, token: string) {
+  // Python's standard-library flock protects the complete receipt replacement.
+  // The OS releases it even if this process or the helper exits unexpectedly.
+  const installed = fileURLToPath(new URL('../matrix_lock.py', import.meta.url));
+  const helper = existsSync(installed) ? installed : fileURLToPath(new URL('../../workflows/matrix_lock.py', import.meta.url));
+  const result = spawnSync('python3', [helper, lock, String(process.pid), token], {
+    encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(result.stderr.trim());
+  return JSON.parse(result.stdout) as { recoverySessions: string[] };
 }
 
 function inside(root: string, path: string) {
@@ -177,7 +243,7 @@ function reviewCase(c: any, row: any, retained: NonNullable<MatrixOptions['retai
 }
 
 /** Plan by default. Execution requires an isolated checkout and complete Unity lifecycle recipes.
- * Always attempt owned-state restoration; stop subsequent cases if cleanup fails. */
+ * Reconcile uncertain session state; stop subsequent cases on timeouts or failed cleanup. */
 export async function runMatrix(options: MatrixOptions, command = runCommand) {
   const { root, cli, specPath } = options;
   const spec = JSON.parse(readFileSync(specPath, 'utf8'));
@@ -238,7 +304,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       cases,
       notes: [
         'Use --execute yes only in an idle isolated workspace. Recipes execute in preflight/prepare/capture/restore order.',
-        'No build or Production check. A failed restoration stops the matrix. Unsupported safe-area cases remain blocked.',
+        'No build or Production check. Timeouts and failed restoration stop the matrix. Pending owned cleanup must finish before another run.',
       ],
     };
   if (options.execute !== 'yes') throw new Error('--execute must be yes, or omitted for a plan.');
@@ -262,17 +328,14 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
   }
   if (!isolatedWorkspace(root))
     throw new Error('Execution requires an isolated managed lane or opted-in linked worktree.');
-  if (!retained.reference && existsSync(join(root, '.helix/connection.json')))
-    throw new Error(
-      'An existing browser session is owned elsewhere; stop it explicitly before the matrix.',
-    );
   mkdirSync(join(root, '.helix'), { recursive: true });
   const lock = join(root, '.helix/ui-matrix.lock'),
-    fd = openSync(lock, 'wx', 0o600),
-    matrixToken = randomUUID();
-  const matrixEnv = { ...process.env, HELIX_MATRIX_TOKEN: matrixToken };
+    matrixToken = randomUUID(),
+    { recoverySessions } = acquireMatrixLock(lock, matrixToken);
+  let recoveryComplete = recoverySessions.length === 0;
+  const pendingPath = join(root, '.helix/unity-reconciliation.json');
+  const matrixEnv: NodeJS.ProcessEnv = { ...process.env, HELIX_MATRIX_TOKEN: matrixToken };
   const browserEnv = { ...matrixEnv, HELIX_FIXTURE_SESSION: matrixToken };
-  writeFileSync(fd, JSON.stringify({ pid: process.pid, token: matrixToken }));
   let interrupted = false;
   const onSignal = () => {
     interrupted = true;
@@ -292,6 +355,46 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
     created = true;
     const save = () => writeFileSync(join(out, 'matrix.json'), JSON.stringify(report, null, 2));
     save();
+    for (const session of recoverySessions) {
+      const connectionPath = join(root, '.helix/fixture-sessions', session, 'connection.json');
+      if (!existsSync(connectionPath)) continue;
+      const connection = JSON.parse(readFileSync(connectionPath, 'utf8'));
+      if (connection.projectRoot !== root) throw new Error('Retained browser belongs to another project.');
+      if (processExited(connection.pid)) {
+        unlinkSync(connectionPath);
+      } else {
+        await checkedCommand(command, process.execPath, [cli, 'stop', '--project-root', root], root,
+          { ...matrixEnv, HELIX_FIXTURE_SESSION: session });
+      }
+    }
+    // A previous process may have lost the reply after Begin acquired a session.
+    // Replay only its owned cleanup, never its preparation, before admitting new work.
+    if (existsSync(pendingPath)) {
+      const pending = JSON.parse(readFileSync(pendingPath, 'utf8'));
+      if (pending.projectRoot !== root || !inside(scratch, pending.out) || !Array.isArray(pending.restore) || !pending.restore.length)
+        throw new Error('Invalid pending Unity reconciliation receipt: ' + pendingPath);
+      report.reconciliation = { out: pending.out, status: 'running', commands: [] };
+      save();
+      try {
+        const executable = unityExecutable(pending, options);
+        for (const args of pending.restore) {
+          const record = await checkedCommand(command, executable, args, root, { ...matrixEnv, ...pending.environment });
+          report.reconciliation.commands.push(record);
+          save();
+        }
+        unlinkSync(pendingPath);
+        report.reconciliation.status = 'restored';
+        save();
+      } catch (error) {
+        report.reconciliation.status = 'blocked';
+        report.reconciliation.error = String(error);
+        if ((error as any).record) report.reconciliation.commands.push((error as any).record);
+        throw error;
+      }
+    }
+    recoveryComplete = true;
+    if (!retained.reference && existsSync(join(root, '.helix/connection.json')))
+      throw new Error('An existing browser session is owned elsewhere; stop it explicitly before the matrix.');
     for (const [caseIndex, c] of cases.entries()) {
       if (interrupted) break;
       const row: any = {
@@ -306,20 +409,18 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       save();
       const invoke = async (executable: string, args: string[], stage: string, env = matrixEnv) => {
         try {
-          const r = await command(executable, args, root, 90000, env);
-          let payload;
-          try {
-            payload = JSON.parse(r.stdout);
-          } catch {}
-          if (payload?.success === false || payload?.ok === false) {
-            const e: any = new Error('Command returned a failure response.');
-            e.record = r;
-            throw e;
-          }
+          const r = await checkedCommand(command, executable, args, root, env);
           row.commands.push({ stage, ...r });
           save();
           return r;
         } catch (e) {
+          if ((e as any).timedOut) {
+            row.timedOut = true;
+          }
+          if ((e as any).timedOut || (e as any).uncertain) {
+            row.executionUncertain = true;
+            row.executionOutcome = 'unknown';
+          }
           row.commands.push({
             stage,
             error: String(e),
@@ -367,11 +468,14 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
             )
               throw new Error('Incomplete Unity lifecycle recipe: ' + stage);
           mkdirSync(join(c.out, 'unity'), { recursive: true });
+          writeFileSync(join(c.out, 'unity/unity-revision.json'), JSON.stringify(plan.revision));
           if (c.sceneSpec)
             writeFileSync(
               join(c.out, 'unity', 'scene-request.json'),
               JSON.stringify(c.sceneOptions),
             );
+          writeFileSync(pendingPath, JSON.stringify({ projectRoot: root, out: plan.out, backend: plan.backend,
+            environment: plan.environment, restore: plan.stages.restore }));
           for (const argv of plan.stages.preflight) await invoke(executable, argv, 'preflight', unityEnv);
         }
         if (!retained.reference) {
@@ -417,7 +521,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         row.error = String(e);
         row.failureStage = capturesComplete ? 'review' : 'execution';
       } finally {
-        if (prepareAttempted) {
+        if (prepareAttempted || (plan && row.executionUncertain)) {
           row.restoration = [];
           for (const argv of plan.stages.restore) {
             try {
@@ -432,6 +536,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
               restoreFailed = true;
             }
           }
+          if (!restoreFailed) row.executionOutcome = 'restored';
         }
         // Retain only this matrix's browser across adjacent same-viewport cases.
         // Scenario setup still performs its configured reset; Unity restores every case.
@@ -448,15 +553,17 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           } catch (e) {
             row.browserCleanupError = String(e);
             restoreFailed = true;
+            recoveryComplete = false;
           }
         }
         if (restoreFailed) {
           row.status = 'blocked';
           row.cleanupFailed = true;
         }
+        if (plan && !restoreFailed && existsSync(pendingPath)) unlinkSync(pendingPath);
         save();
       }
-      if (restoreFailed || interrupted) break;
+      if (row.executionUncertain || restoreFailed || interrupted) break;
     }
     report.status =
       report.cases.some((c: any) => c.status === 'blocked') || report.cases.length !== cases.length
@@ -479,6 +586,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
   } catch (e) {
     report.status = 'blocked';
     report.error = String(e);
+    report.notRun = cases.filter((c: any) => !report.cases.some((r: any) => r.id === c.id)).map((c: any) => c.id);
     if (created) writeFileSync(join(out, 'matrix.json'), JSON.stringify(report, null, 2));
     throw e;
   } finally {
@@ -492,20 +600,19 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           browserEnv,
         );
       } catch (e) {
+        recoveryComplete = false;
         report.cleanupFailed = true;
         report.status = 'blocked';
         report.cleanupError = String(e);
         if (created) writeFileSync(join(out, 'matrix.json'), JSON.stringify(report, null, 2));
         throw e;
       } finally {
-        closeSync(fd);
-        unlinkSync(lock);
+        if (recoveryComplete) unlinkSync(lock);
         process.off('SIGINT', onSignal);
         process.off('SIGTERM', onSignal);
       }
     } else {
-      closeSync(fd);
-      unlinkSync(lock);
+      if (recoveryComplete) unlinkSync(lock);
       process.off('SIGINT', onSignal);
       process.off('SIGTERM', onSignal);
     }

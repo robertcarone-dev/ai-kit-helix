@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { emptyOutput, readConfig, root, sha } from './config.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { visualOwner } from './visual-owner.ts';
+import { unityRevision } from './unity-plan.ts';
 
 function replay(project: string, plan: string, entryPoint: string) {
   const isolated = realpathSync(project);
@@ -40,6 +41,7 @@ function replay(project: string, plan: string, entryPoint: string) {
     /^m_EditorVersion: (\S+)/m,
   );
   if (!version) throw new Error('Unity project has no declared Editor version.');
+  writeFileSync(join(dirname(plan), 'unity-revision.json'), JSON.stringify(unityRevision(isolated)));
   const result = spawnSync(
     'unity',
     [

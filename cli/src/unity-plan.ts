@@ -1,4 +1,13 @@
 import { resolve, relative, join, isAbsolute } from 'node:path';
+import { execFileSync } from 'node:child_process';
+
+export function unityRevision(root: string) {
+  const git = (args: string[]) => execFileSync('git', args, {
+    cwd: root, encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024,
+    killSignal: 'SIGKILL',
+  }).trimEnd();
+  return { projectRoot: root, revision: git(['rev-parse', 'HEAD']), workingTree: git(['status', '--porcelain']) };
+}
 
 export const unityStages = ['preflight', 'prepare', 'capture', 'restore'] as const;
 
@@ -91,6 +100,7 @@ export function unityPlan(
     viewport,
     out,
     reference: config.helix,
+    revision: unityRevision(root),
     backend,
     executable: backend,
     environment: backend === 'ai-kit'

@@ -12,6 +12,12 @@ The installer never updates these files:
 
 Keep fixtures, game-specific helper scripts and Unity code, scenes and assets in the project. The optional shared Unity helper supplies comparison infrastructure only. A new project has no implicit Unity recipe. No helper may fabricate managed lane metadata, bypass compatibility verification or infer save isolation from worktree separation.
 
+Matrix execution stops on command or condition timeouts, including structured `timedOut` results, even when cleanup succeeds. Failed restoration retains `.helix/unity-reconciliation.json`; subsequent execution must replay that owned restoration before starting new cases. Project restore recipes must verify live session state rather than accepting an old receipt alone.
+
+Matrix acquisition requires Python 3 on a POSIX host (macOS/Linux). A standard-library `flock` serializes atomic ownership-receipt replacement; the OS releases the acquisition lock when the helper exits. Keep the persistent `.helix/ui-matrix.lock.acquire` file in place. Dead runner PIDs can be reclaimed automatically, preserving the prior matrix's browser-session identities and Unity reconciliation receipt. Live PIDs and inconclusive process checks block reclamation. Recovery stops only the previous matrix's isolated browsers and leaves unrelated sessions alone.
+
+`unity-plan` includes Git metadata gathered outside Unity with bounded subprocess deadlines. The matrix saves it as `OUT/unity-revision.json`; handoff replay supplies the same receipt next to its plan. Project helpers can consume that receipt instead of launching Git on the Editor main thread. Manual callers can save the plan's `revision` object or redirect `helix unity-revision` to the receipt before invoking their project's Begin helper.
+
 Unity stages are argument arrays executed without a shell. Legacy `scenario.unity` stage objects use `ai-kit`. To select a backend explicitly, use this shape inside a configured scenario:
 
 ```json

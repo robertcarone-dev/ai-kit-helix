@@ -2,6 +2,9 @@
 
 ## 1.2.0 (unreleased)
 
+- Stop UI matrices on structured or transport timeouts, reconcile retained sessions before new work, and recover crashed acquisition through OS-released locks. Install the Python lock helper and preserve owned browser identities across failed cleanup.
+- Gather bounded Git provenance outside Unity and supply revision receipts to matrix, handoff, and manual comparison workflows.
+
 - Add optional named regions to image comparison, with per-image RGB means and regional pixel differences in JSON and the existing review page.
 
 - Add reusable rules for verified discrepancy closure, project-designated status maintenance and paired audio review; keep human-review scope and game-specific mappings project-owned.

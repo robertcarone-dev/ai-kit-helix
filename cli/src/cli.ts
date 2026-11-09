@@ -1,4 +1,4 @@
-import { unityPlan } from './unity-plan.ts';
+import { unityPlan, unityRevision } from './unity-plan.ts';
 import {
   existsSync,
   readFileSync,
@@ -66,6 +66,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   debug-capture --view MODE --out EMPTY_DIR
   compare --reference PNG --candidate PNG --out EMPTY_DIR [--regions JSON]
 Every command accepts --project-root DIR; otherwise discover from the working directory.\nRelative file paths are project-relative. Config: Tools/Helix/reference.json; optional reference.local.json top-level overrides.
+unity-revision prints Git metadata for a manual comparison's unity-revision.json receipt.
 Start discovers the configured project/variant and opens local Helix Desktop if needed.
 Helix serves source/assets and starts its preview on demand; stop closes only our browser.
 Session/evidence state is per checkout in .helix/. No AI Kit installation required.`;
@@ -143,6 +144,7 @@ async function main() {
     resolve: [],
     assets: ['match'],
     'unity-plan': ['out', 'viewport'],
+    'unity-revision': [],
     start: ['viewport', 'url'],
     status: [],
     reset: [],
@@ -219,6 +221,7 @@ async function main() {
     const identity = await discover(config);
     return command === 'assets' ? assets(identity, options.match) : identity;
   }
+  if (command === 'unity-revision') return unityRevision(root);
   if (command === 'unity-plan') {
     const { config } = readConfig();
     if (pos.length !== 1 || !options.out)
