@@ -118,6 +118,10 @@ export function projectConfig(root: string) {
 }
 
 export function readConfig(url?: string) {
+  return readProjectConfig(root, url);
+}
+
+export function readProjectConfig(root: string, url?: string) {
   const config = projectConfig(root);
   if (config.uiBindingsFile || config.uiBindingsFiles) {
     if (
@@ -200,8 +204,8 @@ export function readConfig(url?: string) {
   for (const s of Object.values(config.scenarios ?? {}) as any[]) {
     if (!Array.isArray(s.steps) || typeof s.ready !== 'string')
       throw new Error('Scenario needs steps and ready.');
-    s.steps = s.steps.map(loadStep);
-    if (s.captureSteps) s.captureSteps = s.captureSteps.map(loadStep);
+    s.steps = s.steps.map((step) => loadProjectStep(root, step));
+    if (s.captureSteps) s.captureSteps = s.captureSteps.map((step) => loadProjectStep(root, step));
   }
   return { config, configHash: sha(JSON.stringify(config)) };
 }

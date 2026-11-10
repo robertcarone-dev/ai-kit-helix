@@ -1,3 +1,4 @@
+import { processExited } from './process-lock.ts';
 import { unityPlan, unityRevision } from './unity-plan.ts';
 import {
   existsSync,
@@ -51,7 +52,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   ui-look [--match TEXT]          UI metrics and semantic bindings
   step JSON                     press/drag/hover/pointerDown/pointerUp/wheel/wait/assert/script
   capture NAME [--out EMPTY_DIR] [--scene-profile NAME]
-  record NAME [--duration SECONDS] [--out EMPTY_DIR]  replays named scenario; max 30s
+  record NAME [--scenario ID] [--after reset|stop] [--duration SECONDS] [--out EMPTY_DIR]  max 30s
   ui-assets --spec JSON --out EMPTY_DIR
   ui-plan --spec JSON --out EMPTY_DIR
   ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR
@@ -75,6 +76,18 @@ function connection() {
   const s = JSON.parse(readFileSync(file, 'utf8'));
   if (s.projectRoot !== root) throw new Error('Session belongs to another checkout.');
   return s;
+}
+
+/** Cleanup succeeds only for an absent session or a confirmed exited owner. */
+async function finishStop(owned: any) {
+  for (let i = 0; i < 100; i++) {
+    if (processExited(owned.pid)) {
+      if (existsSync(file) && connection().token === owned.token) rmSync(file);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error('Browser owner has not exited; inspect ' + join(stateDir, 'host.log') + ' before restarting.');
 }
 
 /** Exchange one newline-delimited JSON message with the checkout’s token-authenticated host. */
@@ -168,7 +181,7 @@ async function main() {
     'scene-compare': ['reference', 'candidate', 'spec', 'out'],
     step: [],
     capture: ['out', 'scene-profile'],
-    record: ['out', 'duration'],
+    record: ['out', 'duration', 'scenario', 'after'],
     'ui-assets': ['spec', 'out'],
     'ui-plan': ['spec', 'out'],
     'ui-impact': ['spec', 'previous', 'out'],
@@ -456,6 +469,8 @@ async function main() {
     const { exportImageViews } = await import('./image-debug.ts');
     return exportImageViews(resolve(root, options.input), resolve(root, options.out));
   }
+  if (command === 'record' && options.after !== undefined && !['reset', 'stop'].includes(options.after))
+    throw new Error('--after must be reset or stop.');
   if (command === 'debug-capture' && (!options.view || !options.out))
     throw new Error('debug-capture requires --view and --out.');
   if (command === 'compare') {
@@ -470,7 +485,7 @@ async function main() {
     );
   }
   if (command === 'start') {
-    const { config } = readConfig(options.url);
+    const { config, configHash: adapterConfigHash } = readConfig(options.url);
     config.referenceIdentity = await discover(config, true);
     config.url = options.url ?? config.url ?? config.referenceIdentity.url;
     config.referenceIdentity = {
@@ -507,10 +522,11 @@ async function main() {
           return live;
         }
       }
-      const token = randomUUID();
+      const token = randomUUID(),
+        startupDeadline = Date.now() + 60000;
       writeFileSync(
         join(stateDir, 'launch.json'),
-        JSON.stringify({ config, configHash, viewport, token }),
+        JSON.stringify({ config, configHash, adapterConfigHash, viewport, token, startupDeadline }),
         { mode: 0o600 },
       );
       const log = openSync(join(stateDir, 'host.log'), 'a', 0o600);
@@ -524,47 +540,72 @@ async function main() {
       child.on('error', (e) => {
         failure = e;
       });
+      const exited = new Promise<void>((done) => child.once('exit', () => done()));
       child.unref();
-      for (let i = 0; i < 350; i++) {
-        if (failure) throw failure;
-        if (existsSync(file)) return await request(connection(), { method: 'status' });
-        if (child.exitCode !== null) throw new Error('Browser host failed. See .helix/host.log.');
-        await new Promise((r) => setTimeout(r, 100));
+      let connected = false;
+      try {
+        while (Date.now() < startupDeadline + 5000) {
+          if (failure) throw failure;
+          if (existsSync(file)) {
+            const owned = connection();
+            if (owned.token !== token) throw new Error('Startup connection belongs to another host.');
+            const live = await request(owned, { method: 'status' }, Math.max(1, startupDeadline + 5000 - Date.now()));
+            connected = true;
+            return live;
+          }
+          if (child.exitCode !== null || child.signalCode !== null)
+            throw new Error('Browser host failed. See ' + join(stateDir, 'host.log') + '.');
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        throw new Error('Startup exceeded its 60-second deadline and 5-second shutdown grace. See ' + join(stateDir, 'host.log') + '.');
+      } finally {
+        // Also reap the owned child after a failed status exchange, not just timeout.
+        if (!connected && child.pid && child.exitCode === null && child.signalCode === null) {
+          const force = setTimeout(() => child.kill('SIGKILL'), 5000);
+          child.kill('SIGTERM');
+          try { await exited; } finally { clearTimeout(force); }
+        }
+        if (!connected && existsSync(file) && connection().token === token) rmSync(file);
       }
-      child.kill('SIGTERM');
-      throw new Error('Start exceeded 35 seconds. See .helix/host.log.');
     } finally {
       closeSync(fd!);
       rmSync(lock, { force: true });
     }
   }
+  if (command === 'stop' && !existsSync(file)) return { stopped: true, alreadyStopped: true };
   const owned = connection();
-  const result = await request(
-    owned,
-    {
-      method: command,
-      view: options.view,
-      name: pos[0],
-      label: pos[0],
-      match: options.match,
-      out: options.out ? resolve(root, options.out) : undefined,
-      duration: options.duration,
-      interval: options['interval-ms'],
-      profile: options.profile,
-      sceneProfile: options['scene-profile'],
-      step: command === 'step' ? JSON.parse(pos[0]) : undefined,
-    },
-    command === 'record' ? 125000 : 65000,
-  );
-  if (command === 'stop') {
-    for (let i = 0; i < 100; i++) {
-      if (!existsSync(file) || connection().token !== owned.token) return result;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    throw new Error(
-      'Browser shutdown has not completed; inspect .helix/host.log before restarting.',
-    );
+  if (command === 'stop' && processExited(owned.pid)) {
+    await finishStop(owned);
+    return { stopped: true, alreadyStopped: true };
   }
+  let result;
+  try {
+    result = await request(
+      owned,
+      {
+        method: command,
+        view: options.view,
+        name: pos[0],
+        label: pos[0],
+        match: options.match,
+        out: options.out ? resolve(root, options.out) : undefined,
+        duration: options.duration,
+        scenario: options.scenario,
+        after: options.after,
+        interval: options['interval-ms'],
+        profile: options.profile,
+        sceneProfile: options['scene-profile'],
+        step: command === 'step' ? JSON.parse(pos[0]) : undefined,
+      },
+      command === 'record' ? 125000 : 65000,
+    );
+  } catch (error) {
+    if (command !== 'stop') throw error;
+    try { await finishStop(owned); } catch { throw error; }
+    return { stopped: true, alreadyStopped: true };
+  }
+  if (command === 'stop' || (command === 'record' && options.after === 'stop'))
+    await finishStop(owned);
   return result;
 }
 main()

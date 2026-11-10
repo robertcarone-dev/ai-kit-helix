@@ -1,11 +1,11 @@
+import { acquireProcessLock, processExited } from './process-lock.ts';
 import { resolveSceneOptions } from './scene-options.ts';
 import { sceneReview } from './scene-review.ts';
 import { compareSceneState } from './scene-state.ts';
 import { unityExecutable } from './unity-plan.ts';
 import { isolatedWorkspace } from './isolation.ts';
 import { randomUUID } from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import {
   existsSync,
   readFileSync,
@@ -15,7 +15,7 @@ import {
   realpathSync,
 } from 'node:fs';
 import { join, resolve, relative, isAbsolute } from 'node:path';
-import { emptyOutput, projectConfig, sha } from './config.ts';
+import { emptyOutput, readProjectConfig, sha } from './config.ts';
 import { compareUI, validateSpec, loadSnapshot } from './ui.ts';
 
 /** Captured process output, also attached to command failures for matrix receipts. */
@@ -153,50 +153,54 @@ function responseTimedOut(payload: any) {
     /timed out|timeout|ETIMEDOUT/i.test(JSON.stringify([payload.errors, payload.error, result?.error, result?.errorDetails]));
 }
 
-function processExited(pid: number) {
-  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Invalid retained owner PID.');
-  try {
-    process.kill(pid, 0);
-    return false;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true;
-    throw error;
-  }
-}
-
-function acquireMatrixLock(lock: string, token: string) {
-  // Python's standard-library flock protects the complete receipt replacement.
-  // The OS releases it even if this process or the helper exits unexpectedly.
-  const installed = fileURLToPath(new URL('../matrix_lock.py', import.meta.url));
-  const helper = existsSync(installed) ? installed : fileURLToPath(new URL('../../workflows/matrix_lock.py', import.meta.url));
-  const result = spawnSync('python3', [helper, lock, String(process.pid), token], {
-    encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(result.stderr.trim());
-  return JSON.parse(result.stdout) as { recoverySessions: string[] };
-}
 
 function inside(root: string, path: string) {
   const r = relative(root, path);
   return r !== '' && !r.startsWith('..') && !isAbsolute(r);
 }
 
+/** Hash the effective selected recipe, including expanded scripts and binding contents. */
+function caseRecipeHashes(config: any, c: any) {
+  const scenario = config.scenarios[c.scenario];
+  const common = {
+    scenario: c.scenario,
+    viewport: config.viewports[c.viewport],
+    safeAreaInsets: c.safeAreaInsets,
+    scenarioSafeAreaInsets: scenario.safeAreaInsets,
+    sceneOptions: c.sceneOptions,
+  };
+  const web = Object.fromEntries([
+    'helix', 'url', 'expectedRevision', 'ready', 'phaser', 'three', 'inspect',
+    'uiProbe', 'uiBindings', 'uiClockHold', 'sceneBindings', 'sceneTimeline',
+  ].map((key) => [key, config[key]]));
+  const selected = Object.fromEntries([
+    'steps', 'ready', 'state', 'checkpoint', 'captureSteps', 'reset', 'alignment', 'safeAreaInsets',
+  ].map((key) => [key, scenario[key]]));
+  return {
+    reference: sha(JSON.stringify({ ...common, web, selected })),
+    candidate: sha(JSON.stringify({ ...common, unity: scenario.unity })),
+  };
+}
+
 export function caseIdentity(c: any, side: 'reference' | 'candidate', receipt: string) {
   return {
+    schemaVersion: 2,
     caseId: c.id,
     scenario: c.scenario,
     viewport: c.viewport,
     side,
     receiptSha256: sha(readFileSync(receipt)),
-    configSha256: c.configSha256,
-    uiSpecSha256: sha(readFileSync(c.uiSpec)),
+    recipeSha256: c.recipeSha256[side],
+    uiSpecSha256: c.uiSpecSha256,
     sceneProfile: c.sceneProfile ?? null,
-    sceneSpecSha256: c.sceneSpec ? sha(readFileSync(c.sceneSpec)) : null,
+    sceneSpecSha256: c.sceneSpecSha256,
   };
 }
 
 function reviewCase(c: any, row: any, retained: NonNullable<MatrixOptions['retained']>) {
+  if (sha(readFileSync(c.uiSpec)) !== c.uiSpecSha256 ||
+      (c.sceneSpec ? sha(readFileSync(c.sceneSpec)) : null) !== c.sceneSpecSha256)
+    throw new Error('Comparison spec changed after planning.');
   const reference = retained.reference ?? join(c.out, 'reference/reference.json');
   const candidate = retained.candidate ?? join(c.out, 'unity/unity.json');
   row.receipts = { reference, candidate };
@@ -247,7 +251,7 @@ function reviewCase(c: any, row: any, retained: NonNullable<MatrixOptions['retai
 export async function runMatrix(options: MatrixOptions, command = runCommand) {
   const { root, cli, specPath } = options;
   const spec = JSON.parse(readFileSync(specPath, 'utf8'));
-  const config = projectConfig(root);
+  const { config, configHash } = readProjectConfig(root);
   if (spec.schemaVersion !== 1 || !Array.isArray(spec.cases) || !spec.cases.length)
     throw new Error('Matrix needs schemaVersion:1 and nonempty cases.');
   const out = resolve(options.out),
@@ -286,7 +290,11 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
     }
     return {
       ...c,
-      configSha256: sha(JSON.stringify(config)),
+      // Full config remains provenance; reuse depends only on this side's recipe.
+      configSha256: configHash,
+      recipeSha256: caseRecipeHashes(config, c),
+      uiSpecSha256: sha(readFileSync(uiSpec)),
+      sceneSpecSha256: c.sceneSpec ? sha(readFileSync(c.sceneSpec)) : null,
       widthPx: config.viewports[c.viewport].width,
       heightPx: config.viewports[c.viewport].height,
       uiSpec,
@@ -331,7 +339,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
   mkdirSync(join(root, '.helix'), { recursive: true });
   const lock = join(root, '.helix/ui-matrix.lock'),
     matrixToken = randomUUID(),
-    { recoverySessions } = acquireMatrixLock(lock, matrixToken);
+    { recoverySessions } = acquireProcessLock(lock, matrixToken);
   let recoveryComplete = recoverySessions.length === 0;
   const pendingPath = join(root, '.helix/unity-reconciliation.json');
   const matrixEnv: NodeJS.ProcessEnv = { ...process.env, HELIX_MATRIX_TOKEN: matrixToken };
@@ -401,6 +409,8 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         id: c.id,
         scenario: c.scenario,
         viewport: c.viewport,
+        configSha256: c.configSha256,
+        recipeSha256: c.recipeSha256,
         status: 'running',
         commands: [],
       };
@@ -456,6 +466,8 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
             'plan',
           );
           plan = JSON.parse(planned.stdout);
+          if (plan.configHash !== c.configSha256)
+            throw new Error('Unity recipe changed after matrix planning; replan before execution.');
           executable = unityExecutable(plan, options);
           unityEnv = { ...matrixEnv, ...plan.environment };
           for (const stage of ['preflight', 'prepare', 'capture', 'restore'])
@@ -480,8 +492,10 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         }
         if (!retained.reference) {
           browserAttempted = true;
-          await helix(['start', '--viewport', c.viewport], 'reference-start');
+          const started = await helix(['start', '--viewport', c.viewport], 'reference-start');
           browserOwned = true;
+          if (JSON.parse(started.stdout).adapterConfigHash !== c.configSha256)
+            throw new Error('Browser configuration changed after matrix planning; replan before execution.');
           await helix(['scenario', c.scenario], 'reference-scenario');
           await helix(
             [
@@ -502,12 +516,23 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           }
           for (const argv of plan.stages.capture) await invoke(executable, argv, 'capture', unityEnv);
         }
+        // Do not attach plan-time identities to evidence from changed recipes/specs.
+        const current = readProjectConfig(root).config;
+        const currentCase = { ...c, sceneOptions: c.sceneSpec ? resolveSceneOptions(current, c.sceneProfile) : undefined };
+        const currentHashes = caseRecipeHashes(current, currentCase);
+        if (sha(readFileSync(c.uiSpec)) !== c.uiSpecSha256 ||
+            (c.sceneSpec ? sha(readFileSync(c.sceneSpec)) : null) !== c.sceneSpecSha256)
+          throw new Error('Comparison spec changed during capture; retained artifacts need a fresh review.');
         for (const [side, file] of [
           ['reference', 'reference/reference.json'],
           ['candidate', 'unity/unity.json'],
         ] as const) {
           if (!retained[side]) {
+            if (currentHashes[side] !== c.recipeSha256[side])
+              throw new Error('Selected ' + side + ' recipe changed during capture; no reusable case identity was published.');
             const receipt = join(c.out, file);
+            if (side === 'reference' && JSON.parse(readFileSync(receipt, 'utf8')).adapterConfigHash !== c.configSha256)
+              throw new Error('Reference receipt does not match the planned browser configuration.');
             writeFileSync(
               receipt + '.case.json',
               JSON.stringify(caseIdentity(c, side, receipt), null, 2),
@@ -592,11 +617,11 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
   } finally {
     if (browserOwned) {
       try {
-        await command(
+        await checkedCommand(
+          command,
           process.execPath,
           [options.cli, 'stop', '--project-root', root],
           root,
-          90000,
           browserEnv,
         );
       } catch (e) {

@@ -1,3 +1,5 @@
+import { acquireProcessLock } from './process-lock.ts';
+import { randomUUID } from 'node:crypto';
 import { nativePng } from './png.ts';
 import { chromium } from 'playwright';
 import {
@@ -5,18 +7,16 @@ import {
   writeFileSync,
   existsSync,
   mkdirSync,
-  openSync,
-  closeSync,
   unlinkSync,
-  statSync,
   realpathSync,
 } from 'node:fs';
 import { resolve, join, dirname, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { sha, localUrl } from './config.ts';
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export function validateBatch(spec: any, config: any) {
   if (spec.schemaVersion !== 1 || !Array.isArray(spec.cases) || !spec.cases.length)
     throw new Error('Batch needs schemaVersion 1 and nonempty cases.');
@@ -57,42 +57,62 @@ export function validateBatch(spec: any, config: any) {
       throw new Error('Seed must be an integer.');
   }
 }
-/** Machine-wide permits, independent of lane count. Never evict a live or incomplete owner. */
+/** A helper holds an OS lock; pipe closure releases ownership, including on parent exit. */
 export async function permit(
   signal: AbortSignal,
   directory = join(tmpdir(), 'helix-static-capture-workers'),
-) {
-  mkdirSync(directory, { recursive: true });
-  while (!signal.aborted) {
-    for (let i = 0; i < 2; i++) {
-      const file = join(directory, `${i}.lock`);
+): Promise<{ release: () => Promise<void>; lost: AbortSignal }> {
+  signal.throwIfAborted();
+  const installed = fileURLToPath(new URL('../worker_permit.py', import.meta.url));
+  const helper = existsSync(installed) ? installed : fileURLToPath(new URL('../../workflows/worker_permit.py', import.meta.url));
+  const child = spawn('python3', [helper, directory, String(process.pid)], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const lost = new AbortController();
+  let stderr = '', output = '', acquired = false, releasing = false;
+  let failure: Error | undefined;
+  const closed = new Promise<number | null>((resolve) => child.on('close', (code) => {
+    if (acquired && !releasing) lost.abort(new Error('Capture permit holder exited before release: ' + stderr.trim()));
+    resolve(code);
+  }));
+  // Pipe failures are lifetime failures, not uncaught stream errors.
+  child.stdin.on('error', (error) => { failure = error; lost.abort(error); });
+  await new Promise<void>((resolve, reject) => {
+    const abort = () => child.stdin.end();
+    const timer = setTimeout(() => child.kill('SIGKILL'), 35000);
+    signal.addEventListener('abort', abort, { once: true });
+    const detach = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+    };
+    child.stderr.on('data', (bytes) => { stderr += bytes; });
+    child.stdout.on('data', (bytes) => {
+      output += bytes;
+      if (!output.includes('\n') || signal.aborted) return;
+      detach();
+      acquired = true;
+      resolve();
+    });
+    child.on('error', (error) => { failure = error; });
+    child.on('close', () => {
+      detach();
+      if (!acquired) reject(failure ?? new Error('Capture permit acquisition failed: ' + (stderr.trim() || (signal.aborted ? 'interrupted' : directory))));
+    });
+    if (signal.aborted) abort();
+  });
+  return {
+    lost: lost.signal,
+    release: async () => {
+      releasing = true;
+      child.stdin.end();
+      const force = setTimeout(() => child.kill('SIGKILL'), 5000);
       try {
-        const fd = openSync(file, 'wx', 0o600);
-        writeFileSync(fd, JSON.stringify({ pid: process.pid }));
-        closeSync(fd);
-        const inode = statSync(file).ino;
-        return () => {
-          if (existsSync(file) && statSync(file).ino === inode) unlinkSync(file);
-        };
-      } catch (e: any) {
-        if (e.code !== 'EEXIST') throw e;
-        try {
-          const before = statSync(file),
-            owner = JSON.parse(readFileSync(file, 'utf8'));
-          if (!Number.isInteger(owner.pid) || owner.pid < 1) continue;
-          try {
-            process.kill(owner.pid, 0);
-          } catch (err: any) {
-            if (err.code === 'ESRCH' && statSync(file).ino === before.ino) unlinkSync(file);
-          }
-        } catch {
-          /* An owner may still be publishing its PID. */
-        }
+        const code = await closed;
+        if (code !== 0 || lost.signal.aborted || failure)
+          throw failure ?? new Error('Capture permit holder failed: ' + stderr.trim());
+      } finally {
+        clearTimeout(force);
       }
-    }
-    await sleep(100);
-  }
-  throw new Error('Batch interrupted while waiting for worker capacity.');
+    },
+  };
 }
 /** Helix's diagnostic document stamp is not game content. Keep raw hashes as provenance. */
 export function sourceRecord(url: string, status: number, bytes: Buffer, kind: string) {
@@ -182,9 +202,8 @@ export async function runBatch({ root, config, spec, out, workers = 1, resume = 
   if (existsSync(destination) && !resume)
     throw new Error('Output exists; choose a fresh directory or --resume yes.');
   mkdirSync(destination, { recursive: true });
-  const lock = join(destination, '.batch.lock'),
-    fd = openSync(lock, 'wx', 0o600);
-  closeSync(fd);
+  const lock = join(destination, '.batch.lock');
+  acquireProcessLock(lock, randomUUID());
   const abort = new AbortController(),
     stop = () => abort.abort();
   process.on('SIGINT', stop);
@@ -201,7 +220,6 @@ export async function runBatch({ root, config, spec, out, workers = 1, resume = 
   };
   const save = () =>
     writeFileSync(join(destination, 'batch.json'), JSON.stringify(report, null, 2));
-  save();
   const groups = Object.keys(config.viewports)
     .map((viewport) => ({
       viewport,
@@ -211,10 +229,13 @@ export async function runBatch({ root, config, spec, out, workers = 1, resume = 
   let next = 0;
   async function worker() {
     const queued = performance.now(),
-      release = await permit(abort.signal);
+      lease = await permit(abort.signal);
     const queueMs = performance.now() - queued;
     let browser: any;
+    lease.lost.addEventListener('abort', stop, { once: true });
     try {
+      if (lease.lost.aborted) stop();
+      abort.signal.throwIfAborted();
       browser = await chromium.launch({
         headless: true,
         channel: 'chromium',
@@ -232,6 +253,7 @@ export async function runBatch({ root, config, spec, out, workers = 1, resume = 
           void context.close().catch(() => {});
         };
         abort.signal.addEventListener('abort', cancelContext);
+        if (abort.signal.aborted) cancelContext();
         const deadline = setTimeout(cancelContext, 180000);
         try {
           await context.route('**/*', async (route) => {
@@ -480,11 +502,16 @@ export async function runBatch({ root, config, spec, out, workers = 1, resume = 
         }
       }
     } finally {
-      await browser?.close();
-      release();
+      try {
+        await browser?.close();
+      } finally {
+        lease.lost.removeEventListener('abort', stop);
+        await lease.release();
+      }
     }
   }
   try {
+    save();
     const results = await Promise.allSettled(
       Array.from({ length: Math.min(workers, groups.length) }, () => worker()),
     );

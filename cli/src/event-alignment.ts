@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import type { Page } from 'playwright';
 
 // The marker is part of the recorded image. Navigation time, browser clock origins and
@@ -33,9 +33,23 @@ export async function armAlignment(page: Page, visible: string) {
   }, visible);
 }
 
-export function readAlignment(video: string) {
+/** Bound decoder work independently of the host deadline and retain child diagnostics. */
+function decode(executable: string, args: string[], signal: AbortSignal): Promise<Buffer> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    execFile(executable, args, {
+      encoding: 'buffer', timeout: 30000, maxBuffer: 8_000_000,
+      killSignal: 'SIGKILL', signal,
+    }, (error, stdout, stderr) => {
+      if (error) reject(new Error(executable + ' failed: ' + error.message + '\n' + stderr.toString(), { cause: error }));
+      else resolve(stdout);
+    });
+  });
+}
+
+export async function readAlignment(video: string, signal: AbortSignal) {
   const timestamps: number[] = JSON.parse(
-    execFileSync(
+    (await decode(
       'ffprobe',
       [
         '-v',
@@ -49,10 +63,10 @@ export function readAlignment(video: string) {
         'json',
         video,
       ],
-      { encoding: 'utf8' },
-    ),
+      signal,
+    )).toString(),
   ).frames.map((f: any) => Number(f.best_effort_timestamp_time) * 1000);
-  const pixels = execFileSync('ffmpeg', [
+  const pixels = await decode('ffmpeg', [
     '-v',
     'error',
     '-i',
@@ -66,7 +80,7 @@ export function readAlignment(video: string) {
     '-f',
     'rawvideo',
     'pipe:1',
-  ]);
+  ], signal);
   if (
     pixels.length !== timestamps.length * 6 ||
     !timestamps.length ||

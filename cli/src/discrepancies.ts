@@ -332,16 +332,16 @@ export async function discrepancyCommand(
         continue;
       }
       const check = await inspectEvidence(evidence, hashes);
-      const required = [route.matrix, 'Tools/Helix/reference.json', relative(root, c.uiSpec)];
+      // The v2 sidecar binds the selected effective recipe, not whole config files.
+      const required = [relative(root, c.uiSpec)];
       required.push(evidence.path + '.case.json');
       if (c.sceneSpec) required.push(relative(root, c.sceneSpec));
+      const configurationFiles = [route.matrix, 'Tools/Helix/reference.json', 'Tools/Helix/reference.local.json'];
 
-      if (existsSync(join(root, 'Tools/Helix/reference.local.json')))
-        required.push('Tools/Helix/reference.local.json');
       if (
         !check.reusable ||
         !required.every((p) => evidence.inputs.some((i) => i.path === p)) ||
-        !evidence.inputs.some((i) => !required.includes(i.path))
+        !evidence.inputs.some((i) => !required.includes(i.path) && !configurationFiles.includes(i.path))
       ) {
         reasons[side] = {
           reason: 'Receipt, recipe, comparison spec, or source dependencies missing or stale',

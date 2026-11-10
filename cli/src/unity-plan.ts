@@ -1,3 +1,4 @@
+import { sha } from './config.ts';
 import { resolve, relative, join, isAbsolute } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -98,6 +99,7 @@ export function unityPlan(
   return {
     scenario,
     viewport,
+    configHash: sha(JSON.stringify(config)),
     out,
     reference: config.helix,
     revision: unityRevision(root),

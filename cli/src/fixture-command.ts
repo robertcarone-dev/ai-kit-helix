@@ -73,18 +73,17 @@ export function fixtureCommand(command: string, pos: string[], options: Record<s
   };
   const owned = join(root, '.helix', 'fixture-sessions', session);
   try {
-    run(['start', '--viewport', fixture.viewport]);
+    const started = run(['start', '--viewport', fixture.viewport]);
     // The host froze the effective scenario, including expanded hook bytes, at startup.
     const frozen = JSON.parse(readFileSync(join(owned, 'launch.json'), 'utf8')).config.scenarios[
       pos[0]
     ];
     if (JSON.stringify(frozen) !== JSON.stringify(fixture))
       throw new Error('Fixture changed during startup; retry with the current revision.');
-    const selected = run(['scenario', pos[0]]);
-    const recorded = run(['record', pos[0], '--duration', '1', '--out', out]);
+    const recorded = run(['record', pos[0], '--scenario', pos[0], '--after', 'stop', '--duration', '1', '--out', out]);
     if (
       recorded.errors.length ||
-      recorded.configHash !== selected.configHash ||
+      recorded.configHash !== started.configHash ||
       recorded.scenario !== pos[0]
     )
       throw new Error(

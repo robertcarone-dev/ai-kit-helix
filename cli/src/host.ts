@@ -21,10 +21,15 @@ import { receiptValue } from './receipt.ts';
 /** Long-lived browser owner, started by cli.ts with an explicit consuming project root.
  * Commands run sequentially; receipts describe observations, not a parity verdict. */
 const launch = JSON.parse(readFileSync(join(stateDir, 'launch.json'), 'utf8'));
-const { config, configHash, viewport, token } = launch,
+const { config, configHash, adapterConfigHash, viewport, token, startupDeadline } = launch,
   size = config.viewports[viewport],
   sessionId = randomUUID();
-const browser = await chromium.launch({ headless: true, channel: 'chromium' });
+function startupRemaining() {
+  const remaining = startupDeadline - Date.now();
+  if (remaining <= 0) throw new Error('Startup deadline expired.');
+  return remaining;
+}
+const browser = await chromium.launch({ headless: true, channel: 'chromium', timeout: startupRemaining() });
 // State belongs to this browser session and is reset when its context is replaced.
 let context: BrowserContext;
 let page: Page;
@@ -37,11 +42,14 @@ let pending = new Set<Promise<void>>();
 let sourceFailures = 0;
 let idle: NodeJS.Timeout;
 let busy = false;
+let terminating = false;
+let closing: Promise<void> | undefined;
+let activeCommand: AbortController | undefined;
 const readiness = new ScenarioReadiness();
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const evaluate = async (expression: string) => receiptValue(await page.evaluate(expression));
-const until = (expression: string) =>
-  page.waitForFunction(expression, undefined, { timeout: 20000 });
+const until = (expression: string, timeout = 20000) =>
+  page.waitForFunction(expression, undefined, { timeout });
 function native(f: any) {
   if (f.width !== size.width || f.height !== size.height || f.dpr !== 1 || f.zoom !== 1)
     throw new Error('Native viewport mismatch: ' + JSON.stringify(f));
@@ -50,13 +58,26 @@ const facts = () =>
   evaluate(
     '({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,zoom:visualViewport?.scale??1})',
   );
-async function close() {
+function close(exitCode = 0) {
+  if (closing) return closing;
+  terminating = true;
+  activeCommand?.abort();
   clearTimeout(idle);
-  await context?.close();
-  await browser.close();
-  server.close();
-  rmSync(join(stateDir, 'connection.json'), { force: true });
-  process.exit(0);
+  // A stuck browser close must not leave an unusable host running indefinitely.
+  const forcedExit = setTimeout(() => process.exit(1), 5000);
+  forcedExit.unref();
+  closing = (async () => {
+    try {
+      await browser.close();
+      server.close();
+      rmSync(join(stateDir, 'connection.json'), { force: true });
+      process.exit(exitCode);
+    } catch (error) {
+      console.error(error);
+      process.exit(1);
+    }
+  })();
+  return closing;
 }
 
 function touch() {
@@ -65,7 +86,8 @@ function touch() {
 }
 
 /** Replace the browser context and invalidate scenario readiness before navigating. */
-async function load(recordDir?: string) {
+async function load(recordDir?: string, startup = false) {
+  if (terminating) throw new Error('Host is shutting down; start a fresh session.');
   readiness.invalidate();
   ready = false;
   scenario = null;
@@ -117,11 +139,19 @@ async function load(recordDir?: string) {
       .finally(() => generationPending.delete(job));
     generationPending.add(job);
   });
-  await page.goto(config.url, {
-    waitUntil: 'domcontentloaded',
-    timeout: 25000,
-  });
-  await until(config.ready);
+  try {
+    await page.goto(config.url, {
+      waitUntil: 'domcontentloaded',
+      timeout: startup ? startupRemaining() : 25000,
+    });
+  } catch (cause) {
+    throw new Error('Navigation failed: ' + String(cause), { cause });
+  }
+  try {
+    await until(config.ready, startup ? startupRemaining() : 20000);
+  } catch (cause) {
+    throw new Error('Readiness failed: ' + String(cause), { cause });
+  }
   native(await facts());
   ready = true;
 }
@@ -279,6 +309,7 @@ function status() {
     projectRoot: root,
     pid: process.pid,
     configHash,
+    adapterConfigHash,
     referenceIdentity: config.referenceIdentity,
     viewport,
     url: page?.url(),
@@ -311,6 +342,7 @@ function sceneProvenance() {
   return {
     projectRoot: root,
     configHash,
+    adapterConfigHash,
     referenceIdentity: config.referenceIdentity,
     scenario,
     sessionId,
@@ -463,6 +495,7 @@ async function captureHeld(
     sessionId,
     projectRoot: root,
     configHash,
+    adapterConfigHash,
     scenario,
     label,
     at: new Date().toISOString(),
@@ -535,6 +568,7 @@ async function captureDebug(req: any) {
     viewport,
     reference: config.referenceIdentity,
     configHash,
+    adapterConfigHash,
     capturedUtc: new Date().toISOString(),
     restored: true,
   };
@@ -543,11 +577,12 @@ async function captureDebug(req: any) {
   return { out, ...receipt };
 }
 
-async function dispatch(req: any) {
+async function dispatch(req: any, signal: AbortSignal) {
   if (req.method === 'debug-capture') return captureDebug(req);
   if (req.method === 'status') return status();
   if (req.method === 'stop') {
-    setTimeout(() => void close(), 50);
+    terminating = true;
+    ready = false;
     return { stopped: true };
   }
   if (req.method === 'reset') {
@@ -577,11 +612,14 @@ async function dispatch(req: any) {
     const seconds = Number(req.duration ?? 3);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 30)
       throw new Error('Duration must be >0 and <=30 seconds.');
-    const selected = scenario;
+    if (req.after !== undefined && !['reset', 'stop'].includes(req.after))
+      throw new Error('Recording cleanup must be reset or stop.');
+    const selected = req.scenario ?? scenario;
     if (!selected)
       throw new Error(
         'Select a named scenario before recording; record recreates it in an isolated context.',
       );
+    if (!Object.hasOwn(config.scenarios, selected)) throw new Error('Unknown scenario: ' + selected);
     const out = emptyOutput(req.out ?? join(stateDir, 'evidence', randomUUID()));
     try {
       await load(out);
@@ -612,6 +650,7 @@ async function dispatch(req: any) {
       const result = {
         sessionId,
         configHash,
+        adapterConfigHash,
         scenario: selected,
         label: req.label,
         viewport: size,
@@ -624,7 +663,7 @@ async function dispatch(req: any) {
                 event: alignment.event,
                 predicateSha256: sha(alignment.visible),
                 unity: alignment.unity,
-                ...readAlignment(videoPath),
+                ...(await readAlignment(videoPath, signal)),
               },
             }
           : {}),
@@ -640,7 +679,7 @@ async function dispatch(req: any) {
         expectedRevision: config.expectedRevision ?? null,
         revisionVerified: false,
         notes: [
-          'Recording includes navigation/setup before the observation interval. Scenario is reset after recording.',
+          'Recording includes navigation/setup before the observation interval. Cleanup: ' + (req.after ?? 'reset') + '.',
           'The encoder may round odd dimensions down; inspect encoded and nativeVideo. Native PNG captures remain separate evidence.',
         ],
         videoPath,
@@ -648,7 +687,12 @@ async function dispatch(req: any) {
       writeFileSync(join(out, 'motion.json'), JSON.stringify(result, null, 2));
       return result;
     } finally {
-      await load();
+      if (!terminating) {
+        if (req.after === 'stop') {
+          terminating = true;
+          ready = false;
+        } else await load();
+      }
     }
   }
   throw new Error('Unknown command.');
@@ -671,29 +715,34 @@ const server = createServer((client) => {
     try {
       req = JSON.parse(body.split('\n')[0]);
       if (req.token !== token) throw new Error('Session token mismatch.');
+      if (terminating) throw new Error('Host is shutting down; start a fresh session.');
       if (busy) throw new Error('Session busy; run commands sequentially.');
     } catch (e) {
       client.end(JSON.stringify({ ok: false, error: String(e) }) + '\n');
       return;
     }
     busy = true;
+    const controller = new AbortController();
+    activeCommand = controller;
     touch();
     let deadline: NodeJS.Timeout;
     const budgetMs = req.method === 'record' ? 120000 : 60000;
     try {
       const result = await Promise.race([
-        dispatch(req),
+        dispatch(req, controller.signal),
         new Promise((_, reject) => {
           deadline = setTimeout(() => {
             ready = false;
-            void page?.close();
+            terminating = true;
+            controller.abort();
+            void context.close().catch((error) => console.error(error));
             reject(
-              new Error(`Command exceeded ${budgetMs / 1000} seconds; reset before retrying.`),
+              new Error(`Command exceeded ${budgetMs / 1000} seconds; host is shutting down. Start a fresh session before retrying.`),
             );
           }, budgetMs);
         }),
       ]);
-      client.end(JSON.stringify({ ok: true, result }) + '\n');
+      client.end(JSON.stringify({ ok: true, result }) + '\n', () => { if (terminating) void close(); });
     } catch (e) {
       const error = String(e);
       writeFileSync(
@@ -709,15 +758,26 @@ const server = createServer((client) => {
           2,
         ),
       );
-      client.end(JSON.stringify({ ok: false, error }) + '\n');
+      client.end(JSON.stringify({ ok: false, error }) + '\n', () => { if (terminating) void close(); });
     } finally {
       clearTimeout(deadline!);
-      busy = false;
+      // Timed-out dispatch may still be unwinding. Never admit another command.
+      if (terminating) setTimeout(() => void close(), 1000);
+      else {
+        activeCommand = undefined;
+        busy = false;
+      }
     }
   });
 });
+process.on('SIGTERM', () => void close());
+process.on('SIGINT', () => void close());
+const startupTimer = setTimeout(() => {
+  console.error('Startup deadline expired while initializing the browser session.');
+  void close(1);
+}, Math.max(1, startupDeadline - Date.now()));
 try {
-  await load();
+  await load(undefined, true);
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -730,6 +790,7 @@ try {
       port,
       token,
       configHash,
+      adapterConfigHash,
       viewport,
       projectRoot: root,
       pid: process.pid,
@@ -740,8 +801,7 @@ try {
   touch();
 } catch (e) {
   console.error(e);
-  await browser.close();
-  process.exit(1);
+  await close(1);
+} finally {
+  clearTimeout(startupTimer);
 }
-process.on('SIGTERM', () => void close());
-process.on('SIGINT', () => void close());

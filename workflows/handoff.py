@@ -99,8 +99,8 @@ def package(folder, note_file, destination, viewports=None):
             brief.append(f"Use `{cli} fixture-list` to find or configure a {size['width']} × {size['height']} viewport, then set VIEWPORT to its key.")
         viewport_arg = shlex.quote(viewport) if viewport is not None else '"${VIEWPORT:?Set VIEWPORT to the matching key}"'
         brief.append("Use an idle checkout and stop the browser you started when finished.")
-        commands = [f"{cli} start --viewport {viewport_arg}", f"{cli} scenario {scenario}",
-                    f"{cli} record {scenario} --duration {shlex.quote(str(receipt['durationSeconds']))} --out {output}", f"{cli} stop"]
+        commands = [f"{cli} start --viewport {viewport_arg}",
+                    f"{cli} record {scenario} --scenario {scenario} --after stop --duration {shlex.quote(str(receipt['durationSeconds']))} --out {output}"]
     brief.extend(["", "```sh", " &&\n".join(commands), "```"])
     if "alignment" in receipt:
         manifest["alignment"] = aligned_picks(receipt, notes)
