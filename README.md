@@ -4,6 +4,10 @@ Install a reusable Helix browser reference CLI, six comparison skills and option
 
 Generic readiness/motion and delivery helpers are optional. Their execution requires reviewed project-owned hooks; see [capture adapters](docs/project-adapter.md#optional-capture-workflow-adapter) and [workflow commands](docs/workflows.md#readiness-and-synchronized-motion). Browser-only use remains independent of AI Kit.
 
+## Release 1.5.0
+
+Adds explicit acceptance execution adapters, immutable capture-pinned agent assessments, bounded Unity preparation receipts, and optional inactive Three.js inspection. Workbench findings remain separate from freshness and human acceptance. See [acceptance contracts](docs/Acceptance.md). Upgrade consumers through an installer preview and update; never install into active lanes as part of a shared-source release. Existing evidence and consumer-owned adapters remain in place.
+
 ## Prerequisites
 
 - Node.js **22.18 or later** and npm on `PATH`.
