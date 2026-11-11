@@ -173,6 +173,12 @@ export const UI_INSPECTOR = String.raw`(config) => {
           bounds: b,
           text,
           sprite,
+          rendering: {
+            alpha: o.alpha ?? null,
+            tint: o.tintTopLeft === undefined ? null : { topLeft: o.tintTopLeft, topRight: o.tintTopRight, bottomLeft: o.tintBottomLeft, bottomRight: o.tintBottomRight, mode: o.tintMode ?? null },
+            blendMode: o.blendMode ?? null,
+            pipeline: o.pipeline?.name ?? null,
+          },
           layout: {
             parentPath: o.parentContainer ? path.slice(0, path.lastIndexOf('/')) : null,
             position: [o.x, o.y],

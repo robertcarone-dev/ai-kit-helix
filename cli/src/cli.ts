@@ -1,3 +1,4 @@
+import { registerComparison, comparisonLinks, comparisons } from './comparison-index.ts';
 import { processExited } from './process-lock.ts';
 import { unityPlan, unityRevision } from './unity-plan.ts';
 import {
@@ -8,13 +9,14 @@ import {
   rmSync,
   openSync,
   closeSync,
+  renameSync,
 } from 'node:fs';
 import { resolve, join, dirname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
-import { root, stateDir, readConfig, sha } from './config.ts';
+import { root, stateDir, readConfig, adapterSettings, loadStep, sha } from './config.ts';
 import { discover, assets } from './discovery.ts';
 
 /** Short-lived command client. The detached host owns the browser between invocations. */
@@ -29,20 +31,41 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   handoff-owner --handoff ZIP --unity-project IDLE_ISOLATED_DIR --out EMPTY_DIR
   fixture-handoff --recording DIR --notes JSON_FILE --out NEW_ZIP
   doctor | resolve
+  unity-connection [--helix-project SLUG | --project-root DIR]
   assets [--match TEXT]
   unity-plan SCENARIO --out DIR [--viewport phone|tablet]
-  start [--viewport phone|tablet] [--url http://127.0.0.1:PORT/...]
+  start [--viewport phone|tablet] [--workbench yes] [--url http://127.0.0.1:PORT/...]
   status | reset | stop
   recover                       recheck timed-out scenario readiness; no setup replay
   scenario NAME
+  workbench comparisons [--item ID] | --evidence FILE --item ID [--issue NUMBER] | --from-report yes
+  workbench feedback --comparison ID
+  workbench prepare|refresh|evidence also accept --item ID [--issue NUMBER]
+  workbench dashboard [--spec FILE]  read or publish the connected checkout status
+  workbench list|status|reset|stop
+  workbench run NAME --level N --seed N
+  workbench action ACTION | workbench checkpoint LABEL
+  workbench export --out NEW_DIR
+  workbench evidence --source EVIDENCE_DIR --out NEW_DIR
+  workbench prepare --spec REVIEW_SPEC --out NEW_DIR
+  workbench review-summary --decisions REVIEWS_JSON --evidence EVIDENCE_JSON
+  workbench compare-revisions --previous EVIDENCE_JSON --evidence EVIDENCE_JSON --out NEW_FILE
+  workbench refresh --spec REVIEW_SPEC --decisions REVIEWS_JSON --previous EVIDENCE_JSON --out NEW_DIR
   look [--match TEXT]
   scene-record --out EMPTY_DIR [--duration SECONDS] [--interval-ms MS] [--profile NAME]
   material-keywords --out EMPTY_DIR
   sprite-usage --spec FILE --out EMPTY_DIR
   render-trace --spec FILE --out EMPTY_DIR
+  render-inspect --spec FILE --out EMPTY_DIR
   recording-sheet --spec FILE --out EMPTY_DIR
   vfx-compare --spec FILE --out NEW_DIR
   scene-motion --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
+  objects list [--match TEXT] [--engine phaser|three]
+  objects selector|resolve|inspect|explain also accept --engine three
+  objects selector ID [--out NEW_FILE]
+  objects resolve --selector FILE
+  objects inspect|explain [ID | --selector FILE]
+  objects capture [ID | --selector FILE] --view context|isolated --out NEW_DIR
   scene-look [--profile NAME]    read-only hierarchy and scene measurements
   scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR
   scene-report --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR
@@ -51,7 +74,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   conversion-plan --spec MANIFEST --out EMPTY_DIR
   ui-look [--match TEXT]          UI metrics and semantic bindings
   step JSON                     press/drag/hover/pointerDown/pointerUp/wheel/wait/assert/script
-  capture NAME [--out EMPTY_DIR] [--scene-profile NAME]
+  capture NAME [--out EMPTY_DIR] [--scene-profile NAME] [--dependencies FILE]
   record NAME [--scenario ID] [--after reset|stop] [--duration SECONDS] [--out EMPTY_DIR]  max 30s
   ui-assets --spec JSON --out EMPTY_DIR
   ui-plan --spec JSON --out EMPTY_DIR
@@ -66,7 +89,8 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   debug-image --input PNG --out EMPTY_DIR
   debug-capture --view MODE --out EMPTY_DIR
   compare --reference PNG --candidate PNG --out EMPTY_DIR [--regions JSON]
-Every command accepts --project-root DIR; otherwise discover from the working directory.\nRelative file paths are project-relative. Config: Tools/Helix/reference.json; optional reference.local.json top-level overrides.
+Every command accepts --helix-project SLUG to use the Workbench connection.
+--project-root DIR overrides it without changing the saved connection. Otherwise discover from the working directory.\nRelative file paths are project-relative. Config: Tools/Helix/reference.json; optional reference.local.json top-level overrides.
 unity-revision prints Git metadata for a manual comparison's unity-revision.json receipt.
 Start discovers the configured project/variant and opens local Helix Desktop if needed.
 Helix serves source/assets and starts its preview on demand; stop closes only our browser.
@@ -154,23 +178,27 @@ async function main() {
     'handoff-owner': ['handoff', 'unity-project', 'out'],
     'fixture-handoff': ['recording', 'notes', 'out'],
     doctor: [],
+    'unity-connection': [],
     resolve: [],
     assets: ['match'],
     'unity-plan': ['out', 'viewport'],
     'unity-revision': [],
-    start: ['viewport', 'url'],
+    start: ['viewport', 'url', 'workbench'],
     status: [],
     reset: [],
     stop: [],
     recover: [],
     scenario: [],
+    workbench: ['level', 'seed', 'out', 'source', 'spec', 'decisions', 'evidence', 'previous', 'item', 'issue', 'from-report', 'comparison'],
     look: ['match'],
+    objects: ['match', 'view', 'out', 'selector', 'engine'],
     'ui-look': ['match'],
     'scene-look': ['profile'],
     'scene-record': ['out', 'duration', 'interval-ms', 'profile'],
     'material-keywords': ['out'],
     'sprite-usage': ['spec', 'out'],
     'render-trace': ['spec', 'out'],
+    'render-inspect': ['spec', 'out'],
     'recording-sheet': ['spec', 'out'],
     'vfx-compare': ['spec', 'out'],
     'scene-motion': ['reference', 'candidate', 'spec', 'out'],
@@ -180,7 +208,7 @@ async function main() {
     'scene-case': ['spec', 'out', 'execute', 'ai-kit'],
     'scene-compare': ['reference', 'candidate', 'spec', 'out'],
     step: [],
-    capture: ['out', 'scene-profile'],
+    capture: ['out', 'scene-profile', 'dependencies'],
     record: ['out', 'duration', 'scenario', 'after'],
     'ui-assets': ['spec', 'out'],
     'ui-plan': ['spec', 'out'],
@@ -198,8 +226,90 @@ async function main() {
   };
   if (!allowed[command]) throw new Error('Unknown command ' + command);
   for (const k of Object.keys(options))
-    if (k !== 'project-root' && !allowed[command].includes(k))
+    if (!['project-root', 'helix-project'].includes(k) && !allowed[command].includes(k))
       throw new Error('Unknown option --' + k);
+  if (command === 'objects') {
+    if (options.engine !== undefined && !['phaser', 'three'].includes(options.engine)) throw new Error('Object engine must be phaser or three.');
+    if (options.engine === 'three' && pos[0] === 'capture') throw new Error('Three object discovery is read-only. Use the existing debug-capture or scene capture tools for rendering.');
+    const operation = pos[0];
+    const targetOperation = ['inspect', 'explain', 'capture'].includes(operation);
+    if (!['list', 'selector', 'resolve', 'inspect', 'explain', 'capture'].includes(operation)) throw new Error('Use objects list|selector|resolve|inspect|explain|capture.');
+    if (pos.length !== (operation === 'selector' || (targetOperation && !options.selector) ? 2 : 1)) throw new Error('Supply exactly one object ID or --selector FILE for the target.');
+    if (operation === 'resolve' && !options.selector) throw new Error('Object resolve requires --selector FILE.');
+    if (operation === 'capture' && (!options.out || !['context', 'isolated'].includes(options.view))) throw new Error('Object capture requires --view context|isolated and --out NEW_DIR.');
+    for (const option of Object.keys(options)) {
+      if (['project-root', 'helix-project', 'engine'].includes(option)) continue;
+      if (!(operation === 'list' && option === 'match') && !(operation === 'capture' && ['view', 'out'].includes(option)) && !(operation === 'selector' && option === 'out') && !((targetOperation || operation === 'resolve') && option === 'selector'))
+        throw new Error('Option --' + option + ' is not valid for objects ' + operation);
+    }
+  }
+  if (command === 'unity-connection') {
+    if (pos.length) throw new Error('unity-connection takes no positional arguments.');
+    const adapter = adapterSettings(root);
+    return { project: adapter.helix.project, projectRoot: root, source: options['project-root'] ? 'explicit override' : options['helix-project'] ? 'saved Workbench connection' : 'working directory' };
+  }
+  if (command === 'workbench') {
+    const operation = pos[0];
+    const takesName = ['run', 'action', 'checkpoint'].includes(operation);
+    if (!['list', 'status', 'run', 'reset', 'stop', 'action', 'checkpoint', 'export', 'evidence', 'prepare', 'review-summary', 'refresh', 'compare-revisions', 'dashboard', 'comparisons', 'feedback'].includes(operation) || pos.length !== (takesName ? 2 : 1))
+      throw new Error('Use workbench list|status|run NAME|reset|stop|action NAME|checkpoint LABEL|export|evidence|prepare|review-summary|refresh|compare-revisions|dashboard|comparisons|feedback.');
+    if (operation === 'run' && (options.level === undefined || options.seed === undefined))
+      throw new Error('Workbench run requires explicit --level and --seed.');
+    if (operation === 'export' && !options.out) throw new Error('Workbench export requires --out NEW_DIR.');
+    for (const option of Object.keys(options)) {
+      if (['project-root', 'helix-project'].includes(option)) continue;
+      if (!(['prepare', 'refresh', 'evidence'].includes(operation) && ['item', 'issue'].includes(option)) && !(operation === 'comparisons' && ['evidence', 'item', 'issue', 'from-report'].includes(option)) && !(operation === 'feedback' && option === 'comparison') && !(operation === 'dashboard' && option === 'spec') && !(operation === 'compare-revisions' && ['previous', 'evidence', 'out'].includes(option)) && !(operation === 'refresh' && ['spec', 'decisions', 'previous', 'out'].includes(option)) && !(operation === 'review-summary' && ['decisions', 'evidence'].includes(option)) && !(operation === 'prepare' && ['spec', 'out'].includes(option)) && !(operation === 'evidence' && ['source', 'out'].includes(option)) && !(operation === 'run' && ['level', 'seed'].includes(option)) && !(operation === 'export' && option === 'out'))
+        throw new Error('Option --' + option + ' is not valid for workbench ' + operation);
+    }
+  }
+  if (command === 'workbench' && pos[0] === 'comparisons') {
+    if (options['from-report'] !== undefined && (options['from-report'] !== 'yes' || options.evidence || options.item || options.issue)) throw new Error('Use --from-report yes alone to register existing report evidence.');
+    const result = await comparisons(root, adapterSettings(root).helix.project, options.evidence, options.item, options.issue, options['from-report'] === 'yes');
+    if ('errors' in result && result.errors.length) process.exitCode = 2;
+    return result;
+  }
+  if (command === 'workbench' && pos[0] === 'feedback') {
+    if (!options.comparison) throw new Error('Feedback requires --comparison ID from workbench comparisons.');
+    const { comparisonFeedback } = await import('./comparison-feedback.ts');
+    return comparisonFeedback(root, adapterSettings(root).helix.project, options.comparison);
+  }
+  const links = command === 'workbench' && ['prepare', 'refresh', 'evidence'].includes(pos[0]) ? comparisonLinks(root, adapterSettings(root).helix.project, options.item, options.issue) : [];
+  if (command === 'workbench' && pos[0] === 'dashboard') {
+    const { portingDashboard } = await import('./porting-dashboard.ts');
+    return portingDashboard(root, adapterSettings(root).helix.project, options.spec ? resolve(root, options.spec) : undefined);
+  }
+  if (command === 'workbench' && pos[0] === 'compare-revisions') {
+    if (!options.previous || !options.evidence || !options.out) throw new Error('Revision comparison requires --previous, --evidence, and --out NEW_FILE.');
+    const { compareRevisionFiles } = await import('./workbench-compare-revisions.ts');
+    return compareRevisionFiles(resolve(root, options.previous), resolve(root, options.evidence), resolve(root, options.out));
+  }
+  if (command === 'workbench' && pos[0] === 'refresh') {
+    if (!options.spec || !options.decisions || !options.previous || !options.out) throw new Error('Review refresh requires --spec, --decisions, --previous, and --out NEW_DIR.');
+    const { refreshReview } = await import('./review-refresh.ts');
+    const result = await refreshReview(resolve(root, options.spec), resolve(root, options.decisions), resolve(root, options.previous), resolve(root, options.out), adapterSettings(root).helix.project);
+    if (result.status !== 'ready') process.exitCode = 2;
+    if (result.status === 'ready' && 'bundle' in result) return { ...result, registeredComparison: await registerComparison(root, adapterSettings(root).helix.project, result.bundle, links), note: 'Available in Porting Workbench → Available comparisons. Reload comparisons to view it.' };
+    return result;
+  }
+  if (command === 'workbench' && pos[0] === 'review-summary') {
+    if (!options.decisions || !options.evidence) throw new Error('Review summary requires --decisions and --evidence.');
+    const { reviewSummary } = await import('./review-summary.ts');
+    return reviewSummary(resolve(root, options.decisions), resolve(root, options.evidence), adapterSettings(root).helix.project);
+  }
+  if (command === 'workbench' && pos[0] === 'prepare') {
+    if (!options.spec || !options.out) throw new Error('Workbench prepare requires --spec and --out.');
+    const { prepareReview } = await import('./workbench-prepare.ts');
+    const result = prepareReview(resolve(root, options.spec), resolve(root, options.out));
+    if (result.status !== 'ready') process.exitCode = 2;
+    if (result.status === 'ready' && 'bundle' in result) return { ...result, registeredComparison: await registerComparison(root, adapterSettings(root).helix.project, result.bundle, links), note: 'Available in Porting Workbench → Available comparisons. Reload comparisons to view it.' };
+    return result;
+  }
+  if (command === 'workbench' && pos[0] === 'evidence') {
+    if (!options.source || !options.out) throw new Error('Workbench evidence requires --source and --out.');
+    const { bundleEvidence } = await import('./workbench-evidence.ts');
+    const result = bundleEvidence(resolve(root, options.source), resolve(root, options.out));
+    return { ...result, registeredComparison: await registerComparison(root, adapterSettings(root).helix.project, resolve(result.out, 'evidence.json'), links), note: 'Available in Porting Workbench → Available comparisons.' };
+  }
   if (['scenario', 'step', 'capture', 'record'].includes(command) && pos.length !== 1)
     throw new Error(command + ' requires one argument.');
   if (['scene-look', 'scene-record'].includes(command) && pos.length)
@@ -216,6 +326,8 @@ async function main() {
       'record',
       'recover',
       'scene-record',
+      'objects',
+      'workbench',
     ].includes(command) &&
     existsSync(matrixLock) &&
     JSON.parse(readFileSync(matrixLock, 'utf8')).token !== process.env.HELIX_MATRIX_TOKEN
@@ -294,6 +406,11 @@ async function main() {
       throw new Error('sprite-usage requires --spec and --out.');
     const { spriteUsage } = await import('./sprite-usage.ts');
     return spriteUsage(resolve(root, options.spec), resolve(root, options.out));
+  }
+  if (command === 'render-inspect') {
+    if (pos.length || !options.spec || !options.out) throw new Error('render-inspect requires --spec and --out.');
+    const { renderInspect } = await import('./render-inspect.ts');
+    return renderInspect(resolve(root, options.spec), resolve(root, options.out));
   }
   if (command === 'render-trace') {
     if (pos.length || !options.spec || !options.out)
@@ -486,6 +603,10 @@ async function main() {
   }
   if (command === 'start') {
     const { config, configHash: adapterConfigHash } = readConfig(options.url);
+    if (options.workbench !== undefined) {
+      if (options.workbench !== 'yes') throw new Error('--workbench accepts yes.');
+      config.ready = '(' + config.ready + ') && window.__portingWorkbench?.version === 1';
+    }
     config.referenceIdentity = await discover(config, true);
     config.url = options.url ?? config.url ?? config.referenceIdentity.url;
     config.referenceIdentity = {
@@ -523,13 +644,22 @@ async function main() {
         }
       }
       const token = randomUUID(),
-        startupDeadline = Date.now() + 60000;
+        launchId = randomUUID(),
+        startedUtc = new Date().toISOString(),
+        startupDeadline = Date.now() + 60000,
+        logPath = join(stateDir, 'host.log');
       writeFileSync(
         join(stateDir, 'launch.json'),
-        JSON.stringify({ config, configHash, adapterConfigHash, viewport, token, startupDeadline }),
+        JSON.stringify({ config, configHash, adapterConfigHash, viewport, token, launchId, startedUtc, startupDeadline }),
         { mode: 0o600 },
       );
-      const log = openSync(join(stateDir, 'host.log'), 'a', 0o600);
+      // Replace the file under the start lock. A previous host still unwinding keeps
+      // its old descriptor and cannot write stale errors into this launch's log.
+      const nextLogPath = join(stateDir, `host-${launchId}.log`);
+      writeFileSync(nextLogPath, JSON.stringify({ launchId, startedUtc, projectRoot: root, viewport, url: config.url, ready: config.ready }) + '\n', { flag: 'wx', mode: 0o600 });
+      renameSync(nextLogPath, logPath);
+      const log = openSync(logPath, 'a', 0o600);
+      const launchFailure = (message: string) => new Error(`${message} Launch ${launchId} (${startedUtc}). Current launch log: ${logPath}\n${readFileSync(logPath, 'utf8').slice(-12000)}`);
       const child = spawn(
         process.execPath,
         [join(dirname(fileURLToPath(import.meta.url)), 'host.ts'), '--project-root', root],
@@ -545,7 +675,7 @@ async function main() {
       let connected = false;
       try {
         while (Date.now() < startupDeadline + 5000) {
-          if (failure) throw failure;
+          if (failure) throw launchFailure(String(failure));
           if (existsSync(file)) {
             const owned = connection();
             if (owned.token !== token) throw new Error('Startup connection belongs to another host.');
@@ -554,10 +684,10 @@ async function main() {
             return live;
           }
           if (child.exitCode !== null || child.signalCode !== null)
-            throw new Error('Browser host failed. See ' + join(stateDir, 'host.log') + '.');
+            throw launchFailure('Browser host failed.');
           await new Promise((r) => setTimeout(r, 100));
         }
-        throw new Error('Startup exceeded its 60-second deadline and 5-second shutdown grace. See ' + join(stateDir, 'host.log') + '.');
+        throw launchFailure('Startup exceeded its 60-second deadline and 5-second shutdown grace.');
       } finally {
         // Also reap the owned child after a failed status exchange, not just timeout.
         if (!connected && child.pid && child.exitCode === null && child.signalCode === null) {
@@ -585,9 +715,15 @@ async function main() {
       {
         method: command,
         view: options.view,
-        name: pos[0],
+        name: ['workbench', 'objects'].includes(command) ? pos[1] : pos[0],
+        operation: ['workbench', 'objects'].includes(command) ? pos[0] : undefined,
+        level: options.level,
+        seed: options.seed,
         label: pos[0],
+        dependencies: options.dependencies ? resolve(root, options.dependencies) : undefined,
         match: options.match,
+        engine: options.engine,
+        selector: options.selector ? JSON.parse(readFileSync(resolve(root, options.selector), 'utf8')) : undefined,
         out: options.out ? resolve(root, options.out) : undefined,
         duration: options.duration,
         scenario: options.scenario,
@@ -595,7 +731,7 @@ async function main() {
         interval: options['interval-ms'],
         profile: options.profile,
         sceneProfile: options['scene-profile'],
-        step: command === 'step' ? JSON.parse(pos[0]) : undefined,
+        step: command === 'step' ? loadStep(JSON.parse(pos[0])) : undefined,
       },
       command === 'record' ? 125000 : 65000,
     );
@@ -604,6 +740,7 @@ async function main() {
     try { await finishStop(owned); } catch { throw error; }
     return { stopped: true, alreadyStopped: true };
   }
+  if (command === 'objects' && ['helix-object-resolution', 'helix-three-resolution'].includes(result.kind) && result.status !== 'resolved') process.exitCode = 2;
   if (command === 'stop' || (command === 'record' && options.after === 'stop'))
     await finishStop(owned);
   return result;

@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { PNG } from 'pngjs';
 import { sha, emptyOutput } from './config.ts';
 import { loadSnapshot } from './ui.ts';
+import { requireUnchanged, writeBaseline } from './evidence-baseline.ts';
 
 const finite = (x: any) => typeof x === 'number' && Number.isFinite(x);
 const pair = (x: any) => Array.isArray(x) && x.length === 2 && x.every(finite);
@@ -136,7 +137,7 @@ async function decode(bytes: Buffer, session: any) {
   }
 }
 export async function uiAssets(root: string, specPath: string, out: string) {
-  const spec = json(localFile(root, specPath));
+  const specFile = localFile(root, specPath), specBytes = readFileSync(specFile), spec = JSON.parse(specBytes.toString());
   if (spec.schemaVersion !== 1) throw new Error('Expected asset spec schemaVersion 1.');
   list(spec.assets, 'assets');
   const prepared: any[] = [],
@@ -191,6 +192,8 @@ export async function uiAssets(root: string, specPath: string, out: string) {
   } finally {
     if (session.browser) await session.browser.close();
   }
+  const dependencies = [{ path: specFile, sha256: sha(specBytes) }, ...prepared.map(p => ({ path: p.metadata.provenance.file, sha256: p.metadata.provenance.sha256 }))];
+  requireUnchanged(dependencies);
   emptyOutput(out);
   for (const p of prepared) writeFileSync(join(out, p.a.id + '.png'), p.png, { flag: 'wx' });
   const result = {
@@ -201,8 +204,13 @@ export async function uiAssets(root: string, specPath: string, out: string) {
       'No game assets imported. Review destination, pivot, border and pixel density before Unity apply.',
     ],
   };
-  write(join(out, 'imports.json'), result);
-  return result;
+  const receiptPath = join(resolve(out), 'imports.json');
+  write(receiptPath, result);
+  const receipt = { path: receiptPath, sha256: sha(readFileSync(receiptPath)) };
+  const baselines = prepared.map(p => writeBaseline(join(resolve(out), p.a.id + '.baseline.json'), 'ui-assets',
+    { path: p.metadata.source, sha256: p.metadata.sha256 }, receipt,
+    [{ path: specFile, sha256: sha(specBytes) }, { path: p.metadata.provenance.file, sha256: p.metadata.provenance.sha256 }]));
+  return { ...result, baselines };
 }
 /** Native top-left bounds to an explicitly chosen fixed-anchor parent-local RectTransform. */
 export function layoutFor(bounds: any, parent: any, anchor: any, pivot: any) {

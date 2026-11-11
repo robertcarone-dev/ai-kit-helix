@@ -1,3 +1,4 @@
+import { connectedProjectRoot } from './unity-connection.ts';
 import { installFixtureScenarios } from './fixtures.ts';
 import { validateSceneOptions } from './scene-options.ts';
 import { readFileSync, existsSync, realpathSync, mkdirSync, readdirSync } from 'node:fs';
@@ -26,7 +27,7 @@ export function projectRoot(args = process.argv.slice(2), cwd = process.cwd()) {
   return dir;
 }
 // Each process fixes its project context once; child processes receive it explicitly.
-export const root = projectRoot();
+export const root = await connectedProjectRoot(process.argv.slice(2), localUrl) ?? projectRoot();
 const session = process.env.HELIX_FIXTURE_SESSION;
 if (session !== undefined && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(session))
   throw new Error('Invalid isolated fixture session id.');

@@ -84,10 +84,11 @@ export function fixtureCommand(command: string, pos: string[], options: Record<s
     if (
       recorded.errors.length ||
       recorded.configHash !== started.configHash ||
+      recorded.sessionId !== started.sessionId ||
       recorded.scenario !== pos[0]
     )
       throw new Error(
-        'Recording has browser errors or changed scenario/configuration; inspect motion.json.',
+        'Recording has browser errors or changed session, scenario or configuration; inspect motion.json.',
       );
     if (recorded.sha256 !== sha(readFileSync(join(out, 'motion.webm'))))
       throw new Error('Recording hash mismatch.');
@@ -96,6 +97,8 @@ export function fixtureCommand(command: string, pos: string[], options: Record<s
       feature: fixture.feature,
       label: fixture.label,
       viewport: fixture.viewport,
+      launchId: started.launchId,
+      sessionId: started.sessionId,
       clipSha256: recorded.sha256,
     };
     writeFileSync(join(out, 'fixture.json'), JSON.stringify(identity, null, 2));

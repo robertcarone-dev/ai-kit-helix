@@ -1,6 +1,7 @@
 import { debugImageData, imageDebugControls } from './image-debug.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { pngDimensions } from './image-limits.ts';
 import { PNG } from 'pngjs';
 import { emptyOutput, sha } from './config.ts';
 import { parseRegions, regionDifference } from './image-regions.ts';
@@ -14,6 +15,8 @@ export function compare(
 ) {
   const referenceBytes = readFileSync(referencePath),
     candidateBytes = readFileSync(candidatePath);
+  pngDimensions(referenceBytes);
+  pngDimensions(candidateBytes);
   const reference = PNG.sync.read(referenceBytes),
     candidate = PNG.sync.read(candidateBytes);
   if (reference.width !== candidate.width || reference.height !== candidate.height)
@@ -61,8 +64,9 @@ export function compare(
     difference.data[offset + 3] = 255;
   }
   const out = emptyOutput(output);
-  writeFileSync(join(out, 'side-by-side.png'), PNG.sync.write(sideBySide));
-  writeFileSync(join(out, 'diff.png'), PNG.sync.write(difference));
+  const sideBySideBytes = PNG.sync.write(sideBySide), differenceBytes = PNG.sync.write(difference);
+  writeFileSync(join(out, 'side-by-side.png'), sideBySideBytes);
+  writeFileSync(join(out, 'diff.png'), differenceBytes);
   const result = {
     schemaVersion: 1,
     reference: {
@@ -75,6 +79,10 @@ export function compare(
     },
     width: reference.width,
     height: reference.height,
+    outputs: {
+      difference: { path: 'diff.png', sha256: sha(differenceBytes) },
+      sideBySide: { path: 'side-by-side.png', sha256: sha(sideBySideBytes) },
+    },
     changedPixels,
     changedFraction: changedPixels / (reference.width * reference.height),
     ...regional,

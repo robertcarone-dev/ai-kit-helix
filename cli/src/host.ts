@@ -1,3 +1,6 @@
+import { captureDependencies, requireUnchanged, writeBaseline } from './evidence-baseline.ts';
+import { objects } from './objects.ts';
+import { workbench } from './workbench.ts';
 import { fileURLToPath } from 'node:url';
 import { armAlignment, readAlignment } from './event-alignment.ts';
 import { resolveSceneOptions } from './scene-options.ts';
@@ -21,15 +24,19 @@ import { receiptValue } from './receipt.ts';
 /** Long-lived browser owner, started by cli.ts with an explicit consuming project root.
  * Commands run sequentially; receipts describe observations, not a parity verdict. */
 const launch = JSON.parse(readFileSync(join(stateDir, 'launch.json'), 'utf8'));
-const { config, configHash, adapterConfigHash, viewport, token, startupDeadline } = launch,
+const { config, configHash, adapterConfigHash, viewport, token, launchId, startedUtc, startupDeadline } = launch,
   size = config.viewports[viewport],
   sessionId = randomUUID();
+function diagnostic(event: string, details: object) {
+  console.error(JSON.stringify({ at: new Date().toISOString(), launchId, event, ...details }));
+}
 function startupRemaining() {
   const remaining = startupDeadline - Date.now();
   if (remaining <= 0) throw new Error('Startup deadline expired.');
   return remaining;
 }
 const browser = await chromium.launch({ headless: true, channel: 'chromium', timeout: startupRemaining() });
+diagnostic('browser-launched', { executable: chromium.executablePath() });
 // State belongs to this browser session and is reset when its context is replaced.
 let context: BrowserContext;
 let page: Page;
@@ -117,15 +124,22 @@ async function load(recordDir?: string, startup = false) {
   page.on('pageerror', (e: Error) => {
     errors.push(e.message);
     errors = errors.slice(-50);
+    diagnostic('page-error', { message: e.message });
   });
+  page.on('console', (message) => {
+    if (message.type() === 'error') diagnostic('console-error', { message: message.text() });
+  });
+  page.on('requestfailed', (request) => diagnostic('request-failed', { url: request.url(), resourceType: request.resourceType(), failure: request.failure() }));
   const generationSources = sources,
     generationPending = pending;
   page.on('response', (response) => {
     if (!['document', 'script', 'stylesheet', 'font'].includes(response.request().resourceType()))
       return;
+    if (response.status() >= 400) diagnostic('http-error', { url: response.url(), status: response.status() });
     const job: Promise<void> = response
       .body()
       .then((b: Buffer) => {
+        if (response.status() >= 400) diagnostic('http-error-body', { url: response.url(), status: response.status(), body: b.toString('utf8').slice(0, 4000) });
         generationSources.set(response.url(), {
           url: response.url(),
           status: response.status(),
@@ -140,6 +154,7 @@ async function load(recordDir?: string, startup = false) {
     generationPending.add(job);
   });
   try {
+    diagnostic('navigation-started', { url: config.url });
     await page.goto(config.url, {
       waitUntil: 'domcontentloaded',
       timeout: startup ? startupRemaining() : 25000,
@@ -148,12 +163,14 @@ async function load(recordDir?: string, startup = false) {
     throw new Error('Navigation failed: ' + String(cause), { cause });
   }
   try {
+    diagnostic('readiness-started', { url: page.url(), expression: config.ready });
     await until(config.ready, startup ? startupRemaining() : 20000);
   } catch (cause) {
     throw new Error('Readiness failed: ' + String(cause), { cause });
   }
   native(await facts());
   ready = true;
+  diagnostic('page-ready', { url: page.url() });
 }
 
 async function look(match = '') {
@@ -261,6 +278,7 @@ async function step(raw: any) {
       }
     }
     entry.status = 'completed';
+    return entry;
   } catch (e) {
     entry.status = 'failed';
     ready = false;
@@ -306,6 +324,8 @@ async function select(name: string, reset = true) {
 function status() {
   return {
     sessionId,
+    launchId,
+    startedUtc,
     projectRoot: root,
     pid: process.pid,
     configHash,
@@ -429,7 +449,7 @@ async function lookUI(match = '') {
   return snapshot;
 }
 
-async function capture(label: string, output?: string, sceneProfile?: string) {
+async function capture(label: string, output?: string, sceneProfile?: string, dependenciesPath?: string) {
   if (!ready) throw new Error('Session not ready; reset after diagnosing the failure.');
   const s = scenario ? config.scenarios[scenario] : null;
   if (s) {
@@ -446,7 +466,7 @@ async function capture(label: string, output?: string, sceneProfile?: string) {
           config.phaser +
           ');if(!g?.loop?.sleep||!g?.loop?.wake)throw new Error("Phaser clock hold unavailable");const running=g.loop.running;g.loop.sleep();return running;})()',
       );
-    return await captureHeld(label, output, !!hold, sceneProfile);
+    return await captureHeld(label, output, !!hold, sceneProfile, dependenciesPath);
   } finally {
     if (restore) await page.evaluate('(' + config.phaser + ').loop.wake(true)');
   }
@@ -458,7 +478,9 @@ async function captureHeld(
   output?: string,
   clockHeld = false,
   sceneProfile?: string,
+  dependenciesPath?: string,
 ) {
+  const dependencies = captureDependencies(dependenciesPath);
   const captureStarted = performance.now();
   if (!ready) throw new Error('Session not ready; reset after diagnosing the failure.');
   const s = scenario ? config.scenarios[scenario] : null;
@@ -466,6 +488,7 @@ async function captureHeld(
   native(measured);
   const inspection = await look();
   const state = s?.state ? await evaluate(s.state) : null;
+  const workbenchState = await evaluate('window.__portingWorkbench ? window.__portingWorkbench.snapshot() : null');
   const ui = await lookUI();
   ui.clockHold = clockHeld ? 'phaser-loop' : 'none';
   const scene = sceneProfile ? await lookScene(sceneProfile) : undefined;
@@ -477,6 +500,7 @@ async function captureHeld(
   if (png.readUInt32BE(16) !== size.width || png.readUInt32BE(20) !== size.height)
     throw new Error('Screenshot dimensions differ from native viewport.');
   await Promise.allSettled([...pending]);
+  requireUnchanged(dependencies);
   const out = emptyOutput(output ?? join(stateDir, 'evidence', randomUUID())),
     capturePath = join(out, 'reference.png'),
     manifestPath = join(out, 'reference.json');
@@ -505,6 +529,7 @@ async function captureHeld(
     capturePath,
     sha256: sha(png),
     setup: actions,
+    workbench: workbenchState,
     setupKind: actions.some((a) => a.purpose === 'fixture')
       ? 'fixture'
       : actions.some((a) => a.purpose === 'instrumentation')
@@ -528,8 +553,10 @@ async function captureHeld(
         : 'Inspection and capture are sequential; moving objects may advance.',
     ],
   };
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  return { capturePath, manifestPath, native: size, scenario };
+  const receiptBytes = JSON.stringify(manifest, null, 2);
+  writeFileSync(manifestPath, receiptBytes);
+  const baselinePath = writeBaseline(join(out, 'baseline.json'), 'capture', { path: capturePath, sha256: sha(png) }, { path: manifestPath, sha256: sha(receiptBytes) }, dependencies);
+  return { capturePath, manifestPath, baselinePath, native: size, scenario };
 }
 
 async function captureDebug(req: any) {
@@ -578,6 +605,7 @@ async function captureDebug(req: any) {
 }
 
 async function dispatch(req: any, signal: AbortSignal) {
+  if (req.method === 'objects') return objects(page, req, { sessionId, configHash, reference: config.referenceIdentity, url: page.url() });
   if (req.method === 'debug-capture') return captureDebug(req);
   if (req.method === 'status') return status();
   if (req.method === 'stop') {
@@ -588,6 +616,26 @@ async function dispatch(req: any, signal: AbortSignal) {
   if (req.method === 'reset') {
     await load();
     return status();
+  }
+  if (req.method === 'workbench') {
+    const mutates = ['run', 'reset', 'action'].includes(req.operation);
+    if (mutates) { readiness.invalidate(); scenario = null; ready = false; }
+    const entry: any = { kind: 'workbench', purpose: 'fixture', operation: req.operation, name: req.name, level: req.level, seed: req.seed, at: new Date().toISOString(), status: 'running' };
+    if (mutates) actions.push(entry);
+    try {
+      await Promise.allSettled([...pending]);
+      const result = await workbench(page, req, {
+        sessionId, projectRoot: root, configHash, adapterConfigHash,
+        reference: config.referenceIdentity, url: page.url(), revisionVerified: false,
+        sources: [...sources.values()].sort((a, b) => a.url.localeCompare(b.url)),
+        sourceScope: 'document, script, stylesheet, font', complete: pending.size === 0 && sourceFailures === 0,
+      });
+      if (mutates) { entry.status = 'complete'; entry.runId = result.runId; ready = result.status === 'ready'; }
+      return result;
+    } catch (error) {
+      if (mutates) { entry.status = 'failed'; entry.error = (error as Error).message; }
+      throw error;
+    }
   }
   if (req.method === 'scenario') return select(req.name);
   if (req.method === 'recover') {
@@ -603,11 +651,17 @@ async function dispatch(req: any, signal: AbortSignal) {
   if (req.method === 'scene-record') return recordScene(req);
   if (req.method === 'step') {
     readiness.invalidate();
-    await step(req.step);
+    const entry = await step(req.step);
     if (req.step.kind !== 'wait') scenario = null;
-    return look();
+    const response = { step: entry, ...(entry.kind === 'script' ? { result: entry.result } : {}) };
+    try {
+      return { ...(await look()), ...response, inspectionError: null };
+    } catch (error) {
+      // Execution already completed; a failed observation must not invite repeating the action.
+      return { ...response, inspectionError: String(error) };
+    }
   }
-  if (req.method === 'capture') return capture(req.label, req.out, req.sceneProfile);
+  if (req.method === 'capture') return capture(req.label, req.out, req.sceneProfile, req.dependencies);
   if (req.method === 'record') {
     const seconds = Number(req.duration ?? 3);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 30)

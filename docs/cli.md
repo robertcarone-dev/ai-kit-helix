@@ -1,5 +1,7 @@
 # Helix reference CLI
 
+For optional project-owned Workbench integration, scenario controls, and event traces, see [Porting Workbench](Workbench.md). Start its CLI session with `start --workbench yes`. For offline review, `workbench prepare --spec REVIEW_SPEC --out NEW_DIR` checks pinned evidence and declared source freshness, generates comparisons, and creates a bundle for the mod; see the Workbench spec and exit-code contract.
+
 Requires Node >=22.18 and a configured local Helix service. Install dependencies with `npm ci --prefix Tools/Helix` and Chromium with `npm run install-browser --prefix Tools/Helix`. The browser workflow does not require AI Kit. Automatic Helix Desktop launch is macOS-only; on other platforms start the local service first.
 
 For offline image review, use `compare` for native PNG pairs and regional measurements, `debug-image` for image channels, `recording-sheet` for recording contact sheets, and `vfx-compare` for paired event filmstrips. PNG diagnostics use the installed `pngjs` dependency; recording review requires Python 3.10+, ffmpeg and ffprobe. None requires Pillow (`PIL`). Prefer these commands over custom PIL scripts. See `Tools/Helix/DebugViews.md` and the recording-sheet spec in `Tools/Helix/WorkflowToolkit.md` in the installed snapshot. `doctor` does not check these offline dependencies.
@@ -21,9 +23,11 @@ Replace scenario and viewport names with those in the project adapter. `--help` 
 
 `doctor` and `resolve` do not launch apps. Inspect doctor’s `error` and `browserInstalled` fields as well as its exit code. `start` resolves configured project and variant through the local catalog. `HELIX_URL`, `HELIX_DESKTOP_PORT` and project-local `reference.local.json` can select another loopback service. Do not embed credentials. Local `helix` fields merge; other top-level fields replace shared values. `start --url` marks preview identity unverified. Latest locally pulled content is accepted; content hashes do not prove a source commit.
 
-Session tokens, locks, logs and evidence live in the checkout’s ignored `.helix/`. Reuse matching sessions; stop before changing config or viewport. `status` exposes readiness and diagnostics. `reset` and `scenario` recreate isolated browser storage. `recover` rechecks a timed-out readiness predicate without replaying setup; inspect failure before retrying. Only stop sessions you own.
+Session tokens, locks, logs and evidence live in the checkout’s ignored `.helix/`. Reuse matching sessions; stop before changing config or viewport. Each new browser launch replaces `host.log`; its header identifies the launch ID, UTC start, project, URL and readiness predicate. Startup failures return that launch ID and the current log tail directly. Diagnose that command's output, not historical logs or another checkout's records. Browser launch, navigation, readiness, page errors and failed module responses are timestamped in the log. `status` exposes the launch ID, start time, readiness and diagnostics. `reset` and `scenario` recreate isolated browser storage. `recover` rechecks a timed-out readiness predicate without replaying setup; inspect failure before retrying. Only stop sessions you own.
 
 `step` accepts labelled fixture/instrumentation script, press, drag, hover, pointerDown, pointerUp, wheel, wait or assert JSON. Script files must resolve inside the checkout, return plain serializable data and are hashed in receipts. Fixture setup does not prove player navigation. Non-wait steps clear the selected scenario.
+
+`step` returns the completed action receipt in `step` and a script's value in `result` (omitted when the script returns `undefined`). Successful post-step inspection retains the usual top-level `look` fields with `inspectionError: null`. If inspection fails after execution, the command still returns the completed receipt and result, with the error in `inspectionError` and no inspection fields. Do not repeat the action to recover inspection; establish the appropriate scene and use `look` separately. Execution failures still fail the command, and standalone `look` still reports inspection failures as errors.
 
 `record` requires a named scenario and recreates it, includes setup before the observation interval, and restores baseline afterward. It cannot record arbitrary manual setup. Recordings are bounded to 30 seconds. Check actual encoded dimensions and `nativeVideo`; odd dimensions can round. Native PNGs establish spatial dimensions; video does not prove game-time samples.
 
@@ -46,6 +50,8 @@ Rectangles use native top-left pixels: `[left, top, right, bottom]`, with right 
 `comparison.json` retains the whole-image results and adds `regionsSource` (absolute path and SHA256 of the supplied JSON) and `regions`. Each region reports `pixelCount`, `referenceMeanRgb`, `candidateMeanRgb`, `meanDeltaRgb`, `changedPixels`, `changedFraction`, `meanAbsoluteDeltaRgb`, and `maxAbsoluteDeltaRgb`. Means use encoded 8-bit RGB without gamma conversion. Signed mean delta is candidate minus reference; mean absolute delta averages absolute per-pixel differences, so opposing changes cannot cancel. Changed pixels have at least one different RGB channel. The existing review page includes a regional measurement table; the images remain full-size. Regions may overlap and are reported independently. No threshold, alignment, resizing or acceptance verdict is inferred.
 
 Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix/WorkflowToolkit.md` for optional AI Kit workflows. No game build or Production check is required.
+
+For sprite/UI rendering diagnosis, `render-inspect --spec FILE --out EMPTY_DIR` combines captured node properties, sprite usage, optional serialized UI settings and related render traces for the Workbench’s **Inspect rendering** drill-down. See [Render inspector](RenderInspector.md).
 
 ## UI comparison
 
