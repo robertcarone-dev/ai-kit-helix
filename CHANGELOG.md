@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0 (2026-11-11)
+
+- Add portable acceptance contracts, immutable run/review records, dependency-aware status and Workbench review/media modules.
+- Add consumer-owned game catalogs with discrepancy, evidence and comparison links; historical claims never grant acceptance.
+- Preserve legacy dashboard linking when an optional catalog is invalid and acquire acceptance publication ownership before deriving its snapshot.
+- Install reusable modules and guides while leaving game scopes, fixtures, runs and evidence consumer-owned.
+
 ## 1.3.0 (2026-11-11)
 
 - Add reusable Workbench clients, evidence bundles, render inspection, producer-owned baselines, review preparation/refresh, portable decisions, and bounded revision comparisons with schema-aware summaries.

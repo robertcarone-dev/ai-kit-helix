@@ -1,3 +1,4 @@
+import { loadCatalog } from './catalog.ts';
 import { mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync, existsSync, unlinkSync, readdirSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -60,9 +61,10 @@ export function comparisonLinks(root: string, project: string, item?: string, is
   if (!item) { if (issue) throw new Error('--issue requires --item.'); return []; }
   const result = portingDashboard(root, project);
   const row = result.report?.items.find(row => row.id === item);
-  if (!row) throw new Error('Unknown dashboard item: ' + item);
+  const catalogItem = !row && existsSync(join(root, 'Tools/Helix/catalog/catalog.json')) && loadCatalog(root, project).entries.some((entry: any) => entry.id === item);
+  if (!row && !catalogItem) throw new Error('Unknown dashboard item or catalog entry: ' + item);
   if (issue === undefined) return [{ item }];
-  if (!/^[1-9][0-9]*$/.test(issue) || !row.issues[Number(issue) - 1]) throw new Error('--issue requires a current 1-based issue number for this item.');
+  if (!row || !/^[1-9][0-9]*$/.test(issue) || !row.issues[Number(issue) - 1]) throw new Error('--issue requires a current 1-based issue number for this item.');
   return [{ item, issue: issueKey(row.issues[Number(issue) - 1]) }];
 }
 export async function comparisons(root: string, project: string, evidence?: string, item?: string, issue?: string, fromReport = false) {

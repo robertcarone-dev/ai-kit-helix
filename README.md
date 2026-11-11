@@ -72,6 +72,8 @@ To add the optional Unity comparison helper, include `--unity-helper` in a revie
 
 ## Workbench evidence and review
 
+The [port acceptance contracts](docs/Acceptance.md) add versioned consumer scope, required cases, durable run/reviewer records, and generated progress. Game catalogs and recipes remain consumer-owned.
+
 Toolkit 1.3.0 includes the reusable Workbench clients and review formats. The installed CLI also supplies offline evidence bundles, dependency-checked review preparation, rendering inspection, review summaries/refresh, revision comparisons, and checkout-local dashboards. Start with [Workbench](docs/Workbench.md), [Evidence baselines](docs/EvidenceBaselines.md), [Render inspector](docs/RenderInspector.md), [Objects](docs/Objects.md), and [Dashboard](docs/Dashboard.md). These guides install under the same filenames in `Tools/Helix`.
 
 Live Workbench/object commands, saved Unity project selection, and feedback reads require compatible project-owned browser hooks and Desktop mod endpoints. The installer supplies clients and portable formats, not a game mod, scenarios, fixtures, authored selectors, Unity recipes, or evidence. Offline commands continue to work with local checkout selection. An explicit `--project-root` takes precedence over the optional `--helix-project` saved connection.

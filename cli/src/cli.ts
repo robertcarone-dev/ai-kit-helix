@@ -22,6 +22,9 @@ import { discover, assets } from './discovery.ts';
 /** Short-lived command client. The detached host owns the browser between invocations. */
 const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
+  catalog status|validate
+  acceptance validate|status|publish [--reference CURRENT_REFERENCE_JSON]
+  acceptance record-run|review --spec RECORD_JSON [--reference CURRENT_REFERENCE_JSON]
   discrepancy-resume [--feature NAME] [--assignment ID] [--status active|open|blocked|resolved|accepted-deviation|all]
   discrepancy-save --spec FILE [--after REVISION]
   discrepancy-recover --id ID [--issue ISSUE] [--board-root OWNER_CHECKOUT]
@@ -168,6 +171,8 @@ async function main() {
     return;
   }
   const allowed: Record<string, string[]> = {
+    catalog: [],
+    acceptance: ['spec', 'reference'],
     'discrepancy-resume': ['feature', 'assignment', 'status'],
     'discrepancy-recover': ['id', 'issue', 'board-root'],
     'discrepancy-rerun': ['id', 'out', 'execute', 'ai-kit'],
@@ -228,6 +233,20 @@ async function main() {
   for (const k of Object.keys(options))
     if (!['project-root', 'helix-project'].includes(k) && !allowed[command].includes(k))
       throw new Error('Unknown option --' + k);
+  if (command === 'catalog') {
+    if (pos.length !== 1 || !['status', 'validate'].includes(pos[0])) throw new Error('Use catalog status|validate');
+    const { catalogStatus } = await import('./catalog.ts');
+    const { acceptanceStatus } = await import('./acceptance.ts');
+    const project = adapterSettings(root).helix.project;
+    const acceptance = existsSync(join(root, 'Tools/Helix/acceptance/scope.json')) ? await acceptanceStatus(root, project) : null;
+    const report = catalogStatus(root, project, acceptance);
+    return pos[0] === 'status' ? report : { status: 'valid', ...report.summary, unmappedDiscrepancies: report.unmappedDiscrepancies, warnings: report.warnings };
+  }
+  if (command === 'acceptance') {
+    if (pos.length !== 1) throw new Error('Supply one acceptance operation');
+    const { acceptanceCommand } = await import('./acceptance.ts');
+    return acceptanceCommand(root, adapterSettings(root).helix.project, pos[0], options);
+  }
   if (command === 'objects') {
     if (options.engine !== undefined && !['phaser', 'three'].includes(options.engine)) throw new Error('Object engine must be phaser or three.');
     if (options.engine === 'three' && pos[0] === 'capture') throw new Error('Three object discovery is read-only. Use the existing debug-capture or scene capture tools for rendering.');
