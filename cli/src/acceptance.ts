@@ -2,8 +2,8 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSy
 import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve, relative, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { caseKey, criteriaHash, portablePath, readDecision, readReferenceObservation, readRun, readScope, readScreen, recordHash } from './acceptance-format.ts';
-import type { AcceptanceCase, Decision, ReferenceObservation, Run, Scope, Screen } from './acceptance-format.ts';
+import { caseKey, criteriaHash, portablePath, readAssessment, readDecision, readReferenceObservation, readRun, readScope, readScreen, recordHash } from './acceptance-format.ts';
+import type { AcceptanceCase, Assessment, Decision, ReferenceObservation, Run, Scope, Screen } from './acceptance-format.ts';
 
 const directory = 'Tools/Helix/acceptance';
 /** All file reads and writes stay inside the selected checkout, including symlink resolution. */
@@ -73,7 +73,7 @@ function records<T>(root: string, kind: string, read: (value: any) => T): T[] {
     return record;
   });
 }
-function target(scope: Scope, screens: Screen[], run: Run | Decision) {
+function target(scope: Scope, screens: Screen[], run: Pick<Run, 'project' | 'variant' | 'item' | 'caseId' | 'viewport'>) {
   if (run.project !== scope.project || run.variant !== scope.variant) throw new Error('Record project/variant differs from scope');
   const screen = screens.find(screen => screen.id === run.item);
   const entry = screen?.cases.find(entry => entry.id === run.caseId && entry.viewports.includes(run.viewport));
@@ -133,8 +133,12 @@ function discrepancies(root: string, entry: AcceptanceCase) {
 export async function acceptanceStatus(root: string, project: string, reference?: ReferenceObservation) {
   const { scope, screens, evidence: links } = loadAcceptance(root, project);
   if (reference && (reference.project !== scope.project || reference.variant !== scope.variant)) throw new Error('Reference observation belongs to another project/variant');
+  const { loadCaseAdapters, acceptanceExecutions } = await import('./acceptance-runner.ts');
+  const adapters = loadCaseAdapters(root, project), executions = acceptanceExecutions(root, project);
   const runs = records(root, 'runs', readRun), decisions = records(root, 'decisions', readDecision);
   checkDecisionRuns(decisions, runs);
+  const assessments = records(root, 'assessments', readAssessment);
+  for (const assessment of assessments) validateAssessmentRun(assessment, runs);
   const activeKeys = new Set<string>();
   const items = [];
   for (const screen of screens) {
@@ -146,8 +150,17 @@ export async function acceptanceStatus(root: string, project: string, reference?
       const caseRuns = runs.filter(run => caseKey(run) === key).sort((a, b) => b.capturedUtc.localeCompare(a.capturedUtc) || a.id.localeCompare(b.id));
       if (caseRuns.length > 1 && caseRuns[0].capturedUtc === caseRuns[1].capturedUtc) throw new Error('Ambiguous latest runs: ' + key);
       const run = caseRuns[0];
+      const assessmentsForRun = run ? assessments.filter(record => record.runId === run.id).sort((a, b) => b.assessedUtc.localeCompare(a.assessedUtc)) : [];
+      if (assessmentsForRun.length > 1 && assessmentsForRun[0].assessedUtc === assessmentsForRun[1].assessedUtc) throw new Error('Ambiguous assessment timestamp');
+      const latestAssessment = assessmentsForRun[0] ?? null;
+      const assessmentEvidence = latestAssessment ? await Promise.all(latestAssessment.evidence.map(pin => pinState(root, pin))) : [];
+      const assessmentAvailable = latestAssessment !== null && assessmentEvidence.every(state => state === 'match');
+      const adapter = adapters.find(route => route.item === screen.id && route.caseId === entry.id && route.viewport === viewport);
+      const execution = executions.find(run => run.item === screen.id && run.caseId === entry.id && run.viewport === viewport);
+      const latestExecution = execution ? { status: execution.status, mode: execution.mode, output: execution.output, finishedUtc: execution.finishedUtc, criteriaCurrent: execution.criteriaSha256 === criteriaHash(scope, screen, entry, viewport) && adapter !== undefined && execution.routeSha256 === recordHash(adapter), artifacts: execution.artifacts } : null;
+      const runner = adapter ? { retainedSources: adapter.retained.length, capture: adapter.capture?.kind ?? null, limitations: adapter.capture?.limitations ?? null } : null;
       const reasons: string[] = [];
-      const linkedDiscrepancies = discrepancies(root, entry);
+      const linkedDiscrepancies = discrepancies(root, { ...entry, discrepancies: [...new Set([...entry.discrepancies, ...(latestAssessment?.discrepancies ?? [])])] });
       const defects = linkedDiscrepancies.filter(record => record.status !== 'resolved');
       const prior = links.find(link => link.item === screen.id && link.caseId === entry.id);
       const priorEvidence = prior ? { note: prior.note, sources: prior.sources.map(path => ({ path, available: existsSync(pathIn(root, path)) && statSync(pathIn(root, path)).isFile() })) } : null;
@@ -167,9 +180,11 @@ export async function acceptanceStatus(root: string, project: string, reference?
       if (entry.recipe.blockers.length) reasons.push(...entry.recipe.blockers);
       if (defects.length) reasons.push(...defects.map(defect => 'Linked discrepancy ' + defect.status + ': ' + defect.id));
       const decisionApplies = Boolean(decision && run && decision.runId === run.id && decision.runSha256 === recordHash(run));
-      const canAccept = scope.status === 'approved' && screen.implementation === 'implemented' && run?.outcome === 'matched' && freshness === 'current' && availability === 'available' && !entry.recipe.blockers.length && !defects.length;
-      const accepted = scope.status === 'approved' && screen.implementation === 'implemented' && run?.outcome === 'matched' && decisionApplies && decision!.status === 'accepted' && freshness === 'current' && availability === 'available' && !entry.recipe.blockers.length && !defects.length;
-      cases.push({ id: entry.id, viewport, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required, criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review: decisionApplies ? decision!.status : 'pending', freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
+      const assessmentAllowsAcceptance = !latestAssessment || (assessmentAvailable && latestAssessment.outcome === 'matched');
+      if (!assessmentAllowsAcceptance) reasons.push('Agent assessment requires recheck: ' + (assessmentAvailable ? latestAssessment!.outcome : 'evidence missing or changed'));
+      const canAccept = assessmentAllowsAcceptance && scope.status === 'approved' && screen.implementation === 'implemented' && run?.outcome === 'matched' && freshness === 'current' && availability === 'available' && !entry.recipe.blockers.length && !defects.length;
+      const accepted = assessmentAllowsAcceptance && scope.status === 'approved' && screen.implementation === 'implemented' && run?.outcome === 'matched' && decisionApplies && decision!.status === 'accepted' && freshness === 'current' && availability === 'available' && !entry.recipe.blockers.length && !defects.length;
+      cases.push({ latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required, criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review: decisionApplies ? decision!.status : 'pending', freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
     }
     const required = cases.filter(entry => entry.required), accepted = required.filter(entry => entry.accepted).length;
     const counts = (entries: typeof cases) => ({ required: entries.filter(entry => entry.required).length, accepted: entries.filter(entry => entry.required && entry.accepted).length });
@@ -178,7 +193,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
   return { format: 'helix-acceptance-status', version: 1, project: scope.project, variant: scope.variant, assessedUtc: new Date().toISOString(), referenceObservation: reference ?? null, scopeStatus: scope.status, exclusions: scope.exclusions, items, historicalRunIds: runs.filter(run => !activeKeys.has(caseKey(run))).map(run => run.id) };
 }
 /** Exclusive store lock plus atomic immutable records; an interrupted writer never publishes partial JSON. */
-async function writeRecord(root: string, kind: 'runs' | 'decisions', record: Run | Decision, check: () => Promise<void>) {
+async function writeRecord(root: string, kind: 'runs' | 'decisions' | 'assessments', record: Run | Decision | Assessment, check: () => Promise<void>) {
   const store = pathIn(root, directory); mkdirSync(store, { recursive: true });
   const lock = pathIn(root, directory + '/.write.lock');
   try { writeFileSync(lock, String(process.pid), { flag: 'wx' }); }
@@ -204,6 +219,23 @@ export async function saveRun(root: string, project: string, input: unknown) {
     if (existing.some(record => caseKey(record) === caseKey(run) && record.capturedUtc === run.capturedUtc)) throw new Error('Ambiguous capture timestamp for this case');
   });
 }
+function validateAssessmentRun(assessment: Assessment, runs: Run[]) {
+  const run = runs.find(run => run.id === assessment.runId);
+  if (!run || caseKey(run) !== caseKey(assessment) || recordHash(run) !== assessment.runSha256) throw new Error('Assessment must pin its exact capture');
+  if (assessment.assessedUtc < run.capturedUtc) throw new Error('Assessment precedes capture');
+  const criteria = run.observations.map(entry => entry.criterion).sort();
+  if (!isDeepStrictEqual(criteria, assessment.observations.map(entry => entry.criterion).sort())) throw new Error('Assessment must cover the captured criteria');
+}
+export async function saveAssessment(root: string, project: string, input: unknown) {
+  const assessment = readAssessment(input);
+  return writeRecord(root, 'assessments', assessment, async () => {
+    const { scope, screens } = loadAcceptance(root, project); target(scope, screens, assessment);
+    validateAssessmentRun(assessment, records(root, 'runs', readRun));
+    for (const pin of assessment.evidence) if (await pinState(root, pin) !== 'match') throw new Error('Assessment evidence missing or changed: ' + pin.path);
+    for (const id of assessment.discrepancies) if (!existsSync(pathIn(root, 'Tools/Helix/discrepancies/' + id))) throw new Error('Unknown assessment discrepancy: ' + id);
+    if (records(root, 'assessments', readAssessment).some(record => record.runId === assessment.runId && record.assessedUtc === assessment.assessedUtc)) throw new Error('Ambiguous assessment timestamp');
+  });
+}
 export async function saveDecision(root: string, project: string, input: unknown, reference?: ReferenceObservation) {
   const decision = readDecision(input);
   if (decision.reviewer.identity !== 'self-reported') throw new Error('CLI imports require self-reported reviewer identity; host verification is not implemented');
@@ -216,12 +248,21 @@ export async function saveDecision(root: string, project: string, input: unknown
     const report = await acceptanceStatus(root, project, reference);
     const item = report.items.find(item => item.id === decision.item)!, entry = item.cases.find(entry => entry.id === decision.caseId && entry.viewport === decision.viewport)!;
     if (entry.latestRun?.id !== decision.runId) throw new Error('Decision must review the latest case run');
-    if (decision.status === 'accepted' && (scope.status !== 'approved' || item.implementation !== 'implemented' || entry.verification !== 'matched' || entry.freshness !== 'current' || entry.availability !== 'available' || entry.reasons.length)) throw new Error('Case is not eligible for acceptance: ' + entry.reasons.join('; '));
+    if (decision.status === 'accepted' && !entry.canAccept) throw new Error('Case is not eligible for acceptance: ' + entry.reasons.join('; '));
   });
 }
 export async function acceptanceCommand(root: string, project: string, operation: string, options: Record<string, string>) {
-  const allowed: Record<string, string[]> = { validate: [], status: ['reference'], publish: ['reference'], 'record-run': ['spec'], review: ['spec', 'reference'] };
-  if (!Object.hasOwn(allowed, operation)) throw new Error('Use acceptance validate|status|publish|record-run|review');
+  if (['adapters', 'plan', 'run'].includes(operation)) {
+    const { loadCaseAdapters, planAcceptanceCase, runAcceptanceCase } = await import('./acceptance-runner.ts');
+    const keys = operation === 'adapters' ? [] : ['item', 'case', 'viewport', 'out', ...(operation === 'run' ? ['mode'] : [])];
+    for (const key of Object.keys(options)) if (!['project-root', 'helix-project', ...keys].includes(key)) throw new Error('Invalid acceptance runner option: ' + key);
+    if (operation === 'adapters') return loadCaseAdapters(root, project).map(route => ({ item: route.item, caseId: route.caseId, viewport: route.viewport, retainedSources: route.retained.length, capture: route.capture }));
+    for (const key of ['item', 'case', 'viewport', 'out']) if (!options[key]) throw new Error('Acceptance runner requires --' + key);
+    if (operation === 'run' && !options.mode) throw new Error('Acceptance run requires explicit --mode retained or capture');
+    return operation === 'plan' ? planAcceptanceCase(root, project, options.item, options.case, options.viewport, resolve(root, options.out)) : runAcceptanceCase(root, project, options.item, options.case, options.viewport, resolve(root, options.out), options.mode);
+  }
+  const allowed: Record<string, string[]> = { validate: [], status: ['reference'], publish: ['reference'], 'record-run': ['spec'], 'assess': ['spec'], review: ['spec', 'reference'] };
+  if (!Object.hasOwn(allowed, operation)) throw new Error('Use acceptance validate|status|publish|record-run|assess|review');
   for (const option of Object.keys(options)) if (!['project-root', 'helix-project'].includes(option) && !allowed[operation].includes(option)) throw new Error('Invalid acceptance option --' + option);
   const reference = options.reference ? readReferenceObservation(json(resolve(root, options.reference))) : undefined;
   if (operation === 'validate') { const { scope, screens } = loadAcceptance(root, project);
@@ -231,6 +272,7 @@ export async function acceptanceCommand(root: string, project: string, operation
   if (operation === 'publish') return publishAcceptance(root, project, reference);
   if (!options.spec) throw new Error('Acceptance record operation requires --spec FILE');
   const spec = json(resolve(root, options.spec));
+  if (operation === 'assess') return saveAssessment(root, project, spec);
   return operation === 'record-run' ? saveRun(root, project, spec) : saveDecision(root, project, spec, reference);
 }
 

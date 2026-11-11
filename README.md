@@ -196,3 +196,7 @@ For command details, see [CLI](docs/cli.md), [project adapter](docs/project-adap
 ## UI comparison
 
 Helix 1.1 adds semantic UI inspection, element-level comparison reports, and opt-in viewport matrix execution. See [the UI comparison contract](docs/ui.md) for configuration, supported measurements, isolation, and explicit limitations.
+
+Optional Three scenes: adapters may declare `three.active` as a JavaScript expression that returns `true` when the scene exists. General inspection skips inactive Three scenes; active scenes still require valid `three.scene` and `three.camera`. Dedicated scene/debug capture retains its stricter readiness requirements.
+
+Unity lifecycle recipes may declare `prepareReceipts: [{ afterCommand: 2, path: "{{out}}/prepared.json", expected: { prepared: true }, timeoutMs: 90000 }]`. After the zero-based preparation command finishes, the matrix waits for an atomically published JSON receipt in that fresh output, validates its expected fields and records its hash before issuing another command. This supports domain-reload handoffs without retrying Play or depending on a briefly ready old domain. The project owns the marker writer and failure payload. Waits are bounded to 120 seconds, interruption is observed, stale/out-of-output receipts fail, and normal cleanup still runs on failure.

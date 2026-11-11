@@ -49,6 +49,7 @@ export function runCommand(
   cwd: string,
   timeoutMs = 90000,
   env: NodeJS.ProcessEnv = process.env,
+  interruption?: AbortSignal,
 ): Promise<CommandRecord> {
   return new Promise((done, reject) => {
     const started = Date.now(),
@@ -68,12 +69,15 @@ export function runCommand(
         else child.kill(signal);
       } catch {}
     };
-    const terminate = (reason: string) => {
+    const terminate = (reason: string, graceMs = 2000) => {
       if (failure) return;
       failure = reason;
       kill('SIGTERM');
-      killTimer = setTimeout(() => kill('SIGKILL'), 2000);
+      killTimer = setTimeout(() => kill('SIGKILL'), graceMs);
     };
+    const onInterrupt = () => terminate('Command interrupted; inspect the owning recovery journal.', 120000);
+    interruption?.addEventListener('abort', onInterrupt, { once: true });
+    if (interruption?.aborted) onInterrupt();
     const timer = setTimeout(
       () => terminate('Command timeout; remote work may still be active.'),
       timeoutMs,
@@ -87,11 +91,13 @@ export function runCommand(
       if (stderr.length > 1_000_000) terminate('Command error output limit exceeded.');
     });
     child.on('error', (e) => {
+      interruption?.removeEventListener('abort', onInterrupt);
       clearTimeout(timer);
       clearTimeout(killTimer);
       reject(e);
     });
     child.on('close', (code) => {
+      interruption?.removeEventListener('abort', onInterrupt);
       clearTimeout(timer);
       clearTimeout(killTimer);
       const record = {
@@ -110,6 +116,24 @@ export function runCommand(
       } else done(record);
     });
   });
+}
+
+/** Wait on a project-written atomic receipt across an Editor domain reload; never replay the command. */
+export async function waitForPreparationReceipt(barrier: any, output: string, interrupted: () => boolean) {
+  const deadline = Date.now() + barrier.timeoutMs;
+  while (!existsSync(barrier.path)) {
+    if (interrupted()) throw new Error('Interrupted while awaiting preparation receipt');
+    if (Date.now() >= deadline) throw new Error('Preparation receipt timeout: ' + barrier.path);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const within = relative(realpathSync(output), realpathSync(barrier.path));
+  if (!within || within.startsWith('..') || isAbsolute(within)) throw new Error('Preparation receipt escaped output');
+  const bytes = readFileSync(barrier.path);
+  if (bytes.length > 65536) throw new Error('Preparation receipt exceeds 64 KiB');
+  const receipt = JSON.parse(bytes.toString('utf8'));
+  for (const [key, expected] of Object.entries(barrier.expected))
+    if (JSON.stringify(receipt[key]) !== JSON.stringify(expected)) throw new Error('Preparation receipt failed: ' + bytes.toString('utf8'));
+  return { path: barrier.path, sha256: sha(bytes), receipt };
 }
 
 async function checkedCommand(command: typeof runCommand, executable: string, args: string[], root: string, env: NodeJS.ProcessEnv) {
@@ -479,6 +503,8 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
               )
             )
               throw new Error('Incomplete Unity lifecycle recipe: ' + stage);
+          for (const barrier of plan.prepareReceipts ?? [])
+            if (existsSync(barrier.path)) throw new Error('Preparation receipt already exists; use fresh output');
           mkdirSync(join(c.out, 'unity'), { recursive: true });
           writeFileSync(join(c.out, 'unity/unity-revision.json'), JSON.stringify(plan.revision));
           if (c.sceneSpec)
@@ -510,9 +536,14 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         }
         if (!retained.candidate) {
           prepareAttempted = true;
-          for (const argv of plan.stages.prepare) {
+          for (const [index, argv] of plan.stages.prepare.entries()) {
             if (interrupted) throw new Error('Interrupted');
             await invoke(executable, argv, 'prepare', unityEnv);
+            for (const barrier of plan.prepareReceipts ?? []) if (barrier.afterCommand === index) {
+              const receipt = await waitForPreparationReceipt(barrier, plan.out, () => interrupted);
+              row.commands.push({ stage: 'prepare-receipt', ...receipt });
+              save();
+            }
           }
           for (const argv of plan.stages.capture) await invoke(executable, argv, 'capture', unityEnv);
         }
@@ -540,6 +571,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           }
         }
         capturesComplete = true;
+        row.captureComplete = true;
         reviewCase(c, row, retained);
       } catch (e) {
         row.status = 'blocked';

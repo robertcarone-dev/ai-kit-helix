@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { acceptanceStatus, loadAcceptance, publishAcceptance, saveDecision, saveRun } from '../src/acceptance.ts';
+import { acceptanceStatus, loadAcceptance, publishAcceptance, saveAssessment, saveDecision, saveRun } from '../src/acceptance.ts';
 import { criteriaHash, digest, readRun, readScreen, recordHash } from '../src/acceptance-format.ts';
 
 function fixture(t: any) {
@@ -175,4 +175,23 @@ test('historical evidence links validate targets, duplicates and checkout contai
   put([link, link]); assert.throws(() => loadAcceptance(f.root, 'synthetic'), /Duplicate/);
   put([{ ...link, sources: ['../outside.json'] }]); assert.throws(() => loadAcceptance(f.root, 'synthetic'), /relative path/);
   put([{ ...link, accepted: true }]); assert.throws(() => loadAcceptance(f.root, 'synthetic'), /Invalid/);
+});
+
+test('agent assessment is pinned, immutable, and never grants human acceptance', async t => {
+  const f = fixture(t); f.run.outcome = 'unmeasured'; f.run.observations[0].result = 'unmeasured'; await saveRun(f.root, 'synthetic', f.run);
+  const assessment = { version: 1, id: 'assessment-1', project: f.run.project, variant: f.run.variant, item: f.run.item, caseId: f.run.caseId, viewport: f.run.viewport, runId: f.run.id, runSha256: recordHash(f.run), assessor: { name: 'Test agent', kind: 'agent' }, assessedUtc: '2026-11-11T12:00:00.000Z', outcome: 'matched', observations: [{ criterion: 'layout', result: 'match', note: 'Scoped measurement' }], evidence: [{ path: 'media/candidate.png', sha256: digest('candidate') }], discrepancies: [], notes: 'Not human approval' };
+  await assert.rejects(saveAssessment(f.root, 'synthetic', { ...assessment, runSha256: digest('wrong') }), /exact capture/);
+  await assert.rejects(saveAssessment(f.root, 'synthetic', { ...assessment, observations: [{ criterion: 'other', result: 'match', note: 'wrong' }] }), /criteria/);
+  await saveAssessment(f.root, 'synthetic', assessment);
+  await assert.rejects(saveAssessment(f.root, 'synthetic', { ...assessment, notes: 'mutated' }), /Immutable/);
+  let entry = (await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].cases[0];
+  assert.equal(entry.latestAssessment?.outcome, 'matched'); assert.equal(entry.assessmentAvailable, true); assert.equal(entry.canAccept, false); assert.equal(entry.accepted, false); assert.equal(entry.review, 'pending');
+  f.put('media/candidate.png', 'changed');
+  entry = (await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].cases[0]; assert.equal(entry.assessmentAvailable, false);
+});
+
+test('a mismatching assessment blocks accepting a previously matched run', async t => {
+  const f = fixture(t); await saveRun(f.root, 'synthetic', f.run);
+  await saveAssessment(f.root, 'synthetic', { version: 1, id: 'assessment-mismatch', project: f.run.project, variant: f.run.variant, item: f.run.item, caseId: f.run.caseId, viewport: f.run.viewport, runId: f.run.id, runSha256: recordHash(f.run), assessor: { name: 'Test agent', kind: 'agent' }, assessedUtc: '2026-11-11T12:00:00.000Z', outcome: 'mismatch', observations: [{ criterion: 'layout', result: 'mismatch', note: 'Visible difference' }], evidence: [{ path: 'media/candidate.png', sha256: digest('candidate') }], discrepancies: [], notes: 'Needs correction' });
+  await assert.rejects(saveDecision(f.root, 'synthetic', f.decision, f.reference), /eligible/);
 });

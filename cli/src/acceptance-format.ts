@@ -103,3 +103,18 @@ export function readReferenceObservation(value: any): ReferenceObservation {
 export function criteriaHash(scope: Scope, screen: Screen, entry: AcceptanceCase, viewport: string) {
   return recordHash({ project: scope.project, variant: scope.variant, item: screen.id, case: entry, viewport: scope.viewports.find(profile => profile.id === viewport) });
 }
+
+/** Agent findings about an immutable capture; never a human acceptance decision. */
+export type Assessment = Pick<Run, 'version' | 'id' | 'project' | 'variant' | 'item' | 'caseId' | 'viewport' | 'outcome' | 'observations' | 'notes'> & { runId: string; runSha256: string; assessor: { name: string; kind: 'agent' | 'automation' }; assessedUtc: string; evidence: Pin[]; discrepancies: string[] };
+export function readAssessment(value: any): Assessment {
+  object(value, ['version', 'id', 'project', 'variant', 'item', 'caseId', 'viewport', 'outcome', 'observations', 'notes', 'runId', 'runSha256', 'assessor', 'assessedUtc', 'evidence', 'discrepancies'], 'assessment');
+  identity(value); identifier(value.runId); hash(value.runSha256); utc(value.assessedUtc); text(value.notes, 'assessment notes');
+  object(value.assessor, ['name', 'kind'], 'assessor'); text(value.assessor.name, 'assessor'); choice(value.assessor.kind, ['agent', 'automation'], 'assessor kind');
+  choice(value.outcome, ['matched', 'mismatch', 'blocked', 'unmeasured'], 'assessment outcome');
+  array(value.observations, 'observations', entry => { object(entry, ['criterion', 'result', 'note'], 'observation'); identifier(entry.criterion); choice(entry.result, ['match', 'mismatch', 'unmeasured'], 'observation result'); text(entry.note, 'observation'); }, entry => entry.criterion);
+  if (!value.observations.length || (value.outcome === 'matched' && value.observations.some((entry: any) => entry.result !== 'match')) || (value.outcome === 'mismatch' && !value.observations.some((entry: any) => entry.result === 'mismatch'))) throw new Error('Assessment outcome contradicts observations');
+  array(value.evidence, 'evidence', pin => { object(pin, ['path', 'sha256'], 'evidence'); portablePath(pin.path); hash(pin.sha256); }, pin => pin.path);
+  if (!value.evidence.length) throw new Error('Assessment requires evidence');
+  array(value.discrepancies, 'discrepancies', identifier);
+  return value;
+}
