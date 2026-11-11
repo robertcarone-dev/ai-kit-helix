@@ -51,5 +51,23 @@ export function featureSummary(item: CatalogItem) {
   const review = item.issues.filter(issue => issue.kind === 'review' || issue.kind === 'untriaged').length;
   const port = item.implementation === 'implemented' ? 'Implemented' : item.implementation === 'in-progress' ? 'Implementation in progress' : 'Implementation not assessed';
   const coverage = item.acceptance ? `${item.acceptance.accepted}/${item.acceptance.required} checks complete` : 'Verification not configured';
-  return `${port} · ${coverage}${defects ? ` · ${defects} product findings` : ''}${review ? ` · ${review} findings to review` : ''}`;
+  return `${port} · ${coverage}${defects ? ` · ${defects} product ${defects === 1 ? 'finding' : 'findings'}` : ''}${review ? ` · ${review} ${review === 1 ? 'finding' : 'findings'} to review` : ''}`;
+}
+
+export type FeatureNextStep = { title: string; detail: string; target: 'work' | 'review'; finding: string | null; filter: CaseAction | 'required' };
+/** One navigation recommendation, derived from existing records; never a new task or verdict. */
+export function featureNextStep(item: CatalogItem): FeatureNextStep {
+  const issueStep = (issue: CatalogItem['issues'][number], title: string): FeatureNextStep => ({ title, detail: readableCase(issue.id) + '. ' + issue.triageReason, target: 'work', finding: issue.id, filter: 'required' });
+  const defect = item.issues.find(issue => issue.kind === 'defect');
+  if (defect) return issueStep(defect, 'Inspect product finding');
+  const coverage = item.acceptance;
+  if (coverage && (coverage.nextSteps.review ?? 0) > 0) return { title: 'Review eligible evidence', detail: 'Required checks are ready for a decision. Open their evidence and record the review.', target: 'review', finding: null, filter: 'review' };
+  const review = item.issues.find(issue => issue.kind === 'review' || issue.kind === 'untriaged');
+  if (review) return issueStep(review, 'Review next finding');
+  if (!coverage || coverage.required === 0) return { title: 'Define acceptance coverage', detail: 'This feature has no primary acceptance cases yet.', target: 'review', finding: null, filter: 'required' };
+  for (const action of ['fix', 'recover', 'recheck', 'measure', 'gates', 'setup', 'capture'] as CaseAction[]) {
+    if ((coverage.nextSteps[action] ?? 0) > 0) return { ...caseActionText[action], target: 'review', finding: null, filter: action };
+  }
+  if (coverage.status === 'accepted') return { title: 'Inspect completed checks', detail: 'Required verification and implementation are complete. Historical and tooling records remain available in Work.', target: 'review', finding: null, filter: 'required' };
+  return { title: 'Confirm implementation status', detail: 'Required checks are complete. Review the implementation declaration before marking the feature complete.', target: 'review', finding: null, filter: 'required' };
 }

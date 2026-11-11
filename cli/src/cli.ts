@@ -22,7 +22,7 @@ import { discover, assets } from './discovery.ts';
 /** Short-lived command client. The detached host owns the browser between invocations. */
 const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
-  catalog status|tree [--folder ID] [--discipline dev|ta|shared|unassigned] [--scope game|tooling|reference-only|all] [--format json|text]
+  catalog summary|status|tree [--folder ID] [--discipline dev|ta|shared|unassigned] [--scope game|tooling|reference-only|all] [--format json|text]
   catalog validate
   resolution status --finding ID
   resolution review --spec FILE
@@ -181,7 +181,7 @@ async function main() {
   }
   const allowed: Record<string, string[]> = {
     resolution: ['finding', 'spec'],
-    catalog: ['folder', 'discipline', 'scope', 'format'],
+    catalog: ['reference', 'folder', 'discipline', 'scope', 'format'],
     evidence: ['directory', 'apply', 'path', 'out'],
     acceptance: ['folder', 'discipline', 'spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
     'discrepancy-resume': ['feature', 'assignment', 'status'],
@@ -253,20 +253,26 @@ async function main() {
     return reviewResolution(root, project, JSON.parse(readFileSync(resolve(root, options.spec), 'utf8')));
   }
   if (command === 'catalog') {
-    if (pos.length !== 1 || !['status', 'tree', 'validate'].includes(pos[0])) throw new Error('Use catalog status|tree|validate');
+    if (pos.length !== 1 || !['summary', 'status', 'tree', 'validate'].includes(pos[0])) throw new Error('Use catalog summary|status|tree|validate');
     const { catalogStatus, catalogTree, renderCatalogTree } = await import('./catalog.ts');
     const { selectCatalogEntries } = await import('../workbench/catalog-selection.ts');
     const { acceptanceStatus } = await import('./acceptance.ts');
     const project = adapterSettings(root).helix.project;
-    const acceptance = existsSync(join(root, 'Tools/Helix/acceptance/scope.json')) ? await acceptanceStatus(root, project) : null;
+    const { readReferenceObservation } = await import('./acceptance-format.ts');
+    const reference = options.reference ? readReferenceObservation(JSON.parse(readFileSync(resolve(root, options.reference), 'utf8'))) : undefined;
+    const acceptance = existsSync(join(root, 'Tools/Helix/acceptance/scope.json')) ? await acceptanceStatus(root, project, reference) : null;
     const report = catalogStatus(root, project, acceptance);
     if (pos[0] === 'validate') {
-      for (const key of ['folder', 'discipline', 'scope', 'format']) if (options[key] !== undefined) throw new Error('Catalog validate does not take --' + key);
+      for (const key of ['folder', 'discipline', 'scope', 'format', 'reference']) if (options[key] !== undefined) throw new Error('Catalog validate does not take --' + key);
       return { status: 'valid', ...report.summary, unmappedDiscrepancies: report.unmappedDiscrepancies, warnings: report.warnings };
     }
     if (options.format !== undefined && !['json', 'text'].includes(options.format)) throw new Error('Use --format json|text');
     if (pos[0] !== 'tree' && options.format === 'text') throw new Error('Text format is only available for catalog tree');
     const entries = selectCatalogEntries(report, options);
+    if (pos[0] === 'summary') {
+      const { featureSummary, featureNextStep } = await import('../workbench/workbench-presentation.ts');
+      return { project, referenceSupplied: reference !== undefined, features: entries.map(item => ({ id: item.id, title: item.title, summary: featureSummary(item), next: featureNextStep(item) })) };
+    }
     if (pos[0] === 'tree') {
       const tree = catalogTree(report, entries);
       if (options.format === 'json') return { project, selection: { folder: options.folder ?? null, discipline: options.discipline ?? 'all', scope: options.scope ?? 'all' }, tree };

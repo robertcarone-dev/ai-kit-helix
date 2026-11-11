@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { caseStatus, featureStatus, nextCaseAction, featureSummary } from '../workbench/workbench-presentation.ts';
+import { caseStatus, featureStatus, nextCaseAction, featureSummary, featureNextStep } from '../workbench/workbench-presentation.ts';
 import type { CaseRow } from '../workbench/acceptance-view.ts';
 import type { CatalogItem } from '../workbench/catalog-view.ts';
 test('historical matches and pending review never create review eligibility', () => {
@@ -51,5 +51,20 @@ test('feature progress counts automatic completion without listing it as remaini
 test('verification gaps and review/tooling findings do not become product defects', () => {
   const item = { implementation: 'implemented', issues: [{ status: 'open', kind: 'tooling' }, { status: 'open', kind: 'review' }], acceptance: { status: 'incomplete', accepted: 0, required: 12, ready: 0, mismatches: 2 } } as unknown as CatalogItem;
   assert.equal(featureStatus(item), 'evidence');
-  assert.equal(featureSummary(item), 'Implemented · 0/12 checks complete · 1 findings to review');
+  assert.equal(featureSummary(item), 'Implemented · 0/12 checks complete · 1 finding to review');
+});
+
+test('one next action routes to the exact finding or eligible primary checks, not historical noise', () => {
+  const issue = { id: 'specific-difference', kind: 'review', triageReason: 'Confirm retained results', status: 'open' } as CatalogItem['issues'][number];
+  const item = { implementation: 'implemented', issues: [issue], acceptance: { status: 'incomplete', required: 3, nextSteps: { setup: 2, review: 1 } } } as unknown as CatalogItem;
+  assert.equal(featureNextStep(item).filter, 'review');
+  const defect = { ...item, issues: [{ ...issue, kind: 'defect' }] } as CatalogItem;
+  assert.equal(featureNextStep(defect).finding, issue.id); assert.equal(featureNextStep(defect).target, 'work');
+  const review = { ...item, acceptance: { ...item.acceptance!, nextSteps: { setup: 2 } } };
+  assert.equal(featureNextStep(review).finding, issue.id);
+  const noIssues = { ...review, issues: [] };
+  assert.equal(featureNextStep(noIssues).filter, 'setup');
+  const done = { ...noIssues, acceptance: { ...noIssues.acceptance!, status: 'accepted', nextSteps: { verified: 2 } } };
+  assert.equal(featureNextStep(done).title, 'Inspect completed checks');
+  assert.equal(featureNextStep({ ...noIssues, acceptance: { ...noIssues.acceptance!, required: 0, nextSteps: {} } }).title, 'Define acceptance coverage');
 });

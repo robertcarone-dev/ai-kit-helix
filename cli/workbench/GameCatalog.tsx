@@ -5,7 +5,7 @@ import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Fil
 import { ResolutionWorkflow } from './ResolutionWorkflow';
 import { AcceptanceMatrix } from './AcceptanceMatrix';
 import { WorkbenchStatus } from './WorkbenchStatus';
-import { caseActionText, featureSummary, featureStatus, nextAction, readableCase } from './workbench-presentation';
+import { caseActionText, featureNextStep, featureSummary, featureStatus, nextAction, readableCase } from './workbench-presentation';
 import type { CatalogFolder, CatalogItem, CatalogReport } from './catalog-view';
 import { folderPath, matchesDiscipline } from './catalog-selection';
 import './workbench.css';
@@ -55,16 +55,24 @@ function Issues({ item, query, setQuery, discipline, setDiscipline }: { item: Ca
 function FeatureDetails({ root, project, item, onBack, onRefresh, renderComparisons, folders, discipline, setDiscipline }: { folders: CatalogFolder[]; discipline: string; setDiscipline: (value: string) => void; root: string; project: string; item: CatalogItem; onBack: () => void; onRefresh: () => void; renderComparisons: (item: CatalogItem) => ReactNode }) {
   const [tab, setTab] = useState('overview'), [issueQuery, setIssueQuery] = useState(''), [caseFilter, setCaseFilter] = useState('required');
   const status = featureStatus(item), coverage = item.acceptance, open = item.issues.filter(issue => issue.kind === 'defect').length;
+  const primary = featureNextStep(item);
+  function openNextStep() {
+    if (primary.target === 'work') { setIssueQuery(primary.finding!); setDiscipline('all'); setTab('work'); }
+    else reviewCases(primary.filter);
+  }
   function reviewCases(filter: string) { setCaseFilter(filter); setTab('review'); }
   return <div className="wb-stack">
     <div className="wb-header"><Button variant="ghost" onClick={onBack}><ArrowLeft size={16} aria-hidden="true" />Close details</Button><Button variant="outline" onClick={onRefresh}><RefreshCw size={16} aria-hidden="true" />Refresh feature</Button></div>
     <header className="wb-header"><div><p className="wb-small wb-muted">{folderPath(folders, item.folder).map(folder => folder.title).join(' / ') || item.group} / {item.kind}</p><h2>{item.title.replace(/ \([^)]*\)$/, '')}</h2></div><WorkbenchStatus status={status} /></header><p className="wb-muted">{featureSummary(item)}</p>
     <Tabs value={tab} onValueChange={value => setTab(String(value))}>
       <TabsList className="wb-tabs" aria-label="Feature views"><TabsTrigger value="overview"><Layers size={16} aria-hidden="true" />Overview</TabsTrigger><TabsTrigger value="review"><ClipboardCheck size={16} aria-hidden="true" />Review</TabsTrigger><TabsTrigger value="work"><Wrench size={16} aria-hidden="true" />Work{open > 0 && <Badge variant="secondary">{open}</Badge>}</TabsTrigger></TabsList>
-      <TabsContent value="overview" className="wb-stack mt-4"><ResolutionWorkflow root={root} item={item.id} onSaved={onRefresh} onOpen={() => setTab('work')} />
-        <section className="wb-attention" aria-label="Feature next steps"><div className="wb-section-heading"><h3>Next steps</h3><span className="wb-small wb-muted">{coverage ? `${coverage.accepted} / ${coverage.required} required checks complete` : 'Acceptance coverage not defined'}</span></div>
-          {open > 0 && <button className="wb-action-row" onClick={() => setTab('work')}><Wrench size={18} className="wb-tone-fix" /><span><strong>Inspect product findings</strong><small>Reconciled product differences. Review requests and fixture limitations are separate in Work.</small></span><span className="wb-action-count">{open}</span><ChevronRight size={16} /></button>}
-          <button className="wb-action-row" onClick={() => setTab('work')}><ClipboardCheck size={18} /><span><strong>Review and triage</strong><small>{item.issues.filter(issue => ['review', 'untriaged'].includes(issue.kind)).length} findings to review · {item.issues.filter(issue => issue.kind === 'tooling').length} capture-tooling records</small></span><ChevronRight size={16} /></button><details><summary className="cursor-pointer">Verification coverage and setup</summary>{coverage && Object.entries(coverage.nextSteps).filter(([action]) => action !== 'accepted' && action !== 'verified').map(([action, count]) => { const copy = caseActionText[action as keyof typeof caseActionText]; return <button className="wb-action-row" key={action} onClick={() => reviewCases(action)}><ClipboardCheck size={18} className="wb-muted" /><span><strong>{copy.title}</strong><small>{copy.detail}</small></span><span className="wb-action-count">{count}</span><ChevronRight size={16} /></button>; })}</details>
+      <TabsContent value="overview" className="wb-stack mt-4">
+        <section className="wb-attention" aria-label="Feature next steps"><div className="wb-section-heading"><h3>Next action</h3><span className="wb-small wb-muted">{coverage ? `${coverage.accepted} / ${coverage.required} required checks complete` : 'Acceptance coverage not defined'}</span></div>
+          <button className="wb-action-row" onClick={openNextStep}>{primary.target === 'work' ? <Wrench size={18} /> : <ClipboardCheck size={18} />}<span><strong>{primary.title}</strong><small>{primary.detail}</small></span><ChevronRight size={16} /></button>
+          <details><summary className="cursor-pointer">More actions</summary>
+            <button className="wb-action-row" onClick={() => { setIssueQuery(''); setTab('work'); }}><Wrench size={18} /><span><strong>Browse findings</strong><small>{item.issues.filter(issue => ['review', 'untriaged'].includes(issue.kind)).length} to review · {item.issues.filter(issue => issue.kind === 'tooling').length} capture-tooling records</small></span><ChevronRight size={16} /></button>
+            {coverage && Object.entries(coverage.nextSteps).filter(([action]) => action !== 'accepted' && action !== 'verified').map(([action, count]) => { const copy = caseActionText[action as keyof typeof caseActionText]; return <button className="wb-action-row" key={action} onClick={() => reviewCases(action)}><ClipboardCheck size={18} className="wb-muted" /><span><strong>{copy.title}</strong><small>{copy.detail}</small></span><span className="wb-action-count">{count}</span><ChevronRight size={16} /></button>; })}
+          </details>
           {!coverage && <p className="wb-muted">Define acceptance cases to establish what must be verified.</p>}
           {coverage && <p className="wb-footnote">Counts group required case / viewport checks by their next prerequisite. A check may have additional blockers.</p>}
         </section>
