@@ -31,8 +31,8 @@ function current(path) {
 function same(a,b) { return JSON.stringify(a)===JSON.stringify(b); }
 export function run(argv) {
   const command=argv.shift();
-  if(!['preview','install','update','remove'].includes(command)) throw new Error('Usage: node scripts/install.mjs preview|install|update|remove --project-root DIR [--rules helix|all|none] [--adopt-legacy] [--init] [--copy-skills] [--unity-helper]');
-  let project, rules, adopt=false, init=false, copies=false, unityHelper=false;
+  if(!['preview','install','update','remove'].includes(command)) throw new Error('Usage: node scripts/install.mjs preview|install|update|remove --project-root DIR [--rules helix|all|none] [--adopt-legacy] [--init] [--copy-skills] [--unity-helper] [--preserve-conflicts]');
+  let project, rules, adopt=false, init=false, copies=false, unityHelper=false, preserveConflicts=false;
   while(argv.length) {
     const a=argv.shift();
     if(a==='--project-root')project=argv.shift();
@@ -41,12 +41,14 @@ export function run(argv) {
     else if(a==='--init')init=true;
     else if(a==='--copy-skills')copies=true;
     else if(a==='--unity-helper')unityHelper=true;
+    else if(a==='--preserve-conflicts')preserveConflicts=true;
     else throw new Error(`Unknown option ${a}`);
   }
   if(!project)throw new Error('--project-root is required');
   const root=realpathSync(resolve(project));
   const mp=safe(root,manifestPath), previous=existsSync(mp)?read(mp):null;
   if(current(mp)?.type==='link')throw new Error('Manifest must not be a symlink');
+  if(preserveConflicts && (!previous || !['preview','update'].includes(command)))throw new Error('--preserve-conflicts requires preview or update of an existing installation');
   if(previous && previous.schemaVersion!==1)throw new Error('Unsupported install manifest');
   rules??=previous?.rules??'none';
   copies= copies || previous?.copySkills===true;
@@ -95,10 +97,13 @@ export function run(argv) {
       if(!current(dest))seeds.push({path,bytes:readFileSync(join(source,'templates',name))});
     }
   }
-  const sourceHash=hash(JSON.stringify(desired));
-  const report={command,projectRoot:root,version:pkg.version,sourceHash,rules,unityHelper,changes:changes.map(({path,action,before,after})=>({path,action,before,after})),createdProjectFiles:seeds.map(x=>x.path),conflicts};
+  // Preserve ownership hashes, never adopt local edits as toolkit source.
+  const installedFiles={...desired};
+  if(preserveConflicts)for(const path of conflicts){if(previous.files[path])installedFiles[path]=previous.files[path];else delete installedFiles[path];}
+  const sourceHash=hash(JSON.stringify(preserveConflicts?installedFiles:desired));
+  const report={command,projectRoot:root,version:pkg.version,sourceHash,rules,unityHelper,changes:changes.map(({path,action,before,after})=>({path,action,before,after})),createdProjectFiles:seeds.map(x=>x.path),conflicts,preservedConflicts:preserveConflicts?conflicts:[]};
   if(command==='preview')return report;
-  if(conflicts.length)throw new Error(`Locally modified or unmanaged files conflict; nothing written: ${conflicts.join(', ')}`);
+  if(conflicts.length&&!preserveConflicts)throw new Error(`Locally modified or unmanaged files conflict; nothing written: ${conflicts.join(', ')}`);
   if(changes.length) {
     const state=join(root,'.helix'), isolated=join(state,'fixture-sessions');
     const sessions=[state,...(existsSync(isolated)?readdirSync(isolated).map(name=>join(isolated,name)):[])];
@@ -121,7 +126,7 @@ export function run(argv) {
   for(const seed of seeds){const dest=safe(root,seed.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,seed.bytes,{flag:'wx'});}
   if(command==='remove'){if(previous)unlinkSync(mp);}
   else {
-    const manifest={schemaVersion:1,name:pkg.name,version:pkg.version,sourceHash,rules,copySkills:copies,unityHelper,files:desired};
+    const manifest={schemaVersion:1,name:pkg.name,version:pkg.version,sourceHash,rules,copySkills:copies,unityHelper,files:installedFiles,...(preserveConflicts&&conflicts.length?{deferredConflicts:conflicts}:{})};
     mkdirSync(dirname(mp),{recursive:true});const temp=mp+`.install-${process.pid}`;writeFileSync(temp,JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});renameSync(temp,mp);
   }
   return report;

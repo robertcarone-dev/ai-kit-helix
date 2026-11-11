@@ -138,3 +138,19 @@ test('a project-owned Workbench guide conflicts without changing it or writing r
  assert.equal(existsSync(join(root,'Tools/Helix/src/cli.ts')),false);
  assert.equal(existsSync(join(root,'Tools/Helix/toolkit-install.json')),false);
 }));
+
+test('explicit conflict preservation updates safe files without adopting local work',()=>withProject(root=>{
+ call('install',root);
+ const manifest=join(root,'Tools/Helix/toolkit-install.json');
+ const original=JSON.parse(readFileSync(manifest,'utf8'));
+ const conflict='Tools/Helix/recording_sheet.py', missing='Tools/Helix/workbench/GameCatalog.tsx';
+ writeFileSync(join(root,conflict),'another owner');rmSync(join(root,missing));
+ const preview=call('preview',root,'--preserve-conflicts');
+ assert.deepEqual(preview.preservedConflicts,[conflict]);assert.ok(preview.changes.some(change=>change.path===missing));
+ call('update',root,'--preserve-conflicts');
+ assert.equal(readFileSync(join(root,conflict),'utf8'),'another owner');assert.ok(existsSync(join(root,missing)));
+ const after=JSON.parse(readFileSync(manifest,'utf8'));assert.deepEqual(after.files[conflict],original.files[conflict]);assert.deepEqual(after.deferredConflicts,[conflict]);
+ assert.throws(()=>call('update',root),/conflict/);assert.throws(()=>call('remove',root,'--preserve-conflicts'),/requires/);
+ writeFileSync(join(root,conflict),readFileSync(new URL('../workflows/recording_sheet.py',import.meta.url)));
+ call('update',root);assert.equal(JSON.parse(readFileSync(manifest,'utf8')).deferredConflicts,undefined);
+}));

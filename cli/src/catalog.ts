@@ -1,3 +1,5 @@
+import type { CatalogReport, CatalogItem } from '../workbench/catalog-view.ts';
+import { featureStatus, statusText } from '../workbench/workbench-presentation.ts';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { portablePath } from './acceptance-format.ts';
@@ -23,8 +25,8 @@ function read(root: string, path: string) {
   if (statSync(full).size > 32 * 1024 * 1024) throw new Error('Catalog JSON exceeds 32 MiB: ' + path);
   return JSON.parse(readFileSync(full, 'utf8'));
 }
-function fields(value: any, keys: string[]) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join() !== [...keys].sort().join()) throw new Error('Invalid catalog fields');
+function fields(value: any, keys: string[], optional: string[] = []) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).filter(key => !optional.includes(key)).sort().join() !== [...keys].sort().join()) throw new Error('Invalid catalog fields');
 }
 function text(value: any) { if (typeof value !== 'string' || !value.trim()) throw new Error('Expected catalog text'); }
 function id(value: any) { text(value); if (!/^[a-z0-9][a-z0-9.-]*$/.test(value)) throw new Error('Invalid catalog ID'); }
@@ -34,13 +36,42 @@ function strings(value: any, validate: (value: any) => void) {
 }
 export function loadCatalog(root: string, project: string) {
   const catalog = read(root, 'Tools/Helix/catalog/catalog.json');
-  fields(catalog, ['version', 'project', 'title', 'sources', 'legacyReport', 'entries', 'exclusions']);
+  fields(catalog, ['version', 'project', 'title', 'sources', 'legacyReport', 'entries', 'exclusions'], ['folders', 'workAssignments']);
   if (catalog.version !== 1 || catalog.project !== project) throw new Error('Catalog version or project differs');
   text(catalog.title); strings(catalog.exclusions, text); strings(catalog.sources, portablePath); portablePath(catalog.legacyReport);
   if (!Array.isArray(catalog.entries) || catalog.entries.length > 1000) throw new Error('Invalid catalog entries');
+  const folders = catalog.folders ?? [];
+  if (!Array.isArray(folders) || folders.length > 1000) throw new Error('Invalid catalog folders');
+  const folderIds = new Set<string>();
+  for (const folder of folders) {
+    fields(folder, ['id', 'title', 'parent']); id(folder.id); text(folder.title);
+    if (folderIds.has(folder.id)) throw new Error('Duplicate folder ID'); folderIds.add(folder.id);
+    if (folder.parent !== null) id(folder.parent);
+  }
+  for (const folder of folders) {
+    const visited = new Set<string>([folder.id]); let parent = folder.parent;
+    while (parent !== null) {
+      if (!folderIds.has(parent)) throw new Error('Unknown parent folder');
+      if (visited.has(parent)) throw new Error('Folder cycle');
+      visited.add(parent); parent = folders.find((value: any) => value.id === parent).parent;
+    }
+  }
+  const assignments = catalog.workAssignments ?? {};
+  if (!assignments || typeof assignments !== 'object' || Array.isArray(assignments)) throw new Error('Invalid work assignments');
+  for (const [key, value] of Object.entries(assignments)) { id(key); if (!['dev', 'ta', 'shared'].includes(value as string)) throw new Error('Invalid work discipline'); }
   const ids = new Set<string>(), acceptanceIds = new Set<string>();
   for (const entry of catalog.entries) {
-    fields(entry, ['id', 'title', 'kind', 'group', 'scope', 'summary', 'sources', 'implementationReferences', 'discrepancies', 'evidence', 'acceptanceItem']);
+    fields(entry, ['id', 'title', 'kind', 'group', 'scope', 'summary', 'sources', 'implementationReferences', 'discrepancies', 'evidence', 'acceptanceItem'], ['folder', 'specs']);
+    if (entry.folder !== undefined && !folderIds.has(entry.folder)) throw new Error('Unknown feature folder');
+    if (entry.specs !== undefined) {
+      if (!Array.isArray(entry.specs) || entry.specs.length > 100) throw new Error('Invalid specifications');
+      for (const spec of entry.specs) {
+        fields(spec, ['kind', 'title', 'target']); text(spec.title);
+        if (spec.kind === 'markdown') { portablePath(spec.target); if (!/\.md$/i.test(spec.target)) throw new Error('Expected Markdown specification'); catalogPath(root, spec.target); }
+        else if (spec.kind === 'confluence') { const url = new URL(spec.target); if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Expected HTTPS specification URL'); }
+        else throw new Error('Invalid specification kind');
+      }
+    }
     id(entry.id); if (ids.has(entry.id)) throw new Error('Duplicate catalog ID'); ids.add(entry.id);
     for (const key of ['title', 'group', 'summary']) text(entry[key]);
     if (!['screen', 'feature', 'scenario', 'fixture'].includes(entry.kind) || !['game', 'tooling', 'reference-only'].includes(entry.scope)) throw new Error('Invalid catalog kind or scope');
@@ -69,6 +100,7 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
     if (!Array.isArray(record.evidence)) throw new Error('Missing discrepancy evidence list: ' + path);
     discrepancies.set(name, { ...record, path, revision: Number.parseInt(revisions[0]) });
   }
+  for (const key of Object.keys(catalog.workAssignments ?? {})) if (!discrepancies.has(key)) throw new Error('Unknown assigned discrepancy: ' + key);
   const comparisons: any[] = [];
   const comparisonDirectory = catalogPath(root, '.helix/comparisons');
   if (existsSync(comparisonDirectory)) for (const file of readdirSync(comparisonDirectory).filter(file => file.endsWith('.json')).sort()) {
@@ -82,7 +114,7 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
     const issues = discrepancyIds.map((key: string) => {
       used.add(key); const record = discrepancies.get(key);
       if (!record) throw new Error('Unknown linked discrepancy: ' + key);
-      return { id: key, status: record.status, revision: record.revision, path: record.path, expected: record.expected, observed: record.observed, nextAction: record.nextAction ?? null };
+      return { discipline: catalog.workAssignments?.[key] ?? 'unassigned', id: key, status: record.status, revision: record.revision, path: record.path, expected: record.expected, observed: record.observed, nextAction: record.nextAction ?? null };
     });
     const previous = legacy.items.find(item => item.id === entry.id);
     const evidence: { path: string; sha256: string | null; origin: string; availability: string }[] = [];
@@ -96,6 +128,7 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
       }
       if (!evidence.some(value => value.path === path && value.sha256 === sha256)) evidence.push({ path, sha256, origin, availability });
     }
+    for (const spec of entry.specs ?? []) if (spec.kind === 'markdown') artifact(spec.target, null, 'specification');
     entry.evidence.forEach((path: string) => artifact(path, null, 'catalog'));
     for (const key of discrepancyIds) for (const pin of discrepancies.get(key).evidence) artifact(pin.path, pin.sha256, key);
     if (previous) previous.evidence.forEach(path => artifact(path, null, 'legacy report'));
@@ -107,13 +140,21 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
       for (const issue of row.linkedDiscrepancies) artifact(issue.path, null, 'case discrepancy: ' + row.id);
     }
     if (result) for (const row of result.cases) if (row.latestRun) for (const pin of row.latestRun.artifacts) artifact(pin.path, pin.sha256, 'acceptance: ' + row.id + ' / ' + row.viewport);
-    return { ...entry, implementation: entry.implementationReferences.length ? 'source located; not a completion verdict' : 'not assessed',
+    return { ...entry, folder: entry.folder ?? null, specs: entry.specs ?? [], implementation: entry.implementationReferences.length ? 'source located; not a completion verdict' : 'not assessed',
       missingSources: [...entry.sources, ...entry.implementationReferences].filter(path => !existsSync(catalogPath(root, path))),
       issues, evidence, comparisons: comparisons.filter(record => record.links.some((link: any) => link.item === entry.id)),
       legacy: previous ? { status: previous.status, summary: previous.summary, reportedUtc: legacy.reportedUtc } : null,
-      acceptance: result ? { status: result.status, required: result.required, accepted: result.accepted, cases: result.cases.length, verified: result.cases.filter((row: any) => row.assessmentAvailable && row.latestAssessment.outcome === 'matched').length, mismatches: result.cases.filter((row: any) => row.assessmentAvailable && row.latestAssessment.outcome === 'mismatch').length, pendingReview: result.cases.filter((row: any) => row.latestRun && row.review === 'pending').length } : null };
+      acceptance: result ? { status: result.status, required: result.required, accepted: result.accepted, cases: result.cases.length, verified: result.cases.filter((row: any) => row.assessmentAvailable && row.latestAssessment.outcome === 'matched').length, mismatches: result.cases.filter((row: any) => row.assessmentAvailable && row.latestAssessment.outcome === 'mismatch').length, pendingReview: result.cases.filter((row: any) => row.latestRun && row.review === 'pending').length, ready: result.cases.filter((row: any) => row.canAccept && !row.accepted && row.review !== 'changes-requested').length, needsEvidence: result.cases.filter((row: any) => !row.accepted && !row.canAccept).length } : null };
   });
-  return { format: 'helix-game-catalog', version: 1, project, title: catalog.title, assessedUtc: new Date().toISOString(), sources: catalog.sources, exclusions: catalog.exclusions, entries,
+  return { format: 'helix-game-catalog', version: 1, project, title: catalog.title, assessedUtc: new Date().toISOString(), folders: catalog.folders ?? [], sources: catalog.sources, exclusions: catalog.exclusions, entries,
     summary: { total: entries.length, game: entries.filter((entry: any) => entry.scope === 'game').length, definedCoverage: entries.filter((entry: any) => entry.acceptance !== null).length, accepted: entries.filter((entry: any) => entry.acceptance?.status === 'accepted').length, discrepancies: discrepancies.size },
     unmappedDiscrepancies: [...discrepancies.keys()].filter(key => !used.has(key)), unmappedComparisons: comparisons.filter(record => record.links.length === 0 || !record.links.some((link: any) => entries.some((entry: any) => entry.id === link.item))).map(record => record.id), warnings };
+}
+
+export function catalogTree(report: CatalogReport, entries: CatalogItem[], parent: string | null = null): any[] {
+  const folders = report.folders.filter(folder => folder.parent === parent).map(folder => ({ kind: 'folder', id: folder.id, title: folder.title, children: catalogTree(report, entries, folder.id) })).filter(folder => folder.children.length);
+  return [...folders, ...entries.filter(entry => entry.folder === parent).map(entry => ({ kind: 'feature', id: entry.id, title: entry.title, status: featureStatus(entry), acceptanceItem: entry.acceptanceItem, openFindings: entry.issues.filter(issue => ['open', 'blocked'].includes(issue.status)).length }))];
+}
+export function renderCatalogTree(nodes: any[], prefix = ''): string {
+  return nodes.map((node, index) => { const last = index === nodes.length - 1; return `${prefix}${last ? '└─' : '├─'} ${node.title} [${node.id}]${node.kind === 'feature' ? ' — ' + statusText[node.status as keyof typeof statusText] : ''}${node.kind === 'folder' ? '\n' + renderCatalogTree(node.children, prefix + (last ? '   ' : '│  ')) : ''}`; }).join('\n');
 }

@@ -46,3 +46,35 @@ Execution receipts are local under `.helix/acceptance-executions`. The matrix sh
 `helix acceptance assess --spec FILE` saves immutable findings pinned to an existing run hash. The assessment carries an agent/automation identity, UTC timestamp, one observation per captured criterion, evidence SHA-256 pins, and discrepancy IDs. It never rewrites capture timestamps or creates human decisions. The matrix shows scoped findings separately from current-source freshness and human review. A matching assessment alone cannot enable acceptance; the original verified-run and scope gates still apply. Missing or changed assessment evidence invalidates its displayed finding. Mismatching assessments block acceptance even if the original run matched.
 
 Acceptance gate explanations include scope approval, implementation declaration, capture verdict, required criterion observations, recorded anchors, declared dependency pins, paired evidence, freshness, recipe blockers, linked discrepancies, and agent-assessment evidence. `canAccept` uses this same list: an empty refusal list is eligible, while human acceptance remains a separate decision. Accepted deviations still require explicit criterion reconciliation; their issue status alone cannot waive an unchanged criterion.
+
+### Feature workspace UI
+
+The shared `GameCatalog` displays folders and feature leaves in a single expandable hierarchy, with colored status icons and folder counts. Selecting a feature opens Overview, Review and Work tabs alongside the persistent hierarchy. Search and filters operate directly on tree leaves; matching branches expand automatically. It uses Helix Kit Tabs, Badge, Button, Input and Textarea and `lucide-react` icons. Declare `lucide-react` in the consuming mod's own dependencies and run `pnpm install --ignore-workspace` there; the Kit supplies React and the UI framework. Copy `WorkbenchStatus.tsx`, `workbench-presentation.ts`, and `workbench.css` alongside the existing components when updating a native mod. The installer includes these shared files automatically. Do not install another React/UI framework.
+
+Catalog `ready` counts come from acceptance eligibility, not pending human decisions or matching historical assessments. `needsEvidence` includes unfinished prerequisite gates. The Review tab defaults to captured cases, supports viewport switching and full-size media, and keeps original hashes, paths, capture commands and gate diagnostics behind expandable sections. Human review saving uses the existing pinned-run endpoint unchanged. Work shows paginated discrepancies; task creation and source import are separate later slices. Source/fixture definitions and acceptance decisions remain project-owned.
+
+### Folders, specifications, and disciplines
+
+Version-1 catalogs optionally define `folders: [{ id, title, parent }]`, where `parent` is a folder ID or null. Entry `folder` selects its canonical folder; folder cycles, duplicates and dangling links are rejected. Existing unorganized catalogs remain supported. Navigation includes descendants and displays feature counts rather than inferred completion percentages.
+
+An entry may define `specs: [{ kind: "markdown" | "confluence", title, target }]`. Markdown targets are checkout-relative `.md` paths, served as plain text through the existing registered-evidence boundary; missing files remain visible. Confluence targets are HTTPS links (including self-hosted Confluence), opened externally, never fetched or interpreted as acceptance evidence. Specs are optional, unpinned context; document-change detection and imports are not implemented by this slice.
+
+Optional `workAssignments` maps discrepancy IDs to `dev`, `ta`, or `shared`. Unknown IDs and values fail validation. Unmapped findings display `unassigned`. Dev/TA filters include shared work; the feature list filters by open/blocked findings, while Work combines discipline with its status filter. Assignments are project-owned triage metadata, not modifications to immutable discrepancy records or automatic owner assignment. Opening a related finding clears the discipline filter so the linked record remains visible.
+
+### Overview screenshots and CLI selection
+
+Feature Overview includes a preview-only acceptance matrix: registered reference/Unity image pairs, capture/viewport selection, capture time, freshness, and finding status. Clicking an image opens its full-size verified blob. Missing images fail visibly through the existing media boundary; unpaired or absent captures show an empty state. Previewing never records reviews or grants acceptance. Review retains the criteria and decision controls. Copy the new `catalog-selection.ts` helper alongside the shared components when updating a native mod.
+
+The CLI reads the same catalog and discipline matcher as Workbench:
+
+```sh
+Tools/Helix/bin/helix catalog tree --folder shop --discipline ta
+Tools/Helix/bin/helix catalog tree --folder game --format json
+Tools/Helix/bin/helix catalog status --folder results --discipline dev
+Tools/Helix/bin/helix acceptance status --folder results --discipline ta
+Tools/Helix/bin/helix acceptance plan --folder results --discipline ta --viewport phone --out .aikit/scratch/NEW_BATCH
+```
+
+Folder arguments are stable IDs and include descendants. Catalog commands accept `--scope game|tooling|reference-only|all` (default all). Tree defaults to readable text; status defaults to JSON. Discipline selects features with open/blocked work; Dev and TA both include shared work. Returned feature records retain complete issue context. Unknown folders/disciplines fail rather than silently widening selection. Validation remains whole-catalog and rejects filters.
+
+Selected acceptance plans include every case of the matched features, optionally narrowed by viewport. This is feature-level work selection, not a claim that individual criteria have a discipline. Output paths are unique per item/case/viewport. Planning remains read-only and never runs a capture. Folder/discipline filters are rejected for run, publish, and review mutations; execution still requires explicit case selection. Missing acceptance mappings contribute no plans and remain visible in catalog status.

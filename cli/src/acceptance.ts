@@ -271,6 +271,31 @@ export async function saveDecision(root: string, project: string, input: unknown
   });
 }
 export async function acceptanceCommand(root: string, project: string, operation: string, options: Record<string, string>) {
+  if (options.folder !== undefined || options.discipline !== undefined) {
+    if (!['plan', 'status'].includes(operation)) throw new Error('Folder/discipline selection supports acceptance plan or status only');
+    const allowed = ['project-root', 'helix-project', 'folder', 'discipline', ...(operation === 'plan' ? ['out', 'viewport'] : ['reference'])];
+    for (const key of Object.keys(options)) if (!allowed.includes(key)) throw new Error('Invalid selected acceptance option: ' + key);
+    if (operation === 'plan' && !options.out) throw new Error('Acceptance plan requires --out NEW_SCRATCH_DIR');
+    const { catalogStatus } = await import('./catalog.ts');
+    const { selectCatalogEntries } = await import('../workbench/catalog-selection.ts');
+    const reference = options.reference ? readReferenceObservation(json(resolve(root, options.reference))) : undefined;
+    const status = await acceptanceStatus(root, project, reference);
+    const catalog = catalogStatus(root, project, status), entries = selectCatalogEntries(catalog, options);
+    const ids = new Set(entries.map(entry => entry.acceptanceItem));
+    const items = status.items.filter(item => ids.has(item.id));
+    const selection = { folder: options.folder ?? null, discipline: options.discipline ?? 'all', features: entries.map(entry => entry.id) };
+    if (operation === 'status') return { ...status, items, selection };
+    const { scope } = loadAcceptance(root, project);
+    if (options.viewport !== undefined && !scope.viewports.some(viewport => viewport.id === options.viewport)) throw new Error('Unknown acceptance viewport');
+    const { planAcceptanceCase } = await import('./acceptance-runner.ts');
+    const plans = [];
+    for (const item of items) for (const entry of item.cases) {
+      if (options.viewport !== undefined && entry.viewport !== options.viewport) continue;
+      const out = resolve(root, options.out, item.id, entry.id, entry.viewport);
+      plans.push({ out, ...await planAcceptanceCase(root, project, item.id, entry.id, entry.viewport, out) });
+    }
+    return { project, selection, plans, note: 'Read-only plans for all cases of selected features. No captures executed. Discipline selects features with open/blocked work, not individual criteria.' };
+  }
   if (['adapters', 'plan', 'run'].includes(operation)) {
     const { loadCaseAdapters, planAcceptanceCase, runAcceptanceCase } = await import('./acceptance-runner.ts');
     const keys = operation === 'adapters' ? [] : ['item', 'case', 'viewport', 'out', ...(operation === 'run' ? ['mode'] : [])];

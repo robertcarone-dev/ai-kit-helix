@@ -22,10 +22,13 @@ import { discover, assets } from './discovery.ts';
 /** Short-lived command client. The detached host owns the browser between invocations. */
 const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
-  catalog status|validate
+  catalog status|tree [--folder ID] [--discipline dev|ta|shared|unassigned] [--scope game|tooling|reference-only|all] [--format json|text]
+  catalog validate
   acceptance validate|status|publish [--reference CURRENT_REFERENCE_JSON]
   acceptance record-run|assess|review --spec RECORD_JSON [--reference CURRENT_REFERENCE_JSON]
   acceptance adapters
+  acceptance status --folder ID [--discipline dev|ta|shared|unassigned]
+  acceptance plan --folder ID --out NEW_SCRATCH_DIR [--discipline dev|ta|shared|unassigned] [--viewport ID]
   acceptance plan|run --item ID --case ID --viewport ID --out NEW_SCRATCH_DIR [--mode retained|capture]
   discrepancy-resume [--feature NAME] [--assignment ID] [--status active|open|blocked|resolved|accepted-deviation|all]
   discrepancy-save --spec FILE [--after REVISION]
@@ -173,8 +176,8 @@ async function main() {
     return;
   }
   const allowed: Record<string, string[]> = {
-    catalog: [],
-    acceptance: ['spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
+    catalog: ['folder', 'discipline', 'scope', 'format'],
+    acceptance: ['folder', 'discipline', 'spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
     'discrepancy-resume': ['feature', 'assignment', 'status'],
     'discrepancy-recover': ['id', 'issue', 'board-root'],
     'discrepancy-rerun': ['id', 'out', 'execute', 'ai-kit'],
@@ -236,13 +239,26 @@ async function main() {
     if (!['project-root', 'helix-project'].includes(k) && !allowed[command].includes(k))
       throw new Error('Unknown option --' + k);
   if (command === 'catalog') {
-    if (pos.length !== 1 || !['status', 'validate'].includes(pos[0])) throw new Error('Use catalog status|validate');
-    const { catalogStatus } = await import('./catalog.ts');
+    if (pos.length !== 1 || !['status', 'tree', 'validate'].includes(pos[0])) throw new Error('Use catalog status|tree|validate');
+    const { catalogStatus, catalogTree, renderCatalogTree } = await import('./catalog.ts');
+    const { selectCatalogEntries } = await import('../workbench/catalog-selection.ts');
     const { acceptanceStatus } = await import('./acceptance.ts');
     const project = adapterSettings(root).helix.project;
     const acceptance = existsSync(join(root, 'Tools/Helix/acceptance/scope.json')) ? await acceptanceStatus(root, project) : null;
     const report = catalogStatus(root, project, acceptance);
-    return pos[0] === 'status' ? report : { status: 'valid', ...report.summary, unmappedDiscrepancies: report.unmappedDiscrepancies, warnings: report.warnings };
+    if (pos[0] === 'validate') {
+      for (const key of ['folder', 'discipline', 'scope', 'format']) if (options[key] !== undefined) throw new Error('Catalog validate does not take --' + key);
+      return { status: 'valid', ...report.summary, unmappedDiscrepancies: report.unmappedDiscrepancies, warnings: report.warnings };
+    }
+    if (options.format !== undefined && !['json', 'text'].includes(options.format)) throw new Error('Use --format json|text');
+    if (pos[0] !== 'tree' && options.format === 'text') throw new Error('Text format is only available for catalog tree');
+    const entries = selectCatalogEntries(report, options);
+    if (pos[0] === 'tree') {
+      const tree = catalogTree(report, entries);
+      if (options.format === 'json') return { project, selection: { folder: options.folder ?? null, discipline: options.discipline ?? 'all', scope: options.scope ?? 'all' }, tree };
+      console.log(tree.length ? renderCatalogTree(tree) : 'No matching features.'); return;
+    }
+    return { ...report, entries, selection: { folder: options.folder ?? null, discipline: options.discipline ?? 'all', scope: options.scope ?? 'all' }, summary: { total: entries.length, game: entries.filter(entry => entry.scope === 'game').length, definedCoverage: entries.filter(entry => entry.acceptance !== null).length, accepted: entries.filter(entry => entry.acceptance?.status === 'accepted').length, discrepancies: new Set(entries.flatMap(entry => entry.issues.map(issue => issue.id))).size } };
   }
   if (command === 'acceptance') {
     if (pos.length !== 1) throw new Error('Supply one acceptance operation');

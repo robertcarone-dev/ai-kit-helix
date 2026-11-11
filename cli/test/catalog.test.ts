@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { catalogStatus, loadCatalog } from '../src/catalog.ts';
+import { catalogStatus, loadCatalog, catalogTree, renderCatalogTree } from '../src/catalog.ts';
 import { acceptanceBackend } from '../workbench/acceptance-backend.ts';
 import { digest } from '../src/acceptance-format.ts';
 function fixture(t: any) {
@@ -75,4 +75,34 @@ test('existing dashboard links remain usable while an optional catalog is invali
   f.put('Tools/Helix/catalog/catalog.json', { version: 99 });
   assert.deepEqual(comparisonLinks(f.root, 'synthetic', 'screen.home'), [{ item: 'screen.home' }]);
   assert.throws(() => comparisonLinks(f.root, 'synthetic', 'screen.new'), /catalog/);
+});
+
+test('folders, specifications and discipline assignments preserve feature identity and evidence boundaries', async t => {
+  const f = fixture(t);
+  Object.assign(f.catalog, { folders: [{ id: 'game', title: 'Game', parent: null }, { id: 'home', title: 'Home', parent: 'game' }], workAssignments: { 'home-layout': 'ta' } });
+  Object.assign(f.entry, { folder: 'home', specs: [{ kind: 'markdown', title: 'Design', target: 'design.md' }, { kind: 'confluence', title: 'GDD', target: 'https://example.atlassian.net/wiki/pages/123' }] });
+  f.put('design.md', '# Design'); f.put('Tools/Helix/catalog/catalog.json', f.catalog);
+  const report = catalogStatus(f.root, 'synthetic');
+  assert.equal(report.entries[0].id, 'screen.home'); assert.equal(report.entries[0].issues[0].discipline, 'ta'); assert.equal(report.entries[0].folder, 'home');
+  const index = report.entries[0].evidence.findIndex((value: any) => value.path === 'design.md');
+  const response = await acceptanceBackend(f.root, f.root, 'synthetic', '/acceptance/catalog-evidence', { item: 'screen.home', artifact: index, expectedPath: 'design.md', expectedSha256: null });
+  assert.equal(await response.text(), '# Design');
+  (f.catalog as any).folders[0].parent = 'home'; f.put('Tools/Helix/catalog/catalog.json', f.catalog); assert.throws(() => loadCatalog(f.root, 'synthetic'), /cycle/);
+  (f.catalog as any).folders[0].parent = null; (f.entry as any).folder = 'missing'; f.put('Tools/Helix/catalog/catalog.json', f.catalog); assert.throws(() => loadCatalog(f.root, 'synthetic'), /Unknown feature folder/);
+  (f.entry as any).folder = 'home'; (f.entry as any).specs[1].target = 'javascript:alert(1)'; f.put('Tools/Helix/catalog/catalog.json', f.catalog); assert.throws(() => loadCatalog(f.root, 'synthetic'), /HTTPS/);
+});
+
+test('folder selection includes descendants and Dev/TA includes shared open work without treating resolved work as pending', async t => {
+  const { selectCatalogEntries } = await import('../workbench/catalog-selection.ts');
+  const f = fixture(t);
+  Object.assign(f.catalog, { folders: [{ id: 'game', title: 'Game', parent: null }, { id: 'home', title: 'Home', parent: 'game' }], workAssignments: { 'home-layout': 'shared' } });
+  Object.assign(f.entry, { folder: 'home' }); f.put('Tools/Helix/catalog/catalog.json', f.catalog);
+  const report = catalogStatus(f.root, 'synthetic');
+  assert.equal(selectCatalogEntries(report, { folder: 'game', discipline: 'dev' }).length, 1);
+  assert.equal(selectCatalogEntries(report, { folder: 'home', discipline: 'ta' }).length, 1);
+  assert.equal(selectCatalogEntries(report, { discipline: 'unassigned' }).length, 0);
+  assert.throws(() => selectCatalogEntries(report, { folder: 'missing' }), /Unknown/);
+  assert.throws(() => selectCatalogEntries(report, { discipline: 'artist' }), /Invalid/);
+  const tree = catalogTree(report, report.entries); assert.match(renderCatalogTree(tree), /Game.*\n.*Home.*\n.*screen.home/);
+  report.entries[0].issues[0].status = 'resolved'; assert.equal(selectCatalogEntries(report, { discipline: 'dev' }).length, 0);
 });
