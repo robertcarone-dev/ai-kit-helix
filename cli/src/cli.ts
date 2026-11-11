@@ -24,7 +24,9 @@ const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
   catalog status|validate
   acceptance validate|status|publish [--reference CURRENT_REFERENCE_JSON]
-  acceptance record-run|review --spec RECORD_JSON [--reference CURRENT_REFERENCE_JSON]
+  acceptance record-run|assess|review --spec RECORD_JSON [--reference CURRENT_REFERENCE_JSON]
+  acceptance adapters
+  acceptance plan|run --item ID --case ID --viewport ID --out NEW_SCRATCH_DIR [--mode retained|capture]
   discrepancy-resume [--feature NAME] [--assignment ID] [--status active|open|blocked|resolved|accepted-deviation|all]
   discrepancy-save --spec FILE [--after REVISION]
   discrepancy-recover --id ID [--issue ISSUE] [--board-root OWNER_CHECKOUT]
@@ -172,7 +174,7 @@ async function main() {
   }
   const allowed: Record<string, string[]> = {
     catalog: [],
-    acceptance: ['spec', 'reference'],
+    acceptance: ['spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
     'discrepancy-resume': ['feature', 'assignment', 'status'],
     'discrepancy-recover': ['id', 'issue', 'board-root'],
     'discrepancy-rerun': ['id', 'out', 'execute', 'ai-kit'],

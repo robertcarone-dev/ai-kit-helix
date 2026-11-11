@@ -49,6 +49,7 @@ export function runCommand(
   cwd: string,
   timeoutMs = 90000,
   env: NodeJS.ProcessEnv = process.env,
+  interruption?: AbortSignal,
 ): Promise<CommandRecord> {
   return new Promise((done, reject) => {
     const started = Date.now(),
@@ -68,12 +69,15 @@ export function runCommand(
         else child.kill(signal);
       } catch {}
     };
-    const terminate = (reason: string) => {
+    const terminate = (reason: string, graceMs = 2000) => {
       if (failure) return;
       failure = reason;
       kill('SIGTERM');
-      killTimer = setTimeout(() => kill('SIGKILL'), 2000);
+      killTimer = setTimeout(() => kill('SIGKILL'), graceMs);
     };
+    const onInterrupt = () => terminate('Command interrupted; inspect the owning recovery journal.', 120000);
+    interruption?.addEventListener('abort', onInterrupt, { once: true });
+    if (interruption?.aborted) onInterrupt();
     const timer = setTimeout(
       () => terminate('Command timeout; remote work may still be active.'),
       timeoutMs,
@@ -87,11 +91,13 @@ export function runCommand(
       if (stderr.length > 1_000_000) terminate('Command error output limit exceeded.');
     });
     child.on('error', (e) => {
+      interruption?.removeEventListener('abort', onInterrupt);
       clearTimeout(timer);
       clearTimeout(killTimer);
       reject(e);
     });
     child.on('close', (code) => {
+      interruption?.removeEventListener('abort', onInterrupt);
       clearTimeout(timer);
       clearTimeout(killTimer);
       const record = {
@@ -565,6 +571,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
           }
         }
         capturesComplete = true;
+        row.captureComplete = true;
         reviewCase(c, row, retained);
       } catch (e) {
         row.status = 'blocked';

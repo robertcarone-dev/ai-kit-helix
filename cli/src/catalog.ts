@@ -77,7 +77,9 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
   }
   const used = new Set<string>();
   const entries = catalog.entries.map((entry: any) => {
-    const issues = entry.discrepancies.map((key: string) => {
+    const result = entry.acceptanceItem === null ? null : acceptance?.items.find((item: any) => item.id === entry.acceptanceItem);
+    const discrepancyIds = [...new Set<string>([...entry.discrepancies, ...(result ? result.cases.flatMap((row: any) => row.latestAssessment ? row.latestAssessment.discrepancies : []) : [])])];
+    const issues = discrepancyIds.map((key: string) => {
       used.add(key); const record = discrepancies.get(key);
       if (!record) throw new Error('Unknown linked discrepancy: ' + key);
       return { id: key, status: record.status, revision: record.revision, path: record.path, expected: record.expected, observed: record.observed, nextAction: record.nextAction ?? null };
@@ -95,11 +97,12 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
       if (!evidence.some(value => value.path === path && value.sha256 === sha256)) evidence.push({ path, sha256, origin, availability });
     }
     entry.evidence.forEach((path: string) => artifact(path, null, 'catalog'));
-    for (const key of entry.discrepancies) for (const pin of discrepancies.get(key).evidence) artifact(pin.path, pin.sha256, key);
+    for (const key of discrepancyIds) for (const pin of discrepancies.get(key).evidence) artifact(pin.path, pin.sha256, key);
     if (previous) previous.evidence.forEach(path => artifact(path, null, 'legacy report'));
-    const result = entry.acceptanceItem === null ? null : acceptance?.items.find((item: any) => item.id === entry.acceptanceItem);
     if (entry.acceptanceItem !== null && !result) throw new Error('Missing declared acceptance item: ' + entry.acceptanceItem);
     if (result) for (const row of result.cases) {
+      if (row.latestAssessment) for (const pin of row.latestAssessment.evidence) artifact(pin.path, pin.sha256, 'agent assessment: ' + row.id + ' / ' + row.viewport);
+      if (row.latestExecution) for (const pin of row.latestExecution.artifacts) artifact(pin.path, pin.sha256, 'case execution: ' + row.id + ' / ' + row.viewport);
       if (row.priorEvidence) for (const source of row.priorEvidence.sources) artifact(source.path, null, 'prior case evidence: ' + row.id);
       for (const issue of row.linkedDiscrepancies) artifact(issue.path, null, 'case discrepancy: ' + row.id);
     }
@@ -108,7 +111,7 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
       missingSources: [...entry.sources, ...entry.implementationReferences].filter(path => !existsSync(catalogPath(root, path))),
       issues, evidence, comparisons: comparisons.filter(record => record.links.some((link: any) => link.item === entry.id)),
       legacy: previous ? { status: previous.status, summary: previous.summary, reportedUtc: legacy.reportedUtc } : null,
-      acceptance: result ? { status: result.status, required: result.required, accepted: result.accepted, cases: result.cases.length } : null };
+      acceptance: result ? { status: result.status, required: result.required, accepted: result.accepted, cases: result.cases.length, verified: result.cases.filter((row: any) => row.assessmentAvailable && row.latestAssessment.outcome === 'matched').length, mismatches: result.cases.filter((row: any) => row.assessmentAvailable && row.latestAssessment.outcome === 'mismatch').length, pendingReview: result.cases.filter((row: any) => row.latestRun && row.review === 'pending').length } : null };
   });
   return { format: 'helix-game-catalog', version: 1, project, title: catalog.title, assessedUtc: new Date().toISOString(), sources: catalog.sources, exclusions: catalog.exclusions, entries,
     summary: { total: entries.length, game: entries.filter((entry: any) => entry.scope === 'game').length, definedCoverage: entries.filter((entry: any) => entry.acceptance !== null).length, accepted: entries.filter((entry: any) => entry.acceptance?.status === 'accepted').length, discrepancies: discrepancies.size },
