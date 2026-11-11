@@ -1,3 +1,6 @@
+import { verificationStatus, startVerification } from '../src/verification-jobs.ts';
+import { resolutionDefinitions, resolutionStatus, reviewResolution } from '../src/resolution.ts';
+import { planAcceptanceCase } from '../src/acceptance-runner.ts';
 import { catalogStatus, catalogPath } from '../src/catalog.ts';
 /** Reusable Workbench endpoints. The host validates the connected checkout and supplies its project root. */
 import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
@@ -29,6 +32,36 @@ export function referenceObservation(root: string, referenceRoot: string, projec
   return { version: 1 as const, project, variant: scope.variant, identity: recordHash([...files].sort(([a], [b]) => a.localeCompare(b))), observedUtc: new Date().toISOString() };
 }
 export async function acceptanceBackend(root: string, referenceRoot: string, project: string, route: string, input: any): Promise<Response> {
+  if (route === '/acceptance/verification-start') return Response.json(startVerification(root, referenceRoot, project, input.id, input.expectedToken), { status: 202 });
+  if (route === '/acceptance/verification-status') {
+    const execution = verificationStatus(root, project, input.id);
+    if (!execution.configured) return Response.json(execution);
+    const acceptance = await acceptanceStatus(root, project, referenceObservation(root, referenceRoot, project));
+    const rows = acceptance.items.find(item => item.id === execution.workflow.acceptanceItem)!.cases.filter(entry => entry.id === execution.workflow.caseId && execution.workflow.viewports.includes(entry.viewport));
+    return Response.json({ ...execution, results: rows.map(entry => ({ viewport: entry.viewport, outcome: entry.verification === 'matched' && entry.assessmentAvailable ? entry.latestAssessment!.outcome : entry.verification, current: entry.freshness === 'current' && entry.availability === 'available', observations: entry.latestAssessment?.observations ?? entry.latestRun?.observations ?? [], capturedUtc: entry.latestRun?.capturedUtc ?? null })) });
+  }
+  if (route === '/acceptance/resolutions') return Response.json({ project, findings: resolutionDefinitions(root, project).filter((finding: any) => finding.item === input.item).map((finding: any) => resolutionStatus(root, project, finding.id)) });
+  if (route === '/acceptance/resolution-review') return Response.json(reviewResolution(root, project, input.review));
+  if (route === '/acceptance/resolution-plan' || route === '/acceptance/resolution-media') {
+    const status = resolutionStatus(root, project, input.id);
+    if (status.token !== input.expectedToken) throw new Error('Finding or evidence changed. Refresh before continuing.');
+    if (route === '/acceptance/resolution-plan') {
+      const definition = status.definition, catalog = catalogStatus(root, project, await acceptanceStatus(root, project));
+      const item = catalog.entries.find((item: any) => item.id === definition.item)!;
+      const plans = [];
+      for (const viewport of definition.viewports) plans.push(await planAcceptanceCase(root, project, item.acceptanceItem!, definition.caseId, viewport, join(root, '.aikit/scratch/resolution-' + definition.id, viewport)));
+      return Response.json({ plans, note: 'Read-only plan. Run captures in an owned checkout; this action does not start Unity.' });
+    }
+    if (!Number.isInteger(input.artifact) || input.artifact < 0 || input.artifact >= status.artifacts.length) throw new Error('Select registered resolution evidence');
+    const artifact = status.artifacts[input.artifact];
+    if (artifact.status !== 'intact') throw new Error('Retained evidence is missing or changed');
+    const bytes = readFileSync(catalogPath(root, artifact.path));
+    if (digest(bytes) !== artifact.expected) throw new Error('Evidence changed while opening');
+    const mime: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', json: 'text/plain', txt: 'text/plain', md: 'text/plain' };
+    const extension = artifact.path.split('.').pop()!;
+    if (!Object.hasOwn(mime, extension)) throw new Error('Unsupported resolution preview type');
+    return new Response(bytes, { headers: { 'Content-Type': mime[extension], 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' } });
+  }
   if (route === '/acceptance/catalog' || route === '/acceptance/catalog-evidence') {
     const status = existsSync(join(root, 'Tools/Helix/acceptance/scope.json')) ? await acceptanceStatus(root, project, referenceObservation(root, referenceRoot, project)) : null;
     const catalog = catalogStatus(root, project, status);

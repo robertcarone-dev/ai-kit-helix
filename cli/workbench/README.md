@@ -78,3 +78,57 @@ Tools/Helix/bin/helix acceptance plan --folder results --discipline ta --viewpor
 Folder arguments are stable IDs and include descendants. Catalog commands accept `--scope game|tooling|reference-only|all` (default all). Tree defaults to readable text; status defaults to JSON. Discipline selects features with open/blocked work; Dev and TA both include shared work. Returned feature records retain complete issue context. Unknown folders/disciplines fail rather than silently widening selection. Validation remains whole-catalog and rejects filters.
 
 Selected acceptance plans include every case of the matched features, optionally narrowed by viewport. This is feature-level work selection, not a claim that individual criteria have a discipline. Output paths are unique per item/case/viewport. Planning remains read-only and never runs a capture. Folder/discipline filters are rejected for run, publish, and review mutations; execution still requires explicit case selection. Missing acceptance mappings contribute no plans and remain visible in catalog status.
+
+
+### Actionable detail summaries
+
+Feature Overview groups required case/viewport checks by their next prerequisite: setup blockers, missing capture, unavailable evidence, captured difference, freshness check, measurement, remaining acceptance gates, or human review. Counts are mutually exclusive per check; additional gates can still apply. Each action opens the corresponding Review filter. Recorded discrepancy counts remain separate and do not assert that every open record describes a current-build defect. The hierarchy reports concrete counts rather than interpreting missing evidence as broken implementation. Case setup shows authored blockers and a direct action to reveal existing CLI instructions. These projections do not change acceptance gates or decisions.
+
+### Finding resolution workflow
+
+Consumers may opt findings into the workflow with `Tools/Helix/resolutions/pilots.json`: `{ "version": 1, "project": "...", "findings": [{ "id": "discrepancy-id", "item": "catalog.feature", "title": "Short title", "caseId": "declared-case", "viewports": ["phone"] }] }`. Each discrepancy must belong to that catalog item, and the case/viewports must exist in its acceptance definition. Missing configuration means no configured resolution cards. This index holds routing only: the existing immutable discrepancy revisions remain authoritative for assignment, integration commits, retained evidence, and disposition.
+
+Copy `ResolutionWorkflow.tsx` and `resolution-view.ts` with the shared Workbench components. The validated mod host must delegate `/acceptance/resolutions`, `/acceptance/resolution-media`, `/acceptance/resolution-plan`, and `/acceptance/resolution-review` to `acceptanceBackend`, alongside the existing routes. Host checkout/project validation is still required before delegation.
+
+Implementation is derived from declared fix-commit ancestry in the receiving HEAD; evidence checks hash retained artifacts and declared inputs; review reads the latest discrepancy disposition. Integrated does not mean runtime-verified, and recorded resolution is not proof that evidence remains current. Unknown/unlinked commits, missing evidence, missing provenance, or changed input pins block resolution. Verification plans reuse existing case adapters and never start Unity.
+
+`helix resolution status --finding ID` returns those three tracks and an assessment token. `helix resolution review --spec FILE` accepts exactly `{ id, expectedToken, reviewer, notes, action, evidenceReviewed }`, with action `resolve|request-changes|block|reopen`. The token binds the latest discrepancy, receiving HEAD, and checked evidence/input bytes. Resolution additionally requires an integrated fix, intact artifacts with current nonempty input pins, and explicit scoped review acknowledgment. Identity is self-reported, as in existing acceptance review. Reopening is required before changing a terminal disposition.
+
+Review appends through the existing `discrepancy-save --after REVISION` writer, preserving atomic create-only revision/conflict behavior. It does not maintain a competing decision store, submit AI Kit messages, run a capture, publish Git changes, or approve feature acceptance. Review metadata is retained in the new discrepancy revision's `resolutionReview` field. Real project pilot decisions should only be submitted by the reviewer; automated durability/transition tests use synthetic checkouts.
+
+## Run verification from Workbench
+
+Hosts delegate `/acceptance/verification-status` and `/acceptance/verification-start` to `acceptanceBackend` after the same connected-checkout validation as other acceptance routes. `VerificationRun.tsx` displays the durable job, per-viewport results and authored review policy. Requests return promptly; closing the panel does not cancel the worker. Polling resumes when the panel opens again.
+
+The consumer declares `Tools/Helix/resolutions/automation.json`:
+
+```json
+{
+  "version": 1,
+  "project": "example",
+  "workflows": [{
+    "id": "declared-finding-id",
+    "review": "automated",
+    "unity": {
+      "scene": "Assets/Scenes/Startup.unity",
+      "preflightScripts": ["Tools/Verification/storage-audit.cs"]
+    }
+  }]
+}
+```
+
+IDs refer to existing resolution definitions, which supply the case and required viewports. Setup scripts, scene names, expected behavior and executable adapters belong to the consumer. Use `review: "human"` for judgment-based workflows. Automated results never manufacture a human acceptance record or complete the whole feature.
+
+Each receiving checkout configures its dedicated local execution target in ignored `.helix/workbench-execution.json`:
+
+```json
+{"version":1,"target":"/absolute/dedicated-linked-worktree","unityExecutable":"/absolute/path/to/unity"}
+```
+
+The target must be an opted-in standalone comparison worktree from the same Git repository, with matching case definitions, declared inputs and toolkit snapshot. Managed agent lanes and the receiving checkout are refused. Workbench does not overwrite target source or borrow an existing Editor. A maintainer prepares/synchronizes the dedicated checkout once, including project-owned comparison storage prerequisites and installed dependencies. The explicit executable path also supplies the CLI directory to child recipes, independent of desktop shell PATH settings.
+
+Start checks the setup token and acquires exclusive receiving/target locks. The worker checks process ownership, the Unity lockfile and CLI status before launching the declared Editor version. It runs authored storage prerequisites, executes viewports sequentially through the existing case adapters, retains complete capture folders under `Tools/Helix/evidence/verification`, checks hashes/current source identity, and imports immutable runs and automated assessments. Node adapters must emit their fresh `capture/acceptance-run.json` in the requested output and keep artifacts within that output. Their owned capture lifecycle must restore before returning.
+
+A measured pass is independent of human approval. An automated finding gets a new scoped resolved/open discrepancy revision only after all results, current integration, cleanup, and an unchanged finding token are confirmed. Concurrent edits prevent disposition replacement. Visual comparisons outside the declared criterion remain separate. Setup failures show **Blocked**, measured mismatches **Failed**, and current matches **Automatically verified**; blocked infrastructure is not a request for an aesthetic review.
+
+Local job journals and command receipts live under `.helix/workbench-runs`. Dead workers remain visible as interrupted; retained locks are never silently taken over. Inspect the job and its owned process/session, perform the adapter's supported restoration, then clear only that job's matching locks before retrying. Unknown launch/cleanup outcomes require recovery, not automatic approval.

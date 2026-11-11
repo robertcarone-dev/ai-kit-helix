@@ -24,6 +24,8 @@ const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
   catalog status|tree [--folder ID] [--discipline dev|ta|shared|unassigned] [--scope game|tooling|reference-only|all] [--format json|text]
   catalog validate
+  resolution status --finding ID
+  resolution review --spec FILE
   acceptance validate|status|publish [--reference CURRENT_REFERENCE_JSON]
   acceptance record-run|assess|review --spec RECORD_JSON [--reference CURRENT_REFERENCE_JSON]
   acceptance adapters
@@ -176,6 +178,7 @@ async function main() {
     return;
   }
   const allowed: Record<string, string[]> = {
+    resolution: ['finding', 'spec'],
     catalog: ['folder', 'discipline', 'scope', 'format'],
     acceptance: ['folder', 'discipline', 'spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
     'discrepancy-resume': ['feature', 'assignment', 'status'],
@@ -238,6 +241,14 @@ async function main() {
   for (const k of Object.keys(options))
     if (!['project-root', 'helix-project'].includes(k) && !allowed[command].includes(k))
       throw new Error('Unknown option --' + k);
+  if (command === 'resolution') {
+    const { resolutionStatus, reviewResolution } = await import('./resolution.ts');
+    if (pos.length !== 1 || !['status', 'review'].includes(pos[0])) throw new Error('Use resolution status|review');
+    const project = adapterSettings(root).helix.project;
+    if (pos[0] === 'status') { if (!options.finding || options.spec) throw new Error('Use resolution status --finding ID'); return resolutionStatus(root, project, options.finding); }
+    if (!options.spec || options.finding) throw new Error('Use resolution review --spec FILE');
+    return reviewResolution(root, project, JSON.parse(readFileSync(resolve(root, options.spec), 'utf8')));
+  }
   if (command === 'catalog') {
     if (pos.length !== 1 || !['status', 'tree', 'validate'].includes(pos[0])) throw new Error('Use catalog status|tree|validate');
     const { catalogStatus, catalogTree, renderCatalogTree } = await import('./catalog.ts');

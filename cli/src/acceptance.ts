@@ -146,6 +146,8 @@ export async function acceptanceStatus(root: string, project: string, reference?
   if (reference && (reference.project !== scope.project || reference.variant !== scope.variant)) throw new Error('Reference observation belongs to another project/variant');
   const { loadCaseAdapters, acceptanceExecutions } = await import('./acceptance-runner.ts');
   const adapters = loadCaseAdapters(root, project), executions = acceptanceExecutions(root, project);
+  const { automationDefinitions } = await import('./verification-jobs.ts');
+  const automation = automationDefinitions(root, project);
   const runs = records(root, 'runs', readRun), decisions = records(root, 'decisions', readDecision);
   checkDecisionRuns(decisions, runs);
   const assessments = records(root, 'assessments', readAssessment);
@@ -203,7 +205,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
       if (!assessmentAllowsAcceptance) reasons.push('Agent assessment requires recheck: ' + (assessmentAvailable ? latestAssessment!.outcome : 'evidence missing or changed'));
       const canAccept = reasons.length === 0;
       const accepted = canAccept && decisionApplies && decision!.status === 'accepted';
-      cases.push({ latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required, criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review: decisionApplies ? decision!.status : 'pending', freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
+      cases.push({ reviewRequirement: automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id)?.review ?? 'human', latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required, criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review: decisionApplies ? decision!.status : 'pending', freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
     }
     const required = cases.filter(entry => entry.required), accepted = required.filter(entry => entry.accepted).length;
     const counts = (entries: typeof cases) => ({ required: entries.filter(entry => entry.required).length, accepted: entries.filter(entry => entry.required && entry.accepted).length });
