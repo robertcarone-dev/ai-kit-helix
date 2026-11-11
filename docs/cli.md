@@ -2,9 +2,9 @@
 
 For optional project-owned Workbench integration, scenario controls, and event traces, see [Porting Workbench](Workbench.md). Start its CLI session with `start --workbench yes`. For offline review, `workbench prepare --spec REVIEW_SPEC --out NEW_DIR` checks pinned evidence and declared source freshness, generates comparisons, and creates a bundle for the mod; see the Workbench spec and exit-code contract.
 
-Requires Node >=22.18 and a configured local Helix service. Install dependencies with `npm ci --prefix Tools/Helix` and Chromium with `npm run install-browser --prefix Tools/Helix`. The browser workflow does not require AI Kit. Automatic Helix Desktop launch is macOS-only; on other platforms start the local service first.
+Requires Node >=22.18 and a configured local Helix service. Install dependencies with `npm ci --prefix Tools/Helix/toolkit` and Chromium with `npm run install-browser --prefix Tools/Helix/toolkit`. The browser workflow does not require AI Kit. Automatic Helix Desktop launch is macOS-only; on other platforms start the local service first.
 
-For offline image review, use `compare` for native PNG pairs and regional measurements, `debug-image` for image channels, `recording-sheet` for recording contact sheets, and `vfx-compare` for paired event filmstrips. PNG diagnostics use the installed `pngjs` dependency; recording review requires Python 3.10+, ffmpeg and ffprobe. None requires Pillow (`PIL`). Prefer these commands over custom PIL scripts. See `Tools/Helix/DebugViews.md` and the recording-sheet spec in `Tools/Helix/WorkflowToolkit.md` in the installed snapshot. `doctor` does not check these offline dependencies.
+For offline image review, use `compare` for native PNG pairs and regional measurements, `debug-image` for image channels, `recording-sheet` for recording contact sheets, and `vfx-compare` for paired event filmstrips. PNG diagnostics use the installed `pngjs` dependency; recording review requires Python 3.10+, ffmpeg and ffprobe. None requires Pillow (`PIL`). Prefer these commands over custom PIL scripts. See `Tools/Helix/toolkit/DebugViews.md` and the recording-sheet spec in `Tools/Helix/toolkit/WorkflowToolkit.md` in the installed snapshot. `doctor` does not check these offline dependencies.
 
 From a configured checkout:
 
@@ -49,23 +49,23 @@ Rectangles use native top-left pixels: `[left, top, right, bottom]`, with right 
 
 `comparison.json` retains the whole-image results and adds `regionsSource` (absolute path and SHA256 of the supplied JSON) and `regions`. Each region reports `pixelCount`, `referenceMeanRgb`, `candidateMeanRgb`, `meanDeltaRgb`, `changedPixels`, `changedFraction`, `meanAbsoluteDeltaRgb`, and `maxAbsoluteDeltaRgb`. Means use encoded 8-bit RGB without gamma conversion. Signed mean delta is candidate minus reference; mean absolute delta averages absolute per-pixel differences, so opposing changes cannot cancel. Changed pixels have at least one different RGB channel. The existing review page includes a regional measurement table; the images remain full-size. Regions may overlap and are reported independently. No threshold, alignment, resizing or acceptance verdict is inferred.
 
-Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix/WorkflowToolkit.md` for optional AI Kit workflows. No game build or Production check is required.
+Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix/toolkit/WorkflowToolkit.md` for optional AI Kit workflows. No game build or Production check is required.
 
 For sprite/UI rendering diagnosis, `render-inspect --spec FILE --out EMPTY_DIR` combines captured node properties, sprite usage, optional serialized UI settings and related render traces for the Workbench’s **Inspect rendering** drill-down. See [Render inspector](RenderInspector.md).
 
 ## UI comparison
 
-`ui-look --match TEXT` inspects semantic bindings, text/sprite metadata and native layout observations. `ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR` produces an element report. `ui-matrix --spec JSON --out EMPTY_DIR` plans a case matrix; only explicit `--execute yes` executes supplied Unity recipes. Read the UI contract (`Tools/Helix/UI.md` in an installed project; `docs/ui.md` in the source repository) for schema, limitations, isolation and cleanup.
+`ui-look --match TEXT` inspects semantic bindings, text/sprite metadata and native layout observations. `ui-compare --reference RECEIPT --candidate RECEIPT --spec JSON --out EMPTY_DIR` produces an element report. `ui-matrix --spec JSON --out EMPTY_DIR` plans a case matrix; only explicit `--execute yes` executes supplied Unity recipes. Read the UI contract (`Tools/Helix/toolkit/UI.md` in an installed project; `docs/ui.md` in the source repository) for schema, limitations, isolation and cleanup.
 
 ## UI conversion tools
 
-`ui-assets --spec JSON --out EMPTY_DIR` stages local PNG/WebP/JPEG frames as PNGs with import metadata. `ui-plan --spec JSON --out EMPTY_DIR` proposes layout edits from paired native observations and explicit project mappings. `ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR` identifies cases affected by declared dependency changes. These commands do not launch Unity or apply prefab changes. Read the conversion contract (`Tools/Helix/UIPort.md` when installed; [ui-port.md](ui-port.md) in the source repository) before authoring specs.
+`ui-assets --spec JSON --out EMPTY_DIR` stages local PNG/WebP/JPEG frames as PNGs with import metadata. `ui-plan --spec JSON --out EMPTY_DIR` proposes layout edits from paired native observations and explicit project mappings. `ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR` identifies cases affected by declared dependency changes. These commands do not launch Unity or apply prefab changes. Read the conversion contract (`Tools/Helix/toolkit/UIPort.md` when installed; [ui-port.md](ui-port.md) in the source repository) before authoring specs.
 
 `conversion-plan --spec JSON --out EMPTY_DIR` joins hash-pinned, reviewed semantic links to existing asset/layout specs and optional verification matrices. It stages assets and proposes layouts; it never applies changes or executes verification. Read the same conversion contract for manifest requirements.
 
 ## Scene comparison
 
-`scene-look [--profile NAME]` prints a read-only Phaser/Three scene inventory from a ready named scenario. A profile selects a built-in property set or a project-owned semantic scope from `sceneProfiles`. `capture SCENARIO --out EMPTY_DIR --scene-profile NAME` embeds that scene observation during the existing capture hold. `scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR` compares explicit node or group mappings, camera-projected landmarks and optional declared world-coordinate conversions. It writes diagnostic JSON plus geometric SVG overlays. Read the scene contract (`Tools/Helix/Scene.md` when installed; [scene.md](scene.md) in the source repository) for snapshot prerequisites, supported bounds and result statuses. Scene snapshots supplement separately captured images; they are not visual acceptance.
+`scene-look [--profile NAME]` prints a read-only Phaser/Three scene inventory from a ready named scenario. A profile selects a built-in property set or a project-owned semantic scope from `sceneProfiles`. `capture SCENARIO --out EMPTY_DIR --scene-profile NAME` embeds that scene observation during the existing capture hold. `scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR` compares explicit node or group mappings, camera-projected landmarks and optional declared world-coordinate conversions. It writes diagnostic JSON plus geometric SVG overlays. Read the scene contract (`Tools/Helix/toolkit/Scene.md` when installed; [scene.md](scene.md) in the source repository) for snapshot prerequisites, supported bounds and result statuses. Scene snapshots supplement separately captured images; they are not visual acceptance.
 
 `scene-record --out EMPTY_DIR --duration SECONDS --interval-ms MS [--profile NAME]` samples the current ready scenario without replaying setup. `scene-motion --reference SEQUENCE --candidate SEQUENCE --spec JSON --out EMPTY_DIR` compares samples using explicit event-relative timelines and time tolerance. Appearance, relationship and repeated-style rules in the scene spec compare explicitly selected observations with declared tolerances and conversions. Inspect deadline timing and missed samples before interpreting temporal coverage. Read the scene contract before interpreting material values, event clocks or incomplete coverage.
 
@@ -97,7 +97,7 @@ The batch captures native lossless PNGs using the full Chromium distribution ins
 
 Measure initial loading, fixture preparation, view changes and PNG capture separately. Warm capture latency excludes startup and fixture setup. The generic toolkit has no universal subsecond guarantee: benchmark the actual project and machine. Before accepting scene reuse, compare a representative reused case with a fresh-session capture at the same state, viewport and seed, then inspect the images and receipts.
 
-The required project-owned `batch` adapter is documented in `Tools/Helix/Adapter.md` (source: [project-adapter.md](project-adapter.md)).
+The required project-owned `batch` adapter is documented in `Tools/Helix/toolkit/Adapter.md` (source: [project-adapter.md](project-adapter.md)).
 
 ## Agent-authored fixtures
 
@@ -107,7 +107,7 @@ Run `helix fixture-record ID --out NEW_DIR` to execute the authored case once in
 
 For a Unity handoff, supply notes as a JSON array of objects with integer timeMs (from clip start) and text. The author can be an agent or designer. Run `helix fixture-handoff --recording DIR --notes FILE --out NEW_ZIP`. Registered fixture captures use the fixture replay command. Scenario recordings include the start and explicit-scenario record commands with their observation duration and viewport. For older receipts the exporter matches viewport dimensions against the checkout configuration. The portable archive includes the clip, its hash-bound receipt, fixture identity, annotations and agent brief. The commands emit machine-readable JSON and use nonzero exits on failure. Python 3 is required for archive export.
 
-The optional designer UI runs with `python3 Tools/Helix/handoff-ui/serve.py --open`. It discovers registered fixtures and uses the same record and handoff commands as the agent.
+The optional designer UI runs with `python3 Tools/Helix/toolkit/handoff-ui/serve.py --open`. It discovers registered fixtures and uses the same record and handoff commands as the agent.
 
 ## Resume a feature without the previous session
 

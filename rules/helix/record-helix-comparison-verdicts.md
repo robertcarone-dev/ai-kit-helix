@@ -37,7 +37,7 @@ Do not close a partly unmet scope. If residual coverage is genuinely independent
 
 ## Workbench review feedback
 
-When the project uses Workbench review, follow the [Workbench handoff contract](../../Tools/Helix/Dashboard.md#task-handoff) and its project adapter to register retained comparisons and read saved feedback on continuation and before handoff. Keep Workbench decisions, board verdicts and discrepancy dispositions distinct; review feedback does not transfer QA or deviation-approval ownership.
+When the project uses Workbench review, follow the [Workbench handoff contract](../../Tools/Helix/toolkit/Dashboard.md#task-handoff) and its project adapter to register retained comparisons and read saved feedback on continuation and before handoff. Keep Workbench decisions, board verdicts and discrepancy dispositions distinct; review feedback does not transfer QA or deviation-approval ownership.
 
 ## Continuation and evidence recovery
 

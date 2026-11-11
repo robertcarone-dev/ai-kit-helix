@@ -65,14 +65,15 @@ export function run(argv) {
   function tree(from,to) {for(const file of walk(join(source,from)))add(`${to}/${relative(join(source,from),file)}`,readFileSync(file));}
   if(command!=='remove') {
     if(unityHelper)tree('unity/Editor','Assets/HelixComparison/Editor');
-    tree('workflows/handoff-ui','Tools/Helix/handoff-ui');
-    tree('cli/workbench','Tools/Helix/workbench');
-    tree('cli/src','Tools/Helix/src');tree('cli/bin','Tools/Helix/bin');
-    for(const name of ['workflow.py','evidence_utils.py','event_window.py','recording_sheet.py','capture.py','delivery.py','handoff.py','coverage_plan.py','vfx.py','recovery.py','matrix_lock.py','worker_permit.py'])add('Tools/Helix/'+name,readFileSync(join(source,'workflows',name)));
-    for(const [src,dest] of [['cli.md','Toolkit.md'],['ui.md','UI.md'],['ui-port.md','UIPort.md'],['scene.md','Scene.md'],['workflows.md','WorkflowToolkit.md'],['project-adapter.md','Adapter.md'],['migration.md','Migration.md'],['DebugViews.md','DebugViews.md'],['Workbench.md','Workbench.md'],['EvidenceBaselines.md','EvidenceBaselines.md'],['RenderInspector.md','RenderInspector.md'],['Objects.md','Objects.md'],['Dashboard.md','Dashboard.md'],['Acceptance.md','Acceptance.md']])add(`Tools/Helix/${dest}`,readFileSync(join(source,'docs',src)));
+    tree('workflows/handoff-ui','Tools/Helix/toolkit/handoff-ui');
+    tree('cli/workbench','Tools/Helix/toolkit/workbench');
+    tree('cli/src','Tools/Helix/toolkit/src');tree('cli/bin','Tools/Helix/toolkit/bin');
+    add('Tools/Helix/bin/helix', Buffer.from('#!/bin/sh\nset -eu\nHERE="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$HERE/toolkit/bin/helix" "$@"\n'));
+    for(const name of ['workflow.py','evidence_utils.py','event_window.py','recording_sheet.py','capture.py','delivery.py','handoff.py','coverage_plan.py','vfx.py','recovery.py','matrix_lock.py','worker_permit.py'])add('Tools/Helix/toolkit/'+name,readFileSync(join(source,'workflows',name)));
+    for(const [src,dest] of [['cli.md','Toolkit.md'],['ui.md','UI.md'],['ui-port.md','UIPort.md'],['scene.md','Scene.md'],['workflows.md','WorkflowToolkit.md'],['project-adapter.md','Adapter.md'],['migration.md','Migration.md'],['DebugViews.md','DebugViews.md'],['Workbench.md','Workbench.md'],['EvidenceBaselines.md','EvidenceBaselines.md'],['RenderInspector.md','RenderInspector.md'],['Objects.md','Objects.md'],['Dashboard.md','Dashboard.md'],['Acceptance.md','Acceptance.md']])add(`Tools/Helix/toolkit/${dest}`,readFileSync(join(source,'docs',src)));
     const installed={...pkg,scripts:{'install-browser':'playwright install chromium'}};
-    add('Tools/Helix/package.json',Buffer.from(JSON.stringify(installed,null,2)+'\n'));
-    add('Tools/Helix/package-lock.json',readFileSync(join(source,'package-lock.json')));
+    add('Tools/Helix/toolkit/package.json',Buffer.from(JSON.stringify(installed,null,2)+'\n'));
+    add('Tools/Helix/toolkit/package-lock.json',readFileSync(join(source,'package-lock.json')));
     tree('skills','.claude/skills');
     for(const skill of readdirSync(join(source,'skills')).sort()) {
       if(copies)tree(`skills/${skill}`,`.agents/skills/${skill}`);
@@ -101,8 +102,9 @@ export function run(argv) {
   const installedFiles={...desired};
   if(preserveConflicts)for(const path of conflicts){if(previous.files[path])installedFiles[path]=previous.files[path];else delete installedFiles[path];}
   const sourceHash=hash(JSON.stringify(preserveConflicts?installedFiles:desired));
-  const report={command,projectRoot:root,version:pkg.version,sourceHash,rules,unityHelper,changes:changes.map(({path,action,before,after})=>({path,action,before,after})),createdProjectFiles:seeds.map(x=>x.path),conflicts,preservedConflicts:preserveConflicts?conflicts:[]};
+  const report={command,layoutVersion:2,projectRoot:root,version:pkg.version,sourceHash,rules,unityHelper,changes:changes.map(({path,action,before,after})=>({path,action,before,after})),createdProjectFiles:seeds.map(x=>x.path),conflicts,preservedConflicts:preserveConflicts?conflicts:[]};
   if(command==='preview')return report;
+  if(conflicts.length && preserveConflicts && previous.layoutVersion!==2)throw new Error('Layout migration requires reconciliation of all local conflicts; nothing written.');
   if(conflicts.length&&!preserveConflicts)throw new Error(`Locally modified or unmanaged files conflict; nothing written: ${conflicts.join(', ')}`);
   if(changes.length) {
     const state=join(root,'.helix'), isolated=join(state,'fixture-sessions');
@@ -120,13 +122,13 @@ export function run(argv) {
     if(change.after.type==='link'){if(current(dest))unlinkSync(dest);symlinkSync(change.after.target,dest);}
     else {
       const temp=dest+`.install-${process.pid}`;writeFileSync(temp,contents[change.path],{flag:'wx'});renameSync(temp,dest);
-      if(change.path==='Tools/Helix/bin/helix')chmodSync(dest,0o755);
+      if(['Tools/Helix/bin/helix','Tools/Helix/toolkit/bin/helix'].includes(change.path))chmodSync(dest,0o755);
     }
   }
   for(const seed of seeds){const dest=safe(root,seed.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,seed.bytes,{flag:'wx'});}
   if(command==='remove'){if(previous)unlinkSync(mp);}
   else {
-    const manifest={schemaVersion:1,name:pkg.name,version:pkg.version,sourceHash,rules,copySkills:copies,unityHelper,files:installedFiles,...(preserveConflicts&&conflicts.length?{deferredConflicts:conflicts}:{})};
+    const manifest={schemaVersion:1,layoutVersion:2,name:pkg.name,version:pkg.version,sourceHash,rules,copySkills:copies,unityHelper,files:installedFiles,...(preserveConflicts&&conflicts.length?{deferredConflicts:conflicts}:{})};
     mkdirSync(dirname(mp),{recursive:true});const temp=mp+`.install-${process.pid}`;writeFileSync(temp,JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});renameSync(temp,mp);
   }
   return report;

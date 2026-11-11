@@ -29,7 +29,7 @@ The reference must select exactly one captured Phaser node. Its receipt must inc
 
 Optional evidence:
 
-- `spriteUsage`: a pinned **spec**, passed to the existing `sprite-usage` collector. It must resolve to the same reference receipt and selected node. This checks the Unity sprite path, GUID and local file ID and collects prefab consumers and atlas observations. See the sprite-usage section of the CLI guide (`docs/cli.md` in source, `Tools/Helix/Toolkit.md` when installed).
+- `spriteUsage`: a pinned **spec**, passed to the existing `sprite-usage` collector. It must resolve to the same reference receipt and selected node. This checks the Unity sprite path, GUID and local file ID and collects prefab consumers and atlas observations. See the sprite-usage section of the CLI guide (`docs/cli.md` in source, `Tools/Helix/toolkit/Toolkit.md` when installed).
 - `renderTrace`: a pinned **spec**, passed to `render-trace`. Its feature/pass/property summary is shown as **Related render trace**, never as proof of the selected object's material or pixel shader execution.
 - `unityUi`: `{ "receipt": {"path":"ui-color.json", "sha256":"..."}, "prefab":"Assets/...prefab", "target":"Child/Graphic", "component":"UnityEngine.UI.Image", "field":"m_Color" }`. The receipt comes from the existing `Helix.Comparison.UiCompositing.Inspect` exporter. The command verifies binding fields and recorded asset hashes against this checkout. If a candidate snapshot supplies a prefab binding, it must agree. Serialized Graphic color, ancestor Canvas sorting and CanvasGroup alpha are shown separately from runtime observations. Generating a new Unity receipt follows the project's normal Editor isolation procedure; this command never starts an Editor.
 

@@ -17,7 +17,7 @@ Follow [the port recipe](../helix-reference/references/port-recipe.md). Map sour
 
 ## Scene property support
 
-Read `Tools/Helix/Scene.md` for read-only material/light inventories and explicit appearance comparison rules. Use an appearance profile and inspect effective Unity values alongside property-block provenance and material defaults. Preserve raw engine values and declare color spaces or numeric conversions only when inspected pipeline semantics support them. Equal shader parameters or light intensity do not establish equal output; missing pipeline properties remain unmeasured. Use the property report to guide one-variable diagnosis alongside native images.
+Read `Tools/Helix/toolkit/Scene.md` for read-only material/light inventories and explicit appearance comparison rules. Use an appearance profile and inspect effective Unity values alongside property-block provenance and material defaults. Preserve raw engine values and declare color spaces or numeric conversions only when inspected pipeline semantics support them. Equal shader parameters or light intensity do not establish equal output; missing pipeline properties remain unmeasured. Use the property report to guide one-variable diagnosis alongside native images.
 
 ## Procedure
 

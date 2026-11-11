@@ -1,6 +1,6 @@
 # Evidence and optional AI Kit workflows
 
-Requires Python 3.10+; managed Unity test execution currently supports Unix account-home semantics only. Run `python3 Tools/Helix/workflow.py --help` for commands. Browser capture remains usable without these integrations.
+Requires Python 3.10+; managed Unity test execution currently supports Unix account-home semantics only. Run `python3 Tools/Helix/toolkit/workflow.py --help` for commands. Browser capture remains usable without these integrations.
 
 `ledger-check LEDGER --inputs INPUTS` checks recorded input fingerprints and evidence hashes without changing verdicts. Ledgers contain `cases` with `id`, `inputs`, `status` and `evidence` entries (`path`, `sha256`); paths are relative to the ledger. Inputs are keyed by case ID. Authors must include all relevant dependencies.
 
@@ -10,18 +10,18 @@ Requires Python 3.10+; managed Unity test execution currently supports Unix acco
 
 `capture-plan --project-root DIR --width W --height H --kind motion` checks the project’s reviewed recorder profile. `recipe-plan CASE --project-root DIR --viewport NAME --out DIR` combines project scenarios/catalogs and hashes helpers; it prints plans, not execution. Missing configuration is a blocker for that operation.
 
-Managed tests require `Tools/Helix/Adapter.md` configuration and an active assigned lane. Use `test-plan --project-root DIR --editor PATH --filter FILTER --assignment ID --out DIR`, then `test-preflight --project-root DIR --assignment ID --out FRESH_DIR` while the owned Editor is ready and Play is stopped. Safely close only that Editor without releasing its assignment. `test-run` accepts the same plan arguments plus `--execute --isolation-receipt FILE`. The preflight receipt expires after twenty minutes and must match lane, assignment, revision and verifier paths/hashes.
+Managed tests require `Tools/Helix/toolkit/Adapter.md` configuration and an active assigned lane. Use `test-plan --project-root DIR --editor PATH --filter FILTER --assignment ID --out DIR`, then `test-preflight --project-root DIR --assignment ID --out FRESH_DIR` while the owned Editor is ready and Play is stopped. Safely close only that Editor without releasing its assignment. `test-run` accepts the same plan arguments plus `--execute --isolation-receipt FILE`. The preflight receipt expires after twenty minutes and must match lane, assignment, revision and verifier paths/hashes.
 
 The runner verifies closed-Editor state, source compatibility and account-home credentials, preserves XML/logs, and attempts `ai-kit unity ensure` restoration even after a failed process. Inspect run-receipt.json for both test and restoration results. Do not restart shared infrastructure or overwrite shared saves. Test success is not Helix parity.
 
 
 ## Readiness and synchronized motion
 
-After implementing the project-owned capture hooks documented in `Tools/Helix/Adapter.md`, run:
+After implementing the project-owned capture hooks documented in `Tools/Helix/toolkit/Adapter.md`, run:
 
 ```sh
-python3 Tools/Helix/capture.py gate --execute --project-root /path/to/game --assignment A-N --expected expected.json --out .aikit/scratch/gate-01
-python3 Tools/Helix/capture.py motion --execute --project-root /path/to/game --assignment A-N --expected expected.json --out .aikit/scratch/motion-01 --seconds 8 --timeout 90
+python3 Tools/Helix/toolkit/capture.py gate --execute --project-root /path/to/game --assignment A-N --expected expected.json --out .aikit/scratch/gate-01
+python3 Tools/Helix/toolkit/capture.py motion --execute --project-root /path/to/game --assignment A-N --expected expected.json --out .aikit/scratch/motion-01 --seconds 8 --timeout 90
 ```
 
 Omit `--assignment` only for a configured non-managed backend. Relative expected/output paths resolve against the selected project, independent of cwd or toolkit location. Outputs must be new directories inside that checkout's `.aikit/scratch`. A per-checkout capture lock prevents overlapping runs; inspect an abandoned lock and its owner rather than automatically removing it. Symlink paths cannot escape the project. Source hashes, compatibility profile and expected identity are checked before execution; `--execute` is required. Nothing is armed or inferred by default.
@@ -33,11 +33,11 @@ The gate waits for a project-defined safe transition, requests preparation at mo
 ## Delivery, reuse and timing
 
 ```sh
-python3 Tools/Helix/delivery.py integration --project-root /path/to/game --branch task-branch --base main --out integration.json
-python3 Tools/Helix/delivery.py pack --source evidence-directory --out new-package-directory --revision EXACT_REVISION_LABEL --part-mib 20
-python3 Tools/Helix/delivery.py upload --project-root /path/to/game --issue AK-N --package new-package-directory --out new-upload-receipt-directory
-python3 Tools/Helix/delivery.py reuse --ledger ledger.json --inputs current-inputs.json --out reuse.json
-python3 Tools/Helix/delivery.py timings --project-root /path/to/game --out timings.json
+python3 Tools/Helix/toolkit/delivery.py integration --project-root /path/to/game --branch task-branch --base main --out integration.json
+python3 Tools/Helix/toolkit/delivery.py pack --source evidence-directory --out new-package-directory --revision EXACT_REVISION_LABEL --part-mib 20
+python3 Tools/Helix/toolkit/delivery.py upload --project-root /path/to/game --issue AK-N --package new-package-directory --out new-upload-receipt-directory
+python3 Tools/Helix/toolkit/delivery.py reuse --ledger ledger.json --inputs current-inputs.json --out reuse.json
+python3 Tools/Helix/toolkit/delivery.py timings --project-root /path/to/game --out timings.json
 ```
 
 Delivery output paths are explicit filesystem paths (relative to cwd); they are not capture output paths. `integration` snapshots both refs and reports missing commits versus ancestry or patch equivalence, exiting nonzero for a merge gap. Merge commits absent from the target conservatively require review. It neither merges nor approves runtime behavior. Choose the project's actual integration branch; `main` is only the default.
@@ -50,7 +50,7 @@ Delivery output paths are explicit filesystem paths (relative to cwd); they are 
 
 ## Dispatch a recipe pilot
 
-Run `python3 Tools/Helix/workflow.py recipe-plan CASE --viewport VIEW --project-root DIR --out DIR/.aikit/scratch/ROUND` using absolute project and output paths. This offline command accepts configured scenarios and registered fixture IDs. Read `dispatch.gaps` before reserving a runtime. The catalog entry can declare a procedure for a manual Unity setup or the scenario can supply preflight, prepare, capture and restore stages. In the project fixture catalog, supply `trigger` (actual input or disclosed setup), `observation` (observable event/state), `measurement` (method and units) and `owner` (contact for missing prerequisites). List files influencing the route in `files`. The owner should verify a manual procedure supports the specific viewport.
+Run `python3 Tools/Helix/toolkit/workflow.py recipe-plan CASE --viewport VIEW --project-root DIR --out DIR/.aikit/scratch/ROUND` using absolute project and output paths. This offline command accepts configured scenarios and registered fixture IDs. Read `dispatch.gaps` before reserving a runtime. The catalog entry can declare a procedure for a manual Unity setup or the scenario can supply preflight, prepare, capture and restore stages. In the project fixture catalog, supply `trigger` (actual input or disclosed setup), `observation` (observable event/state), `measurement` (method and units) and `owner` (contact for missing prerequisites). List files influencing the route in `files`. The owner should verify a manual procedure supports the specific viewport.
 
 When status is `pilot-required`, exercise the scoped route in both authorized runtimes. Save a JSON receipt of this form and pin it under the catalog entry's `pilots[VIEW]` as a checkout-relative `{path, sha256}`:
 ```json
@@ -67,7 +67,7 @@ The fingerprint covers the viewport, recipe, Helix settings, catalog contract an
 Run the existing native recording check with a case-specific window in milliseconds:
 
 ```sh
-python3 Tools/Helix/workflow.py recording-check RUN/record.json --width 768 --height 1024 \
+python3 Tools/Helix/toolkit/workflow.py recording-check RUN/record.json --width 768 --height 1024 \
   --events RUN/events.json --event continue --before-ms 250 --after-ms 3000 \
   --visual-samples RUN/measurement.json > timing-report.json
 ```
@@ -107,3 +107,7 @@ Before claiming absent footage, inspect the overview, the event window and the r
 For the initial search, a spec containing only `{"recording":"run/motion.json"}` generates the full overview without an event claim. Inspect all overview pages, locate the event in the original frames, then supply the observed frame anchor for the detailed window.
 
 Each sheet run also writes `evidence.json`, with checkout-relative artifact paths and automatically pinned spec, recording receipt, and video or source frames. Optional `inputs` in the window spec lists additional source/recipe files relative to that spec; these are pinned before rendering and checked again afterward. The CLI supplies the project root; direct Python callers can pass it as the third argument. Import this manifest through `discrepancy-save`'s `evidenceManifests` authoring field instead of assembling dependency hashes by hand. Generated pins establish artifact provenance, not completeness of game-source dependencies or visual acceptance.
+
+### Cropped recording sheets
+
+A recording-sheet spec can include `crop: [x, y, width, height]` in encoded-frame pixels. Bounds are checked against decoded video dimensions or the Unity frame receipt before output creation. The report records `encodedSize` and `crop`; source hashes, frame IDs and timestamps remain unchanged. Cropped thumbnails are scaled to the standard review width, not native pixel evidence. Video selection is decoded in one pass with passthrough timing. Use a full overview first to locate the event, then a crop/window to limit image context.

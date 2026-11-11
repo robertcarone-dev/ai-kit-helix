@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.0 — Installed ownership layout
+
+- Install shared runtime, workflows, Workbench, guides and dependencies under `Tools/Helix/toolkit`; retain the stable launcher and all project data paths.
+- Upgrade through recorded manifest ownership and refuse unresolved local conflicts, including deferred-conflict mode during layout migration.
+- Keep generic tests upstream and document consumer import, dependency, evidence and backend migration responsibilities.
+- Preserve the consumer recording-sheet enhancement upstream: bounded crops, decoded dimensions and single-pass frame selection, with synthetic regression coverage.
+
+
 ## 1.4.0 (2026-11-11)
 
 - Add portable acceptance contracts, immutable run/review records, dependency-aware status and Workbench review/media modules.

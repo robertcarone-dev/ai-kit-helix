@@ -39,12 +39,18 @@ def recording_sheet(spec_path, out, project_root=None):
         if digest(video) != receipt['sha256']:
             raise ValueError('Video hash differs from motion receipt')
         probe = json.loads(run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
-                                '-show_frames', '-show_entries', 'frame=best_effort_timestamp_time',
+                                '-show_frames', '-show_streams', '-show_entries', 'frame=best_effort_timestamp_time:stream=width,height',
                                 '-of', 'json', str(video)]))
+        width, height = probe['streams'][0]['width'], probe['streams'][0]['height']
         frames = [dict(frame=i, seconds=float(row['best_effort_timestamp_time']))
                   for i, row in enumerate(probe['frames'])]
     if not frames:
         raise ValueError('No decoded frames')
+    crop = spec.get('crop')
+    if crop is not None:
+        if (not isinstance(crop, list) or len(crop) != 4 or any(type(v) is not int for v in crop) or
+                min(crop[:2]) < 0 or min(crop[2:]) <= 0 or crop[0] + crop[2] > width or crop[1] + crop[3] > height):
+            raise ValueError(f'crop must be [x,y,width,height] inside encoded frames ({width}x{height})')
     sources = [spec_path, receipt_path]
     sources += [video] if video else [Path(row['path']) for row in frames]
     sources += [(spec_path.parent / path).resolve() for path in spec.get('inputs', [])]
@@ -57,7 +63,7 @@ def recording_sheet(spec_path, out, project_root=None):
             raise ValueError('Frame identities must increase and times must be ordered')
     event = spec.get('event')
     if event is None:
-        return render(frames, video, receipt_path, receipt, out, None, None, set(), None, None, None, project, inputs)
+        return render(frames, video, receipt_path, receipt, out, None, None, set(), None, None, None, project, inputs, crop, width, height)
     if not event['name'] or not event['observation'] or type(event['frame']) is not int:
         raise ValueError('Event requires a name, observed-frame description and integer frame')
     matches = [i for i, row in enumerate(frames) if row['frame'] == event['frame']]
@@ -79,27 +85,32 @@ def recording_sheet(spec_path, out, project_root=None):
         i = bisect.bisect_left(times, low+n*interval/1000)
         if first <= i <= last:
             selected.add(i)
-    return render(frames, video, receipt_path, receipt, out, event, anchor, selected, low, high, interval, project, inputs)
+    return render(frames, video, receipt_path, receipt, out, event, anchor, selected, low, high, interval, project, inputs, crop, width, height)
 
 
-def render(frames, video, receipt_path, receipt, out, event, anchor, selected, low, high, interval, project, inputs):
+def render(frames, video, receipt_path, receipt, out, event, anchor, selected, low, high, interval, project, inputs, crop, width, height):
     times = [row['seconds'] for row in frames]
     basis = 'decoded video presentation seconds and zero-based frame ordinals' if video else 'recording capture seconds and Unity frame IDs'
     overview = sorted({round(i*(len(frames)-1)/23) for i in range(24)})
     out = fresh(inside(out, project))
     indexes = sorted(set(overview) | selected)
-    for i in indexes:
+    filters = ([f'crop={crop[2]}:{crop[3]}:{crop[0]}:{crop[1]}'] if crop is not None else []) + ['scale=240:-1']
+    if video:
+        # Decode once, selecting actual ordinals without CFR duplication or timestamp rounding.
+        select = '+'.join(f'eq(n\\,{i})' for i in indexes)
+        run(['ffmpeg', '-nostdin', '-v', 'error', '-i', str(video), '-vf', ','.join(['select='+select] + filters),
+             '-fps_mode', 'passthrough', '-start_number', '0', str(out/'decoded-%06d.png')])
+    for ordinal, i in enumerate(indexes):
         target = out / f'frame-{i:06d}.png'
         if video:
-            # Decode by ordinal, preserving the identity even with variable frame rate.
-            source = ['-i', str(video), '-vf', f'select=eq(n\\,{i}),scale=240:-1']
+            (out/f'decoded-{ordinal:06d}.png').rename(target)
         else:
-            source = ['-i', frames[i]['path'], '-vf', 'scale=240:-1']
-        run(['ffmpeg', '-nostdin', '-v', 'error', *source, '-frames:v', '1', str(target)])
+            run(['ffmpeg', '-nostdin', '-v', 'error', '-i', frames[i]['path'], '-vf', ','.join(filters), '-frames:v', '1', str(target)])
         frames[i]['thumbnail'] = target.name
         frames[i]['thumbnailSha256'] = digest(target)
         frames[i]['relativeMs'] = round((times[i]-times[anchor])*1000, 4) if anchor is not None else None
     report = dict(schemaVersion=1, generatorSha256=digest(Path(__file__)), recording=str(receipt_path), recordingSha256=digest(receipt_path), inputs=inputs,
+                  encodedSize=dict(width=width, height=height), crop=crop,
                   event=event, timeBasis=basis, requestedWindowSeconds=[low, high],
                   recordedSpanSeconds=[times[0], times[-1]],
                   windowFullyRecorded=low >= times[0] and high <= times[-1] if event else None,

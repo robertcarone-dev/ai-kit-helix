@@ -487,7 +487,7 @@ async function main() {
       scenarios: Object.keys(config.scenarios),
       notes: [
         'start opens installed Helix Desktop when needed; resolve and doctor never launch it.',
-        'Install browser with npm run install-browser from Tools/Helix.',
+        'Install browser with npm run install-browser from Tools/Helix/toolkit.',
       ],
     };
   }

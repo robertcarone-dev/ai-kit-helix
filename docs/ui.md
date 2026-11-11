@@ -87,7 +87,7 @@ Phaser captures expose configured font properties, wrapping, baseline metrics an
 
 Phaser screen bounds use the main camera and world AABB. Secondary cameras, rotated-camera geometry, masks and pixel occlusion require scoped custom instrumentation; use `uiProbe` to return additional JSON nodes/evidence. Do not treat layout bounds as visible pixel silhouettes. Both geometry and typography need visual verification before adopting tolerances.
 
-The optional Unity helper described in `Tools/Helix/Adapter.md` validates and writes this receipt contract. It supplies RectTransform bounds utilities; a project adapter supplies semantic mappings, state and any additional measured UI fields. It does not replace the project’s capture method or storage-isolation checks.
+The optional Unity helper described in `Tools/Helix/toolkit/Adapter.md` validates and writes this receipt contract. It supplies RectTransform bounds utilities; a project adapter supplies semantic mappings, state and any additional measured UI fields. It does not replace the project’s capture method or storage-isolation checks.
 
 ## Inputs and capture timing
 
@@ -119,7 +119,7 @@ Native PNG capture is viewport-only. Do not enable CDP `captureBeyondViewport` f
 
 Planning never starts an Editor/browser or writes evidence. Execution requires the project's supplied `preflight`, `prepare`, `capture`, `restore` recipes, an already available Editor, the selected `ai-kit` or `unity` backend on PATH, an isolated workspace, and no pre-existing reference browser session. It creates the Unity output directory, executes argument arrays without a shell, then compares `reference/reference.json` with `unity/unity.json`. The capture recipe must produce those names. Each case uses fresh output. `matrix.json` retains command results, failures, cleanup and cases not run.
 
-For scene-assisted cases, add `sceneSpec` and `sceneProfile` to the case and supply matching inline Unity scene evidence. Read the scene contract (`Tools/Helix/Scene.md` when installed; [scene.md](scene.md#paired-image-review-and-one-case-execution) in the source repository) for the request file, adapter fields and one-case command.
+For scene-assisted cases, add `sceneSpec` and `sceneProfile` to the case and supply matching inline Unity scene evidence. Read the scene contract (`Tools/Helix/toolkit/Scene.md` when installed; [scene.md](scene.md#paired-image-review-and-one-case-execution) in the source repository) for the request file, adapter fields and one-case command.
 
 The matrix starts its browser in a private session under `.helix/fixture-sessions/<matrix-token>`. Adjacent cases with the same viewport reuse that browser. Each case still runs its configured scenario setup and Unity restoration; browser reuse is not fixture reuse or permission to skip readiness. A viewport change, interruption, execution/capture failure or restoration failure closes the owned browser. A report-only failure after both captures succeed can retain the same-viewport browser when Unity restoration also succeeds; the failed case and its receipts remain recorded. Group compatible viewports in the spec when case ordering permits, and retain every case’s separate evidence.
 

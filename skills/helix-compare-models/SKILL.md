@@ -17,7 +17,7 @@ Follow [the port recipe](../helix-reference/references/port-recipe.md). Map a fi
 
 ## Scene property support
 
-Read `Tools/Helix/Scene.md` for explicit node/group mappings, projected landmarks, optional common-world conversions and appearance rules. Use a scoped geometry profile and check camera output surfaces and `boundsKind` before interpreting projected bounds. Supported mesh bounds use transformed local boxes in both engines; unsupported deformation remains unmeasured. A geometric box is not a silhouette or topology measurement; asset names are not content hashes. Keep shader, light and coordinate conversions project-owned and supported by inspected data.
+Read `Tools/Helix/toolkit/Scene.md` for explicit node/group mappings, projected landmarks, optional common-world conversions and appearance rules. Use a scoped geometry profile and check camera output surfaces and `boundsKind` before interpreting projected bounds. Supported mesh bounds use transformed local boxes in both engines; unsupported deformation remains unmeasured. A geometric box is not a silhouette or topology measurement; asset names are not content hashes. Keep shader, light and coordinate conversions project-owned and supported by inspected data.
 
 ## Procedure
 

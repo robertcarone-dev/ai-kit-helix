@@ -5,7 +5,7 @@ description: Trace a selected Unity URP renderer feature, pass inputs, output te
 
 # Trace a render pass
 
-Run the installed CLI directly from the project. Follow the render-trace contract in Tools/Helix/Toolkit.md. Start with the question about a camera and pass. Inspect the effective quality/pipeline and camera renderer selection when available; record an assumed selection explicitly. Identify the feature, graph pass label and relevant shader property from project assets and source.
+Run the installed CLI directly from the project. Follow the render-trace contract in Tools/Helix/toolkit/Toolkit.md. Start with the question about a camera and pass. Inspect the effective quality/pipeline and camera renderer selection when available; record an assumed selection explicitly. Identify the feature, graph pass label and relevant shader property from project assets and source.
 
 Run a configuration-only trace first. Follow the GUID and local-file-ID links; inspect the listed scheduling predicates, resource declarations and shader lines. Confirm what the shader samples and when. Record custom pass order, color/depth format and scope only where source or captured data supports them.
 

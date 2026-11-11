@@ -21,7 +21,7 @@ Follow [the port recipe](../helix-reference/references/port-recipe.md). Map the 
 
 ## Scene sampling support
 
-Read `Tools/Helix/Scene.md` for `scene-record`, the optional Unity `SceneSampling` helper and `scene-motion`. Use a project-observed event timeline, not sampler start time, to align snapshots. The sampler observes the current scenario; it does not reset animations or reproduce an event automatically. Use a scoped motion profile containing required nodes; choose appearance only when property sampling is required. Inspect actual sample timing, capture durations, missed deadlines and unmatched coverage, and keep unsampled transitions unmeasured. A fixture-readiness marker is not animation onset. Retain video and input/event evidence for rendered motion and behavior.
+Read `Tools/Helix/toolkit/Scene.md` for `scene-record`, the optional Unity `SceneSampling` helper and `scene-motion`. Use a project-observed event timeline, not sampler start time, to align snapshots. The sampler observes the current scenario; it does not reset animations or reproduce an event automatically. Use a scoped motion profile containing required nodes; choose appearance only when property sampling is required. Inspect actual sample timing, capture durations, missed deadlines and unmatched coverage, and keep unsampled transitions unmeasured. A fixture-readiness marker is not animation onset. Retain video and input/event evidence for rendered motion and behavior.
 
 ## Procedure
 
@@ -43,9 +43,9 @@ Add the shared ledger fields plus source/target motion implementations and timin
 Finish when all required events and variants have supported dispositions and owned state is restored. Stop affected timing or trajectory claims when event alignment or sampling is insufficient; retain qualitative observations, identify the missing fixture/instrumentation and continue independent events.
 
 
-For configured Unity/backend captures, follow `Tools/Helix/WorkflowToolkit.md` and the project's adapter. Use the readiness/motion helper only after a reviewed live pilot; do not invent hooks or copy another game's fixtures. Record before actions, verify first/last event coverage, and restore owned state. Use delivery receipts to distinguish implemented, validated and integrated work. Reuse evidence only when its declared inputs and bytes remain valid.
+For configured Unity/backend captures, follow `Tools/Helix/toolkit/WorkflowToolkit.md` and the project's adapter. Use the readiness/motion helper only after a reviewed live pilot; do not invent hooks or copy another game's fixtures. Record before actions, verify first/last event coverage, and restore owned state. Use delivery receipts to distinguish implemented, validated and integrated work. Reuse evidence only when its declared inputs and bytes remain valid.
 
-For a designer's aligned handoff ZIP, run `handoff-owner --handoff FILE.zip --unity-project IDLE_ISOLATED_PROJECT --out NEW_EVIDENCE_DIR` on the receiving checkout. Use each note's clip paths, time range and disposition from `alignment.json`. Inspect both clips on a transition and preserve unresolved ownership. The fixture authoring contract and prerequisites are in Tools/Helix/Toolkit.md under “Aligning a scrubber pick to a Unity Animator”.
+For a designer's aligned handoff ZIP, run `handoff-owner --handoff FILE.zip --unity-project IDLE_ISOLATED_PROJECT --out NEW_EVIDENCE_DIR` on the receiving checkout. Use each note's clip paths, time range and disposition from `alignment.json`. Inspect both clips on a transition and preserve unresolved ownership. The fixture authoring contract and prerequisites are in Tools/Helix/toolkit/Toolkit.md under “Aligning a scrubber pick to a Unity Animator”.
 
 For a presenter event, inspect every property result for the note. A sprite assignment can precede the entrance and persist through the selected frame while a parent scale has a separate live clip binding. Use the writer stack and the property-specific clip path in the linked review.
 

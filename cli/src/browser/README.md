@@ -2,7 +2,7 @@
 
 `three-camera.js` installs the opt-in `window.helixThreeCamera` v1 API. It supplies reusable operations for Three.js perspective cameras. Loading the script does not change a camera.
 
-The installer copies this directory to `Tools/Helix/src/browser`. Load `Tools/Helix/src/browser/three-camera.js` before project browser scripts, including in configured batch script lists and standalone capture entry points that use the API.
+The installer copies this directory to `Tools/Helix/toolkit/src/browser`. Load `Tools/Helix/toolkit/src/browser/three-camera.js` before project browser scripts, including in configured batch script lists and standalone capture entry points that use the API.
 
 ## API
 

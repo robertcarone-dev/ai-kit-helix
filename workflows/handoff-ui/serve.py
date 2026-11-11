@@ -2,6 +2,7 @@
 """Designer client for installed Helix fixture commands."""
 import json
 import subprocess
+import sys
 import argparse
 import tempfile
 import threading
@@ -12,7 +13,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+sys.path.insert(0, str(HERE.parent))
+from workflow import project_root
+
+ROOT = project_root(HERE)
 OUTPUT = ROOT / ".helix" / "port-handoffs"
 CLI = ROOT / "Tools/Helix/bin/helix"
 RECORDING = threading.Lock()

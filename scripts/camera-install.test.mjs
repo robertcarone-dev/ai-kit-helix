@@ -9,7 +9,7 @@ test('camera utility is managed while game behavior and tests survive update and
  const call=command=>run([command,'--project-root',root]);
  try {
   call('install');
-  const helper=join(root,'Tools/Helix/src/browser/three-camera.js');
+  const helper=join(root,'Tools/Helix/toolkit/src/browser/three-camera.js');
   assert.ok(existsSync(helper));
   const project=join(root,'Tools/Helix/project-tests');
   mkdirSync(project,{recursive:true});writeFileSync(join(project,'game.test.ts'),'project-owned');

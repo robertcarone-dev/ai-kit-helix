@@ -7,6 +7,7 @@ This repository is the shared source toolkit. Consuming Unity projects receive a
 - Keep generic CLI code in `cli/`, evidence/workflow helpers in `workflows/`, shared instructions in `skills/` and optional obligations in `rules/`. Optional reusable Unity comparison infrastructure belongs in `unity/`.
 - Keep game identities, scenarios, game-specific Unity helpers, fixtures, compatibility profiles, credentials and evidence in the consuming project. Shared tests use synthetic projects.
 - `scripts/install.mjs` is the only installation implementation. `install.sh` checks prerequisites and forwards arguments; do not duplicate installation policy there.
+- Installed runtime, portable docs and dependencies belong under `Tools/Helix/toolkit/`; project data stays outside it. Keep the public launcher and project/evidence paths stable.
 - Preserve conflict detection, manifest hashes, project-file ownership and per-checkout session isolation. Resolve project context independently of this repository's location and propagate it to child processes.
 - Do not silently enable Unity execution without supplied recipes and verified storage/compatibility prerequisites. Preserve receipts, native dimensions and the distinction between fixtures and player input.
 - This repository does not patch AI Kit or own its managed lanes. Use the target project's supported lifecycle for any authorized live pilot.

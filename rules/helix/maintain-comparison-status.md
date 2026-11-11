@@ -13,7 +13,7 @@ At the next safe checkpoint before handoff, update the designated status after a
 
 Serialize overlapping summary edits through its assigned owner. Contributing lanes supply scoped facts and evidence through the existing handoff; do not overwrite concurrent updates. Use the configured receiving branch. Before calling work landed, verify receiving-branch inclusion or patch equivalence and record the receiving revision; lane-only work remains pending. Integration establishes inclusion, not acceptance.
 
-When the project uses a Workbench dashboard, designate one reporting owner in the project adapter for the receiving checkout's `.helix/porting-dashboard.json`. Follow the [Workbench handoff contract](../../Tools/Helix/Dashboard.md#task-handoff) and the project adapter for complete-snapshot publication and readback. Contributing lanes provide item updates through their existing handoff; they do not independently replace the shared inventory.
+When the project uses a Workbench dashboard, designate one reporting owner in the project adapter for the receiving checkout's `.helix/porting-dashboard.json`. Follow the [Workbench handoff contract](../../Tools/Helix/toolkit/Dashboard.md#task-handoff) and the project adapter for complete-snapshot publication and readback. Contributing lanes provide item updates through their existing handoff; they do not independently replace the shared inventory.
 
 ## Refresh the affected status
 

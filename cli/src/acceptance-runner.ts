@@ -131,7 +131,7 @@ export async function runAcceptanceCase(root: string, project: string, item: str
   if (mode === 'retained' && !plan.retained.length) throw new Error('No retained artifacts mapped to this case');
   if (mode === 'capture' && !plan.captureAvailable) throw new Error('No capture adapter for this case; inspect retained evidence or implement the missing route');
   if (mode === 'capture' && !isolatedWorkspace(root)) throw new Error('Live capture requires an owned isolated lane/worktree; the runner never launches an Editor');
-  if (mode === 'capture' && hashFile(catalogPath(root, 'Tools/Helix/src/acceptance-runner.ts')) !== hashFile(fileURLToPath(import.meta.url))) throw new Error('Target checkout runner differs; adopt the reviewed toolkit before capture');
+  if (mode === 'capture' && hashFile(catalogPath(root, 'Tools/Helix/toolkit/src/acceptance-runner.ts')) !== hashFile(fileURLToPath(import.meta.url))) throw new Error('Target checkout runner differs; adopt the reviewed toolkit before capture');
   mkdirSync(out, { recursive: true }); write(join(out, 'plan.json'), plan);
   const report: any = { version: 1, id: randomUUID(), project, item, caseId, viewport, mode, criteriaSha256: plan.criteriaSha256, routeSha256: plan.routeSha256, startedUtc: new Date().toISOString(), status: 'running', output: relative(root, out), artifacts: [], error: null };
   const journal = () => { const temporary = join(out, 'execution.tmp'); writeFileSync(temporary, JSON.stringify(report, null, 2) + '\n'); renameSync(temporary, join(out, 'execution.json')); };

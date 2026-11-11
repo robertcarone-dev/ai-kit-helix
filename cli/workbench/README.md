@@ -1,13 +1,13 @@
 # Acceptance matrix host integration
 
-These files belong to the shared Helix toolkit. They contain no project-specific case IDs, Unity members, or fixture routes. The installer copies them into `Tools/Helix/workbench`.
+These files belong to the shared Helix toolkit. They contain no project-specific case IDs, Unity members, or fixture routes. The installer copies them into `Tools/Helix/toolkit/workbench`.
 
 In a Helix Kit mod, copy `AcceptanceMatrix.tsx` and `acceptance-view.ts` into `src`, then render `<AcceptanceMatrix key={'acceptance:' + root} root={root} project={project} />` after the connected-checkout selector. Use a distinct key from sibling panels.
 
 The mod backend must first validate the connected absolute checkout (Unity Assets, ProjectVersion, manifest and matching Helix project identity). Then delegate `/acceptance/status`, `/acceptance/media`, and `/acceptance/review` to the selected checkout's installed module:
 
 ```ts
-const module = await import(pathToFileURL(join(root, 'Tools/Helix/workbench/acceptance-backend.ts')).href);
+const module = await import(pathToFileURL(join(root, 'Tools/Helix/toolkit/workbench/acceptance-backend.ts')).href);
 return module.acceptanceBackend(root, helix.project.root, helix.project.slug, path, input);
 ```
 
@@ -159,7 +159,7 @@ Feature overview presents one action derived from the existing findings and prim
 
 Automation manifest version 2 binds workflows directly to catalog `item` and acceptance `caseId`; `finding` is optional and reserved for an actual issue. Case details expose Run checks. Viewports and titles derive from the catalog/case instead of another pilot definition. The existing version 1 manifest remains readable. Product assertions may use candidate-only execution; reference comparisons retain their paired capture requirements. Ordinary matrix captures remain unmeasured until their criteria are evaluated.
 
-`helix evidence archive --directory BATCH` previews byte-preserving ZIP consolidation; add `--apply true` to apply. The shared archive index resolves original logical paths for acceptance, discrepancies, catalog evidence and screenshot previews. Existing run and review records are never rewritten. Files materialize into ignored cache as needed; missing or changed ZIPs invalidate evidence even with a warm cache. See `docs/Acceptance.md` upstream (installed as `Tools/Helix/Acceptance.md`) for the manifest and retention contract.
+`helix evidence archive --directory BATCH` previews byte-preserving ZIP consolidation; add `--apply true` to apply. The shared archive index resolves original logical paths for acceptance, discrepancies, catalog evidence and screenshot previews. Existing run and review records are never rewritten. Files materialize into ignored cache as needed; missing or changed ZIPs invalidate evidence even with a warm cache. See `docs/Acceptance.md` upstream (installed as `Tools/Helix/toolkit/Acceptance.md`) for the manifest and retention contract.
 
 ### Feature work tracks
 

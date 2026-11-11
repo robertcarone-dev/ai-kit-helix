@@ -15,6 +15,10 @@ Adds explicit acceptance execution adapters, immutable capture-pinned agent asse
 - Helix Desktop installed and set up, with the intended prototype pulled locally. Automatic Desktop launch is macOS-only; on other platforms start a compatible local Helix service first.
 - Python **3.10 or later** for optional evidence/workflow helpers. Managed Unity test execution currently requires Unix account-home support.
 
+## Installed ownership
+
+`Tools/Helix/toolkit/` is installer-owned. The stable `Tools/Helix/bin/helix` launcher and installation manifest are also managed. Everything else under `Tools/Helix/` belongs to the consuming project, including durable evidence. See [layout migration](docs/migration.md) before upgrading a 1.x installation.
+
 ## Install into a Unity project
 
 From this toolkit folder, replace `/path/to/unity-project` with the actual checkout path. Quote paths containing spaces.
@@ -27,8 +31,8 @@ From this toolkit folder, replace `/path/to/unity-project` with the actual check
 ./install.sh install --project-root /path/to/unity-project --rules helix --init
 
 # Install the pinned runtime dependencies and Chromium
-npm ci --prefix /path/to/unity-project/Tools/Helix
-npm run install-browser --prefix /path/to/unity-project/Tools/Helix
+npm ci --prefix /path/to/unity-project/Tools/Helix/toolkit
+npm run install-browser --prefix /path/to/unity-project/Tools/Helix/toolkit
 ```
 
 `install.sh` is a thin macOS/Linux convenience wrapper: it checks Node and forwards arguments to the existing Node installer. It does not install Node, download dependencies, start applications or change directories for the caller. If an archive loses its executable bit, use `sh install.sh ...`.
@@ -66,11 +70,11 @@ Then run from that project's root:
 ./Tools/Helix/bin/helix stop
 ```
 
-On systems without a POSIX shell, use `node Tools/Helix/src/cli.ts` in place of `./Tools/Helix/bin/helix`. Substitute your scenario/viewport names if you changed them. Inspect doctor's `error` and `browserInstalled` fields as well as the exit code. Confirm the resolved identity and inspect the rendered capture before using it as evidence.
+On systems without a POSIX shell, use `node Tools/Helix/toolkit/src/cli.ts` in place of `./Tools/Helix/bin/helix`. Substitute your scenario/viewport names if you changed them. Inspect doctor's `error` and `browserInstalled` fields as well as the exit code. Confirm the resolved identity and inspect the rendered capture before using it as evidence.
 
 Every CLI command accepts `--project-root DIR`. Otherwise it discovers the nearest configured project above the current working directory. Relative file arguments use that project as their base.
 
-**Unity pairing requires the game's own adapter.** Browser capture works independently, but the toolkit cannot infer Unity navigation, scenes, save isolation or cleanup. Choose AI Kit or Unity CLI for Unity recipe argument arrays and supply reviewed verifier/profile files as described in [the adapter contract](docs/project-adapter.md), installed as `Tools/Helix/Adapter.md`. Do not copy another game's isolation claims or compatibility hashes without review.
+**Unity pairing requires the game's own adapter.** Browser capture works independently, but the toolkit cannot infer Unity navigation, scenes, save isolation or cleanup. Choose AI Kit or Unity CLI for Unity recipe argument arrays and supply reviewed verifier/profile files as described in [the adapter contract](docs/project-adapter.md), installed as `Tools/Helix/toolkit/Adapter.md`. Do not copy another game's isolation claims or compatibility hashes without review.
 
 To add the optional Unity comparison helper, include `--unity-helper` in a reviewed installer preview and install/update. It requires an existing `com.unity.nuget.newtonsoft-json` and `com.unity.render-pipelines.universal` dependencies; the installer does not change Unity packages. The selection persists on updates and the helper files are protected by the same manifest/conflict checks. A project-owned adapter must implement setup, readiness, capture and restoration; installation does not enable Unity execution. See [the helper contract](docs/project-adapter.md#optional-unity-comparison-helper).
 
@@ -78,7 +82,7 @@ To add the optional Unity comparison helper, include `--unity-helper` in a revie
 
 The [port acceptance contracts](docs/Acceptance.md) add versioned consumer scope, required cases, durable run/reviewer records, and generated progress. Game catalogs and recipes remain consumer-owned.
 
-Toolkit 1.3.0 includes the reusable Workbench clients and review formats. The installed CLI also supplies offline evidence bundles, dependency-checked review preparation, rendering inspection, review summaries/refresh, revision comparisons, and checkout-local dashboards. Start with [Workbench](docs/Workbench.md), [Evidence baselines](docs/EvidenceBaselines.md), [Render inspector](docs/RenderInspector.md), [Objects](docs/Objects.md), and [Dashboard](docs/Dashboard.md). These guides install under the same filenames in `Tools/Helix`.
+Toolkit 1.3.0 includes the reusable Workbench clients and review formats. The installed CLI also supplies offline evidence bundles, dependency-checked review preparation, rendering inspection, review summaries/refresh, revision comparisons, and checkout-local dashboards. Start with [Workbench](docs/Workbench.md), [Evidence baselines](docs/EvidenceBaselines.md), [Render inspector](docs/RenderInspector.md), [Objects](docs/Objects.md), and [Dashboard](docs/Dashboard.md). These guides install under the same filenames in `Tools/Helix/toolkit`.
 
 Live Workbench/object commands, saved Unity project selection, and feedback reads require compatible project-owned browser hooks and Desktop mod endpoints. The installer supplies clients and portable formats, not a game mod, scenarios, fixtures, authored selectors, Unity recipes, or evidence. Offline commands continue to work with local checkout selection. An explicit `--project-root` takes precedence over the optional `--helix-project` saved connection.
 
@@ -147,7 +151,7 @@ Review and commit the installed `Tools/Helix` files, project configuration, skil
 
 ```gitignore
 /.helix/
-/Tools/Helix/node_modules/
+/Tools/Helix/toolkit/node_modules/
 /Tools/Helix/reference.local.json
 ```
 
@@ -160,8 +164,8 @@ After obtaining a reviewed toolkit version, run from its source folder:
 ```sh
 ./install.sh preview --project-root /path/to/unity-project
 ./install.sh update --project-root /path/to/unity-project
-npm ci --prefix /path/to/unity-project/Tools/Helix
-npm run install-browser --prefix /path/to/unity-project/Tools/Helix
+npm ci --prefix /path/to/unity-project/Tools/Helix/toolkit
+npm run install-browser --prefix /path/to/unity-project/Tools/Helix/toolkit
 ```
 
 Update preserves the previous rule selection and refuses edits to managed files. Stop owned browser sessions before changing their runtime. Review and commit the updated snapshot and manifest.
