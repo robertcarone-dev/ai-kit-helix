@@ -1,13 +1,17 @@
 # Changelog
 
-## 1.2.0 (unreleased)
+## 1.3.0 (2026-11-11)
 
 - Add reusable Workbench clients, evidence bundles, render inspection, producer-owned baselines, review preparation/refresh, portable decisions, and bounded revision comparisons with schema-aware summaries.
 - Add declared target dependencies and retained manifests for precise review freshness, checkout-local comparison registration/dashboard publication, and durable review feedback reads.
 - Add opt-in saved Unity checkout resolution and Phaser/Three object clients; browser hooks, Desktop mods, scenarios, selectors, capture recipes, and evidence remain consumer-owned.
 - Preserve completed step results after inspection failures, load interactive script files through the configured loader, isolate per-launch diagnostics, preserve held canvases with viewport-only PNG capture, and validate fixture recording session identity.
 - Install the five portable Workbench guides with existing conflict detection and manifest ownership; preserve project-specific documentation and recipes during migration.
+- Add the optional Workbench handoff obligations to shared comparison rules; correct current viewer navigation and local-draft feedback documentation.
 
+- Update synthetic regressions for asynchronous permit leases, required Git/configuration provenance, HTML escaping, and host startup deadlines without weakening runtime checks.
+
+## 1.2.0
 
 - Stop UI matrices on structured or transport timeouts, reconcile retained sessions before new work, and recover crashed acquisition through OS-released locks. Install the Python lock helper and preserve owned browser identities across failed cleanup.
 - Gather bounded Git provenance outside Unity and supply revision receipts to matrix, handoff, and manual comparison workflows.

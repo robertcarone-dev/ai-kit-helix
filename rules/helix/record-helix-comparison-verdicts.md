@@ -17,7 +17,7 @@ Use explicit evidence status:
 
 Assign the board verdict from the case evidence and stage reached. Retain the CLI status, capture receipts and cleanup result separately. A matrix row can report `blocked` after both captures exist. Never pass by omission. Source-only inspection, compile success and prefab captures do not prove live parity.
 
-Separate visual defects from behaviour defects. Final reports state coverage and all outstanding cases. Claim the scoped screen or feature matches only when its required cases pass; partial evidence is partial completion.
+Separate visual defects from behavior defects. Final reports state coverage and all outstanding cases. Claim the scoped screen or feature matches only when its required cases pass; partial evidence is partial completion.
 
 Builders put their validation plan and evidence in the build handoff. QA owns board case planning and final verdicts; a builder does not need to create QA board cases before doing scoped validation.
 
@@ -34,6 +34,10 @@ Read the latest revision, then append a new revision of the same stable ID using
 Include the resolution `decision`, fix identity, tested receiving revision in `unityRevision`, and recoverable verification evidence with capture-time evidence/input hashes. A resolved record requires a nonempty evidence array. Clear obsolete `blocker` and `nextAction` fields in the new revision. Do not delete records or rewrite earlier revisions.
 
 Do not close a partly unmet scope. If residual coverage is genuinely independent of the completed defect, retain or create separately linked stable cases and explain the split in the decision; do not leave a fixed scoped defect open solely for unrelated coverage. Deliver the new revision and verify its status and evidence readback from the receiving checkout before recounting the project status summary.
+
+## Workbench review feedback
+
+When the project uses Workbench review, follow the [Workbench handoff contract](../../Tools/Helix/Dashboard.md#task-handoff) and its project adapter to register retained comparisons and read saved feedback on continuation and before handoff. Keep Workbench decisions, board verdicts and discrepancy dispositions distinct; review feedback does not transfer QA or deviation-approval ownership.
 
 ## Continuation and evidence recovery
 

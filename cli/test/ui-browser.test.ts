@@ -161,6 +161,10 @@ test(
         JSON.stringify({
           config,
           configHash: 'synthetic-test',
+          adapterConfigHash: 'synthetic-test',
+          launchId: 'synthetic-launch',
+          startedUtc: new Date().toISOString(),
+          startupDeadline: Date.now() + 20000,
           viewport: 'phone',
           token: 'test-token',
         }),

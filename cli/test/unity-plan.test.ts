@@ -1,7 +1,27 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { unityPlan, unityExecutable } from '../src/unity-plan.ts';
-const root = '/tmp/project with spaces';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+const root = mkdtempSync(join(tmpdir(), 'helix project with spaces '));
+execFileSync('git', ['init', '--quiet', root]);
+execFileSync('git', [
+  '-C',
+  root,
+  '-c',
+  'user.name=Helix Test',
+  '-c',
+  'user.email=test@example.invalid',
+  '-c',
+  'commit.gpgsign=false',
+  'commit',
+  '--allow-empty',
+  '-m',
+  'Synthetic baseline',
+]);
+after(() => rmSync(root, { recursive: true, force: true }));
 const commands = {
   preflight: ['check'],
   prepare: ['prepare'],
@@ -46,7 +66,7 @@ test('Unity backend pins each command before its parameter fence', () => {
     root,
     '--',
     '--code',
-    'Capture("/tmp/project with spaces/.aikit/scratch/case/unity.png", 32, 64);',
+    `Capture("${root}/.aikit/scratch/case/unity.png", 32, 64);`,
   ]);
   assert.equal(
     unityExecutable(result, { aiKit: '/wrong', unity: '/custom-unity' }),

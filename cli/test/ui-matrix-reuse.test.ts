@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { PNG } from 'pngjs';
 import { runMatrix } from '../src/ui-runner.ts';
-import { sha } from '../src/config.ts';
+import { sha, readProjectConfig } from '../src/config.ts';
 for (const withScene of [false, true])
   for (const failRestore of [false, true])
     for (const backend of ['ai-kit', 'unity'])
@@ -20,7 +20,9 @@ for (const withScene of [false, true])
             // This is a fake filesystem fixture; the injected command never starts Unity or AI Kit.
             json(join(root, '.aikit/lane.json'), {});
             json(join(root, 'Tools/Helix/reference.json'), {
-              scenarios: { s: { unity: {} } },
+              helix: { project: 'synthetic', variant: 'Default' },
+              ready: 'true',
+              scenarios: { s: { unity: {}, steps: [], ready: 'true' } },
               viewports: {
                 phone: { width: 2, height: 2 },
                 tablet: { width: 2, height: 2 },
@@ -91,6 +93,7 @@ for (const withScene of [false, true])
                       },
                     }
                   : {}),
+                adapterConfigHash: readProjectConfig(root).configHash,
                 image: 'image.png',
                 sha256: sha(bytes),
                 ui: {
@@ -107,10 +110,16 @@ for (const withScene of [false, true])
             const command = async (executable: string, args: string[]) => {
               const action = executable === process.execPath ? args[1] : args[0];
               calls.push(action);
-              let payload: any = {};
+              let payload: any = { adapterConfigHash: readProjectConfig(root).configHash };
               if (action === 'unity-plan') {
                 current = args[args.indexOf('--out') + 1];
-                payload = { stages, backend, executable: backend };
+                payload = {
+                  stages,
+                  backend,
+                  executable: backend,
+                  configHash: readProjectConfig(root).configHash,
+                  revision: { projectRoot: root, revision: 'synthetic', workingTree: '' },
+                };
               }
               if (action === 'capture') snapshot(args[args.indexOf('--out') + 1], 'reference');
               if (executable !== process.execPath) assert.equal(executable, backend);
@@ -146,8 +155,12 @@ for (const withScene of [false, true])
             );
             if (failCapture) {
               assert.ok(result.cases.every((c: any) => c.status === 'blocked'));
-              const report = JSON.parse(readFileSync(join(root, '.aikit/scratch/result/matrix.json'), 'utf8'));
-              assert.ok(report.cases.every(c => c.failureStage === (withScene ? 'review' : 'execution')));
+              const report = JSON.parse(
+                readFileSync(join(root, '.aikit/scratch/result/matrix.json'), 'utf8'),
+              );
+              assert.ok(
+                report.cases.every((c) => c.failureStage === (withScene ? 'review' : 'execution')),
+              );
             }
             assert.equal(calls.filter((c) => c === 'restore').length, failRestore ? 1 : 3);
             if (failRestore) assert.equal(result.notRun.length, 2);

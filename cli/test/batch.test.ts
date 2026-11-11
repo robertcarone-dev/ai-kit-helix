@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { validateBatch, reusable, permit } from '../src/batch.ts';
@@ -43,36 +43,52 @@ test('resume requires both input identity and original bytes', () => {
   assert.ok(!reusable({ ...r, status: 'blocked' }, 'inputs', png));
 });
 test('global worker budget permits two owners and releases on handoff', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'helix-permits-test-')),
-    a = new AbortController();
+  const dir = mkdtempSync(join(tmpdir(), 'helix-permits-test-'));
+  const abort = new AbortController();
+  const leases: Awaited<ReturnType<typeof permit>>[] = [];
+  let pending: Promise<void> | undefined;
   try {
-    const release1 = await permit(a.signal, dir),
-      release2 = await permit(a.signal, dir);
+    leases.push(await permit(abort.signal, dir), await permit(abort.signal, dir));
     let acquired = false;
-    const third = permit(a.signal, dir).then((r) => {
+    pending = permit(abort.signal, dir).then((lease) => {
+      leases.push(lease);
       acquired = true;
-      return r;
     });
-    await new Promise((r) => setTimeout(r, 150));
+    await new Promise((resolve) => setTimeout(resolve, 150));
     assert.equal(acquired, false);
-    release1();
-    const release3 = await third;
+    await leases.shift()!.release();
+    await pending;
     assert.equal(acquired, true);
-    release2();
-    release3();
+    assert.ok(leases.every((lease) => !lease.lost.aborted));
   } finally {
+    abort.abort();
+    if (pending) await pending.catch(() => {});
+    await Promise.all(leases.map((lease) => lease.release()));
     rmSync(dir, { recursive: true, force: true });
   }
 });
 test('cancelled waiter does not take or delete another owners slot', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'helix-permits-test-')),
-    a = new AbortController();
+  const dir = mkdtempSync(join(tmpdir(), 'helix-permits-test-'));
+  const owner = new AbortController();
+  const waiter = new AbortController();
+  const leases: Awaited<ReturnType<typeof permit>>[] = [];
   try {
-    writeFileSync(join(dir, '0.lock'), JSON.stringify({ pid: process.pid }));
-    writeFileSync(join(dir, '1.lock'), JSON.stringify({ pid: process.pid }));
-    a.abort();
-    await assert.rejects(permit(a.signal, dir), /interrupted/);
+    leases.push(await permit(owner.signal, dir), await permit(owner.signal, dir));
+    const before = [0, 1].map((slot) => readFileSync(join(dir, `${slot}.lock`), 'utf8'));
+    const pending = permit(waiter.signal, dir);
+    const rejected = assert.rejects(pending, /interrupted/);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    waiter.abort();
+    await rejected;
+    assert.deepEqual(
+      [0, 1].map((slot) => readFileSync(join(dir, `${slot}.lock`), 'utf8')),
+      before,
+    );
+    assert.ok(leases.every((lease) => !lease.lost.aborted));
+    await assert.rejects(permit(waiter.signal, dir), { name: 'AbortError' });
   } finally {
+    waiter.abort();
+    await Promise.all(leases.map((lease) => lease.release()));
     rmSync(dir, { recursive: true, force: true });
   }
 });

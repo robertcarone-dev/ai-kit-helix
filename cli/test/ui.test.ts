@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { compareSnapshots, compareUI, loadSnapshot, validateSpec } from '../src/ui.ts';
-import { sha, validateStep } from '../src/config.ts';
+import { sha, validateStep, readProjectConfig } from '../src/config.ts';
 import { runMatrix, runCommand } from '../src/ui-runner.ts';
 const spec = () => ({
   schemaVersion: 1,
@@ -118,7 +118,9 @@ test('PNG receipts validate hashes and native dimensions; HTML safely escapes us
         .status,
       'passed',
     );
-    assert(!readFileSync(join(dir, 'out/review.html'), 'utf8').includes('<script>'));
+    const html = readFileSync(join(dir, 'out/review.html'), 'utf8');
+    assert(!html.includes(s.elements[0].id));
+    assert(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
     receipt.sha256 = 'bad';
     writeFileSync(join(dir, 'b.json'), JSON.stringify(receipt));
     assert.throws(() => loadSnapshot(join(dir, 'b.json')), /hash mismatch/);
@@ -150,7 +152,9 @@ function project() {
   writeFileSync(
     join(root, 'Tools/Helix/reference.json'),
     JSON.stringify({
-      scenarios: { shop: { unity: {} } },
+      helix: { project: 'synthetic', variant: 'Default' },
+      ready: 'true',
+      scenarios: { shop: { unity: {}, steps: [], ready: 'true' } },
       viewports: { phone: { width: 100, height: 200 } },
     }),
   );
@@ -195,6 +199,8 @@ test('matrix always restores after preparation failure and preserves diagnostics
       if (command === 'unity-plan')
         return {
           stdout: JSON.stringify({
+            configHash: readProjectConfig(root).configHash,
+            revision: { projectRoot: root, revision: 'synthetic', workingTree: '' },
             stages: {
               preflight: [['preflight']],
               prepare: [['prepare']],
@@ -204,7 +210,10 @@ test('matrix always restores after preparation failure and preserves diagnostics
           }),
         };
       if (command === 'prepare') throw new Error('setup failed');
-      return { stdout: '{}', exitCode: 0 };
+      return {
+        stdout: JSON.stringify({ adapterConfigHash: readProjectConfig(root).configHash }),
+        exitCode: 0,
+      };
     };
     const out = join(root, '.aikit/scratch/run');
     const r = await runMatrix(
@@ -238,6 +247,8 @@ test('preflight failure never restores or starts a browser it did not acquire', 
         if (c === 'unity-plan')
           return {
             stdout: JSON.stringify({
+              configHash: readProjectConfig(root).configHash,
+              revision: { projectRoot: root, revision: 'synthetic', workingTree: '' },
               stages: {
                 preflight: [['preflight']],
                 prepare: [['prepare']],
@@ -317,7 +328,12 @@ test('matrix completes synthetic capture, reports results and runs every restora
       writeFileSync(join(folder, image), bytes);
       writeFileSync(
         join(folder, receipt),
-        JSON.stringify({ image, sha256: sha(bytes), ui: snap() }),
+        JSON.stringify({
+          image,
+          sha256: sha(bytes),
+          ui: snap(),
+          adapterConfigHash: readProjectConfig(root).configHash,
+        }),
       );
     };
     const result = await runMatrix(
@@ -329,6 +345,8 @@ test('matrix completes synthetic capture, reports results and runs every restora
         if (c === 'unity-plan')
           return {
             stdout: JSON.stringify({
+              configHash: readProjectConfig(root).configHash,
+              revision: { projectRoot: root, revision: 'synthetic', workingTree: '' },
               stages: {
                 preflight: [['preflight']],
                 prepare: [['prepare']],
@@ -343,7 +361,13 @@ test('matrix completes synthetic capture, reports results and runs every restora
             browser ? 'reference.png' : 'unity.png',
             browser ? 'reference.json' : 'unity.json',
           );
-        return { stdout: '{"success":true}', exitCode: 0 };
+        return {
+          stdout: JSON.stringify({
+            success: true,
+            adapterConfigHash: readProjectConfig(root).configHash,
+          }),
+          exitCode: 0,
+        };
       },
     );
     assert.equal(result.status, 'passed');
@@ -369,6 +393,8 @@ test('failed restoration prevents later cases and semantic failure responses are
         if (c === 'unity-plan')
           return {
             stdout: JSON.stringify({
+              configHash: readProjectConfig(root).configHash,
+              revision: { projectRoot: root, revision: 'synthetic', workingTree: '' },
               stages: {
                 preflight: [['preflight']],
                 prepare: [['prepare']],
@@ -377,7 +403,12 @@ test('failed restoration prevents later cases and semantic failure responses are
               },
             }),
           };
-        return { stdout: c === 'prepare' || c === 'restore' ? '{"success":false}' : '{}' };
+        return {
+          stdout:
+            c === 'prepare' || c === 'restore'
+              ? '{"success":false}'
+              : JSON.stringify({ adapterConfigHash: readProjectConfig(root).configHash }),
+        };
       },
     );
     assert.equal(r.status, 'blocked');

@@ -34,6 +34,21 @@ function fixture(root, name) {
       },
     }),
   );
+  execFileSync('git', ['init', '--quiet', dir]);
+  execFileSync('git', [
+    '-C',
+    dir,
+    '-c',
+    'user.name=Helix Test',
+    '-c',
+    'user.email=test@example.invalid',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '--allow-empty',
+    '-m',
+    'Synthetic baseline',
+  ]);
   return dir;
 }
 test('external CLI selects each project from nested cwd or explicit root', () => {
