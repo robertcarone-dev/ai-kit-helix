@@ -54,7 +54,7 @@ test('Unity helper is opt-in, requires declared JSON dependency and preserves co
  call('install',root);
  assert.equal(existsSync(join(root,helper)),false);
  assert.throws(()=>call('update',root,'--unity-helper'),/newtonsoft-json/);
- mkdirSync(join(root,'Packages'));writeFileSync(join(root,'Packages/manifest.json'),JSON.stringify({dependencies:{'com.unity.nuget.newtonsoft-json':'3.2.2'}}));
+ mkdirSync(join(root,'Packages'));writeFileSync(join(root,'Packages/manifest.json'),JSON.stringify({dependencies:{'com.unity.nuget.newtonsoft-json':'3.2.2','com.unity.render-pipelines.universal':'17.0.0'}}));
  const preview=call('preview',root,'--unity-helper');
  assert.ok(preview.changes.some(c=>c.path===helper));
  assert.equal(existsSync(join(root,helper)),false);
@@ -100,4 +100,41 @@ test('older snapshot gains workflows without changing project-owned config',()=>
  assert.equal(existsSync(join(root,'Tools/Helix/capture.py')),false);
  assert.equal(existsSync(join(root,'Tools/Helix/delivery.py')),false);
  assert.equal(readFileSync(adapter,'utf8'),'{"owned":true}');
+}));
+
+const workbenchDocs=['Workbench.md','EvidenceBaselines.md','RenderInspector.md','Objects.md','Dashboard.md'];
+test('older snapshots gain Workbench modules and guides while preserving consumer content',()=>withProject(root=>{
+ call('install',root,'--init');
+ const mp=join(root,'Tools/Helix/toolkit-install.json');
+ const manifest=JSON.parse(readFileSync(mp,'utf8'));
+ for(const path of [...workbenchDocs.map(name=>'Tools/Helix/'+name),'Tools/Helix/src/workbench.ts']) {
+  rmSync(join(root,path));delete manifest.files[path];
+ }
+ writeFileSync(mp,JSON.stringify(manifest));
+ const recipe=join(root,'Tools/Helix/recipes/local.ts');mkdirSync(join(root,'Tools/Helix/recipes'));writeFileSync(recipe,'consumer recipe');
+ const guide=join(root,'Tools/Helix/LocalReview.md');writeFileSync(guide,'consumer evidence and mappings');
+ const config=join(root,'Tools/Helix/reference.json'),before=readFileSync(config,'utf8');
+ const preview=call('preview',root);
+ for(const name of workbenchDocs)assert.ok(preview.changes.some(c=>c.path==='Tools/Helix/'+name));
+ assert.equal(existsSync(join(root,'Tools/Helix/Workbench.md')),false);
+ call('update',root);
+ const updated=JSON.parse(readFileSync(mp,'utf8'));
+ for(const name of workbenchDocs) {
+  const path='Tools/Helix/'+name;assert.ok(updated.files[path]);assert.ok(existsSync(join(root,path)));
+ }
+ assert.equal(call('preview',root).changes.length,0);
+ assert.equal(readFileSync(config,'utf8'),before);
+ call('remove',root);
+ for(const name of workbenchDocs)assert.equal(existsSync(join(root,'Tools/Helix/'+name)),false);
+ assert.equal(readFileSync(recipe,'utf8'),'consumer recipe');
+ assert.equal(readFileSync(guide,'utf8'),'consumer evidence and mappings');
+}));
+test('a project-owned Workbench guide conflicts without changing it or writing runtime files',()=>withProject(root=>{
+ mkdirSync(join(root,'Tools/Helix'),{recursive:true});
+ const guide=join(root,'Tools/Helix/Workbench.md');writeFileSync(guide,'local recipes and pilot history');
+ assert.ok(call('preview',root).conflicts.includes('Tools/Helix/Workbench.md'));
+ assert.throws(()=>call('install',root),/conflict/);
+ assert.equal(readFileSync(guide,'utf8'),'local recipes and pilot history');
+ assert.equal(existsSync(join(root,'Tools/Helix/src/cli.ts')),false);
+ assert.equal(existsSync(join(root,'Tools/Helix/toolkit-install.json')),false);
 }));

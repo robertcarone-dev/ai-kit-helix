@@ -70,6 +70,12 @@ Every CLI command accepts `--project-root DIR`. Otherwise it discovers the neare
 
 To add the optional Unity comparison helper, include `--unity-helper` in a reviewed installer preview and install/update. It requires an existing `com.unity.nuget.newtonsoft-json` and `com.unity.render-pipelines.universal` dependencies; the installer does not change Unity packages. The selection persists on updates and the helper files are protected by the same manifest/conflict checks. A project-owned adapter must implement setup, readiness, capture and restoration; installation does not enable Unity execution. See [the helper contract](docs/project-adapter.md#optional-unity-comparison-helper).
 
+## Workbench evidence and review
+
+The installed CLI also supplies offline evidence bundles, dependency-checked review preparation, rendering inspection, review summaries/refresh, revision comparisons, and checkout-local dashboards. Start with [Workbench](docs/Workbench.md), [Evidence baselines](docs/EvidenceBaselines.md), [Render inspector](docs/RenderInspector.md), [Objects](docs/Objects.md), and [Dashboard](docs/Dashboard.md). These guides install under the same filenames in `Tools/Helix`.
+
+Live Workbench/object commands, saved Unity project selection, and feedback reads require compatible project-owned browser hooks and Desktop mod endpoints. The installer supplies clients and portable formats, not a game mod, scenarios, fixtures, authored selectors, Unity recipes, or evidence. Offline commands continue to work with local checkout selection. An explicit `--project-root` takes precedence over the optional `--helix-project` saved connection.
+
 ## Use with Claude and Codex
 
 The installer places the same six skills in the native project discovery locations:
