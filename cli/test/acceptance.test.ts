@@ -317,3 +317,12 @@ test('interrupted background jobs remain visible and cannot discard ownership lo
   f.put('.helix/workbench-runs/22222222-2222-4222-8222-222222222222/job.json', { id: '22222222-2222-4222-8222-222222222222', finding: 'startup-failure', createdUtc: '2000-01-01T00:00:00.000Z', pid: null, status: 'queued' });
   assert.equal(latestJob(f.root, 'startup-failure').status, 'interrupted');
 });
+
+test('primary coverage consolidates regressions without changing criteria hashes or forging completion', async t => {
+ const f=fixture(t);await saveRun(f.root,'synthetic',f.run);
+ f.screen.cases.push({...f.screen.cases[0],id:'primary'});f.put('Tools/Helix/acceptance/screens/result.json',f.screen);
+ const rule={item:'screen.result',caseId:'settled',coveredBy:[{item:'screen.result',caseId:'primary'}],reason:'Detailed regression under primary scenario'};
+ f.put('Tools/Helix/acceptance/coverage-plan.json',{version:1,project:'synthetic',supplemental:[rule]});
+ const status=await acceptanceStatus(f.root,'synthetic',f.reference);assert.equal(status.items[0].required,2);assert.equal(status.items[0].accepted,0);assert.equal(status.items[0].cases[0].required,false);assert.equal(status.items[0].cases[0].criteriaSha256,f.run.criteriaSha256);
+ f.put('Tools/Helix/acceptance/coverage-plan.json',{version:1,project:'synthetic',supplemental:[rule,{...rule,caseId:'primary'}]});assert.throws(()=>loadAcceptance(f.root,'synthetic'),/primary coverage/);
+});

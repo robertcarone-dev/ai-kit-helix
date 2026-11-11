@@ -14,7 +14,7 @@ test('feature summary distinguishes unresolved work, ready cases and accepted sc
   const item = { issues: [], acceptance: { status: 'incomplete', ready: 0, mismatches: 0, pendingReview: 4, verified: 2 } } as unknown as CatalogItem;
   assert.equal(featureStatus(item), 'evidence');
   assert.equal(featureStatus({ ...item, acceptance: { ...item.acceptance!, ready: 1 } }), 'ready');
-  assert.equal(featureStatus({ ...item, issues: [{ status: 'open' }] as CatalogItem['issues'] }), 'fix');
+  assert.equal(featureStatus({ ...item, issues: [{ status: 'open', kind: 'defect' }] as CatalogItem['issues'] }), 'fix');
   assert.equal(featureStatus({ ...item, acceptance: { ...item.acceptance!, status: 'accepted' } }), 'accepted');
   assert.equal(featureStatus({ ...item, acceptance: null }), 'define');
 });
@@ -43,7 +43,13 @@ test('an agent assessment cannot promote an unmeasured or failed automated captu
 });
 
 test('feature progress counts automatic completion without listing it as remaining work', () => {
-  const item = { issues: [], acceptance: { status: 'incomplete', required: 2, accepted: 2, nextSteps: { verified: 2 } } } as unknown as CatalogItem;
-  assert.equal(featureSummary(item), '2/2 checks complete · implementation incomplete');
-  assert.equal(featureSummary({ ...item, acceptance: { ...item.acceptance!, status: 'accepted' } }), '2/2 checks complete');
+  const item = { implementation: 'in-progress', issues: [], acceptance: { status: 'incomplete', required: 2, accepted: 2, nextSteps: { verified: 2 } } } as unknown as CatalogItem;
+  assert.equal(featureSummary(item), 'Implementation in progress · 2/2 checks complete');
+  assert.equal(featureSummary({ ...item, implementation: 'implemented', acceptance: { ...item.acceptance!, status: 'accepted' } }), 'Implemented · 2/2 checks complete');
+});
+
+test('verification gaps and review/tooling findings do not become product defects', () => {
+  const item = { implementation: 'implemented', issues: [{ status: 'open', kind: 'tooling' }, { status: 'open', kind: 'review' }], acceptance: { status: 'incomplete', accepted: 0, required: 12, ready: 0, mismatches: 2 } } as unknown as CatalogItem;
+  assert.equal(featureStatus(item), 'evidence');
+  assert.equal(featureSummary(item), 'Implemented · 0/12 checks complete · 1 findings to review');
 });

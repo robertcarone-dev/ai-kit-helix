@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, existsSync, readdirSync, lstatSync, cpSync, mkdirSync, unlinkSync } from 'node:fs';
-import { join, relative, dirname } from 'node:path';
+import { retainRunArtifacts } from './evidence-retention.ts';
+import { readFileSync, writeFileSync, existsSync, readdirSync, lstatSync, mkdirSync, unlinkSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { jobDirectory, saveJob, verificationTarget, verificationStatus } from './verification-jobs.ts';
@@ -78,13 +79,9 @@ try {
     phase('Importing ' + viewport + ' evidence');
     noSymlinks(output);
     const retained = 'Tools/Helix/evidence/verification/' + id + '/' + viewport;
-    mkdirSync(join(root, retained), { recursive: true }); cpSync(output, join(root, retained), { recursive: true, errorOnExist: true, force: false });
-    const original = relative(job.target, output);
-    run.id += '-workbench-' + id;
-    for (const artifact of run.artifacts) {
-      if (!artifact.path.startsWith(original + '/')) throw new Error('Adapter artifact is outside its fresh capture directory');
-      artifact.path = retained + artifact.path.slice(original.length); artifact.recovery = 'Repository evidence: ' + retained;
-    }
+    retainRunArtifacts(root, job.target, output, retained, run.artifacts);
+    mkdirSync(join(root, retained, 'capture'), { recursive: true });
+    writeFileSync(join(root, retained, 'capture/acceptance-run.json'), readFileSync(join(output, 'capture/acceptance-run.json')), { flag: 'wx' });
     run.notes += ' Imported by Workbench job ' + id + '; original capture receipt, timestamp and input hashes retained.';
     await saveRun(root, job.project, run);
     await saveAssessment(root, job.project, { version: 1, id: 'workbench-' + id + '-' + viewport, project: run.project, variant: run.variant, item: run.item, caseId: run.caseId, viewport, runId: run.id, runSha256: recordHash(run), assessor: { name: 'Authored verification adapter', kind: 'automation' }, assessedUtc: new Date().toISOString(), outcome: run.outcome, observations: run.observations, evidence: run.artifacts.map(({ path, sha256 }: any) => ({ path, sha256 })), discrepancies: run.outcome === 'mismatch' ? [job.finding] : [], notes: run.notes });

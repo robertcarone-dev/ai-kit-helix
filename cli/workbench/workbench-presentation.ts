@@ -13,7 +13,7 @@ export function caseStatus(entry: CaseRow): WorkStatus {
 }
 export function featureStatus(item: CatalogItem): WorkStatus {
   if (item.acceptance?.status === 'accepted') return 'accepted';
-  if (item.issues.some(issue => issue.status === 'open' || issue.status === 'blocked') || (item.acceptance && item.acceptance.mismatches > 0)) return 'fix';
+  if (item.issues.some(issue => issue.kind === 'defect')) return 'fix';
   if (!item.acceptance) return 'define';
   if (item.acceptance.ready > 0) return 'ready';
   return 'evidence';
@@ -47,12 +47,9 @@ export function nextCaseAction(entry: CaseRow): CaseAction {
 }
 
 export function featureSummary(item: CatalogItem) {
-  const open = item.issues.filter(issue => ['open', 'blocked'].includes(issue.status)).length;
-  const progress = item.acceptance ? `${item.acceptance.accepted}/${item.acceptance.required} checks complete · ` : '';
-  if (open) return `${progress}${open} recorded findings`;
-  if (!item.acceptance) return 'Acceptance cases not defined';
-  const next = Object.entries(item.acceptance.nextSteps).filter(([action]) => action !== 'accepted' && action !== 'verified').sort((a, b) => b[1]! - a[1]!)[0];
-  if (!next) return `${item.acceptance.accepted}/${item.acceptance.required} checks complete${item.acceptance.status === 'accepted' ? '' : ' · implementation incomplete'}`;
-  const labels: Record<string, string> = { setup: 'checks have setup blockers', capture: 'checks without captures', recover: 'checks need evidence recovery', fix: 'captured differences', recheck: 'captures need freshness checks', measure: 'checks need measurements', gates: 'checks have acceptance prerequisites', review: 'checks ready for review' };
-  return `${progress}${next[1]} ${labels[next[0]]}`;
+  const defects = item.issues.filter(issue => issue.kind === 'defect').length;
+  const review = item.issues.filter(issue => issue.kind === 'review' || issue.kind === 'untriaged').length;
+  const port = item.implementation === 'implemented' ? 'Implemented' : item.implementation === 'in-progress' ? 'Implementation in progress' : 'Implementation not assessed';
+  const coverage = item.acceptance ? `${item.acceptance.accepted}/${item.acceptance.required} checks complete` : 'Verification not configured';
+  return `${port} · ${coverage}${defects ? ` · ${defects} product findings` : ''}${review ? ` · ${review} findings to review` : ''}`;
 }

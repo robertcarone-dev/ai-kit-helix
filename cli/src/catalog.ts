@@ -2,7 +2,7 @@ import type { CatalogReport, CatalogItem } from '../workbench/catalog-view.ts';
 import { featureStatus, statusText, nextCaseAction } from '../workbench/workbench-presentation.ts';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { portablePath } from './acceptance-format.ts';
+import { portablePath, recordHash } from './acceptance-format.ts';
 import { readDashboard } from './porting-dashboard-format.ts';
 import { readComparisonEntry } from './comparison-index-format.ts';
 
@@ -100,6 +100,18 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
     if (!Array.isArray(record.evidence)) throw new Error('Missing discrepancy evidence list: ' + path);
     discrepancies.set(name, { ...record, path, revision: Number.parseInt(revisions[0]) });
   }
+  // Reconciliation classifies records; it cannot grant acceptance or overwrite discrepancy history.
+  const triage = new Map<string, any>();
+  if (existsSync(catalogPath(root, 'Tools/Helix/catalog/reconciliation.json'))) {
+    const document = read(root, 'Tools/Helix/catalog/reconciliation.json');
+    fields(document, ['version', 'project', 'findings']);
+    if (document.version !== 1 || document.project !== project || !Array.isArray(document.findings)) throw new Error('Invalid catalog reconciliation');
+    for (const finding of document.findings) {
+      fields(finding, ['id', 'revision', 'recordSha256', 'kind', 'reason']); id(finding.id); text(finding.reason);
+      if (!discrepancies.has(finding.id) || triage.has(finding.id) || !Number.isInteger(finding.revision) || finding.revision < 1 || !/^[a-f0-9]{64}$/.test(finding.recordSha256) || !['defect', 'review', 'tooling'].includes(finding.kind)) throw new Error('Invalid reconciliation finding');
+      triage.set(finding.id, finding);
+    }
+  }
   for (const key of Object.keys(catalog.workAssignments ?? {})) if (!discrepancies.has(key)) throw new Error('Unknown assigned discrepancy: ' + key);
   const comparisons: any[] = [];
   const comparisonDirectory = catalogPath(root, '.helix/comparisons');
@@ -114,7 +126,10 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
     const issues = discrepancyIds.map((key: string) => {
       used.add(key); const record = discrepancies.get(key);
       if (!record) throw new Error('Unknown linked discrepancy: ' + key);
-      return { discipline: catalog.workAssignments?.[key] ?? 'unassigned', id: key, status: record.status, revision: record.revision, path: record.path, expected: record.expected, observed: record.observed, nextAction: record.nextAction ?? null };
+      const classification = triage.get(key);
+      const current = classification && classification.revision === record.revision && classification.recordSha256 === recordHash(read(root, record.path));
+      const kind = record.status === 'resolved' ? 'history' : current ? classification.kind : 'untriaged';
+      return { kind, triageReason: current ? classification.reason : classification ? 'Record changed since reconciliation; reassess this finding.' : 'Not yet reconciled against the current implementation.', discipline: catalog.workAssignments?.[key] ?? 'unassigned', id: key, status: record.status, revision: record.revision, path: record.path, expected: record.expected, observed: record.observed, nextAction: record.nextAction ?? null };
     });
     const previous = legacy.items.find(item => item.id === entry.id);
     const evidence: { path: string; sha256: string | null; origin: string; availability: string }[] = [];
@@ -140,7 +155,7 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
       for (const issue of row.linkedDiscrepancies) artifact(issue.path, null, 'case discrepancy: ' + row.id);
     }
     if (result) for (const row of result.cases) if (row.latestRun) for (const pin of row.latestRun.artifacts) artifact(pin.path, pin.sha256, 'acceptance: ' + row.id + ' / ' + row.viewport);
-    return { ...entry, folder: entry.folder ?? null, specs: entry.specs ?? [], implementation: entry.implementationReferences.length ? 'source located; not a completion verdict' : 'not assessed',
+    return { ...entry, folder: entry.folder ?? null, specs: entry.specs ?? [], implementation: result ? result.implementation : 'not-assessed',
       missingSources: [...entry.sources, ...entry.implementationReferences].filter(path => !existsSync(catalogPath(root, path))),
       issues, evidence, comparisons: comparisons.filter(record => record.links.some((link: any) => link.item === entry.id)),
       legacy: previous ? { status: previous.status, summary: previous.summary, reportedUtc: legacy.reportedUtc } : null,
@@ -153,8 +168,8 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
 
 export function catalogTree(report: CatalogReport, entries: CatalogItem[], parent: string | null = null): any[] {
   const folders = report.folders.filter(folder => folder.parent === parent).map(folder => ({ kind: 'folder', id: folder.id, title: folder.title, children: catalogTree(report, entries, folder.id) })).filter(folder => folder.children.length);
-  return [...folders, ...entries.filter(entry => entry.folder === parent).map(entry => ({ kind: 'feature', id: entry.id, title: entry.title, status: featureStatus(entry), acceptanceItem: entry.acceptanceItem, openFindings: entry.issues.filter(issue => ['open', 'blocked'].includes(issue.status)).length }))];
+  return [...folders, ...entries.filter(entry => entry.folder === parent).map(entry => ({ kind: 'feature', id: entry.id, title: entry.title, status: featureStatus(entry), acceptanceItem: entry.acceptanceItem, implementation: entry.implementation, verification: entry.acceptance, openFindings: entry.issues.filter(issue => issue.kind === 'defect').length }))];
 }
 export function renderCatalogTree(nodes: any[], prefix = ''): string {
-  return nodes.map((node, index) => { const last = index === nodes.length - 1; return `${prefix}${last ? '└─' : '├─'} ${node.title} [${node.id}]${node.kind === 'feature' ? ' — ' + statusText[node.status as keyof typeof statusText] : ''}${node.kind === 'folder' ? '\n' + renderCatalogTree(node.children, prefix + (last ? '   ' : '│  ')) : ''}`; }).join('\n');
+  return nodes.map((node, index) => { const last = index === nodes.length - 1; return `${prefix}${last ? '└─' : '├─'} ${node.title} [${node.id}]${node.kind === 'feature' ? ' — ' + node.implementation + ' · ' + statusText[node.status as keyof typeof statusText] + (node.verification ? ` · ${node.verification.accepted}/${node.verification.required} checks complete` : '') : ''}${node.kind === 'folder' ? '\n' + renderCatalogTree(node.children, prefix + (last ? '   ' : '│  ')) : ''}`; }).join('\n');
 }

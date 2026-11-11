@@ -44,7 +44,24 @@ export function loadAcceptance(root: string, project: string) {
     for (const path of screen.implementationReferences) pathIn(root, path);
     for (const entry of screen.cases) for (const path of entry.dependencies) pathIn(root, path);
   }
-  return { scope, screens, evidence: evidenceLinks(root, project, screens) };
+  const planPath = pathIn(root, directory + '/coverage-plan.json');
+  const supplemental = new Map<string, any>();
+  if (existsSync(planPath)) {
+    const plan = json(planPath);
+    if (plan.version !== 1 || plan.project !== project || !Array.isArray(plan.supplemental)) throw new Error('Invalid acceptance coverage plan');
+    for (const rule of plan.supplemental) {
+      const screen = screens.find(screen => screen.id === rule.item);
+      if (!screen?.cases.some(entry => entry.id === rule.caseId) || typeof rule.reason !== 'string' || !rule.reason.trim() || !Array.isArray(rule.coveredBy) || !rule.coveredBy.length) throw new Error('Invalid supplemental case mapping');
+      const key = JSON.stringify([rule.item, rule.caseId]);
+      if (supplemental.has(key)) throw new Error('Duplicate supplemental case');
+      supplemental.set(key, rule);
+    }
+    for (const rule of plan.supplemental) for (const parent of rule.coveredBy) {
+      const entry = screens.find(screen => screen.id === parent.item)?.cases.find(entry => entry.id === parent.caseId);
+      if (!entry?.required || supplemental.has(JSON.stringify([parent.item, parent.caseId]))) throw new Error('Supplemental cases must map to required primary coverage');
+    }
+  }
+  return { scope, screens, supplemental, evidence: evidenceLinks(root, project, screens) };
 }
 /** Optional historical evidence index; never used to grant verification or approval. */
 function evidenceLinks(root: string, project: string, screens: Screen[]) {
@@ -142,7 +159,7 @@ function discrepancies(root: string, entry: AcceptanceCase) {
   });
 }
 export async function acceptanceStatus(root: string, project: string, reference?: ReferenceObservation) {
-  const { scope, screens, evidence: links } = loadAcceptance(root, project);
+  const { scope, screens, supplemental, evidence: links } = loadAcceptance(root, project);
   if (reference && (reference.project !== scope.project || reference.variant !== scope.variant)) throw new Error('Reference observation belongs to another project/variant');
   const { loadCaseAdapters, acceptanceExecutions } = await import('./acceptance-runner.ts');
   const adapters = loadCaseAdapters(root, project), executions = acceptanceExecutions(root, project);
@@ -206,7 +223,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
       const reviewRequirement = automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id && workflow.viewports.includes(viewport))?.review ?? 'human';
       const review = decisionApplies ? decision!.status : 'pending';
       const accepted = canAccept && (review === 'accepted' || (reviewRequirement === 'automated' && review === 'pending'));
-      cases.push({ reviewRequirement, latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required, criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review, freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
+      cases.push({ coverage: supplemental.get(JSON.stringify([screen.id, entry.id])) ?? null, reviewRequirement, latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required && !supplemental.has(JSON.stringify([screen.id, entry.id])), criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review, freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
     }
     const required = cases.filter(entry => entry.required), accepted = required.filter(entry => entry.accepted).length;
     const counts = (entries: typeof cases) => ({ required: entries.filter(entry => entry.required).length, accepted: entries.filter(entry => entry.required && entry.accepted).length });
@@ -308,13 +325,17 @@ export async function acceptanceCommand(root: string, project: string, operation
     if (operation === 'run' && !options.mode) throw new Error('Acceptance run requires explicit --mode retained or capture');
     return operation === 'plan' ? planAcceptanceCase(root, project, options.item, options.case, options.viewport, resolve(root, options.out)) : runAcceptanceCase(root, project, options.item, options.case, options.viewport, resolve(root, options.out), options.mode);
   }
-  const allowed: Record<string, string[]> = { validate: [], status: ['reference'], publish: ['reference'], 'record-run': ['spec'], 'assess': ['spec'], review: ['spec', 'reference'] };
-  if (!Object.hasOwn(allowed, operation)) throw new Error('Use acceptance validate|status|publish|record-run|assess|review');
+  const allowed: Record<string, string[]> = { validate: [], summary: ['reference'], status: ['reference'], publish: ['reference'], 'record-run': ['spec'], 'assess': ['spec'], review: ['spec', 'reference'] };
+  if (!Object.hasOwn(allowed, operation)) throw new Error('Use acceptance validate|summary|status|publish|record-run|assess|review');
   for (const option of Object.keys(options)) if (!['project-root', 'helix-project'].includes(option) && !allowed[operation].includes(option)) throw new Error('Invalid acceptance option --' + option);
   const reference = options.reference ? readReferenceObservation(json(resolve(root, options.reference))) : undefined;
-  if (operation === 'validate') { const { scope, screens } = loadAcceptance(root, project);
+  if (operation === 'validate') { const { scope, screens, supplemental } = loadAcceptance(root, project);
     for (const screen of screens) for (const path of [...screen.implementationReferences, ...screen.cases.flatMap(entry => entry.dependencies)]) if (!existsSync(pathIn(root, path))) throw new Error('Missing authored input: ' + path);
-    return { status: 'valid', project, variant: scope.variant, screens: screens.length, requiredCases: screens.flatMap(screen => screen.cases).filter(entry => entry.required).reduce((count, entry) => count + entry.viewports.length, 0) }; }
+    return { status: 'valid', project, variant: scope.variant, screens: screens.length, requiredCases: screens.reduce((count, screen) => count + screen.cases.filter(entry => entry.required && !supplemental.has(JSON.stringify([screen.id, entry.id]))).reduce((total, entry) => total + entry.viewports.length, 0), 0) }; }
+  if (operation === 'summary') {
+    const report = await acceptanceStatus(root, project, reference);
+    return { project, items: report.items.map(item => ({ id: item.id, implementation: item.implementation, status: item.status, required: item.required, complete: item.accepted, supplemental: item.cases.filter(entry => !entry.required).length })) };
+  }
   if (operation === 'status') return acceptanceStatus(root, project, reference);
   if (operation === 'publish') return publishAcceptance(root, project, reference);
   if (!options.spec) throw new Error('Acceptance record operation requires --spec FILE');

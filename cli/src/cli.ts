@@ -26,8 +26,10 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   catalog validate
   resolution status --finding ID
   resolution review --spec FILE
-  acceptance validate|status|publish [--reference CURRENT_REFERENCE_JSON]
+  acceptance validate|summary|status|publish [--reference CURRENT_REFERENCE_JSON]
   acceptance record-run|assess|review --spec RECORD_JSON [--reference CURRENT_REFERENCE_JSON]
+  evidence compact --directory BATCH [--apply true]
+  evidence recover --path ORIGINAL --out NEW_FILE
   acceptance adapters
   acceptance status --folder ID [--discipline dev|ta|shared|unassigned]
   acceptance plan --folder ID --out NEW_SCRATCH_DIR [--discipline dev|ta|shared|unassigned] [--viewport ID]
@@ -180,6 +182,7 @@ async function main() {
   const allowed: Record<string, string[]> = {
     resolution: ['finding', 'spec'],
     catalog: ['folder', 'discipline', 'scope', 'format'],
+    evidence: ['directory', 'apply', 'path', 'out'],
     acceptance: ['folder', 'discipline', 'spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
     'discrepancy-resume': ['feature', 'assignment', 'status'],
     'discrepancy-recover': ['id', 'issue', 'board-root'],
@@ -270,6 +273,18 @@ async function main() {
       console.log(tree.length ? renderCatalogTree(tree) : 'No matching features.'); return;
     }
     return { ...report, entries, selection: { folder: options.folder ?? null, discipline: options.discipline ?? 'all', scope: options.scope ?? 'all' }, summary: { total: entries.length, game: entries.filter(entry => entry.scope === 'game').length, definedCoverage: entries.filter(entry => entry.acceptance !== null).length, accepted: entries.filter(entry => entry.acceptance?.status === 'accepted').length, discrepancies: new Set(entries.flatMap(entry => entry.issues.map(issue => issue.id))).size } };
+  }
+  if (command === 'evidence') {
+    const { compactEvidence, recoverEvidence } = await import('./evidence-retention.ts');
+    const allowed = pos[0] === 'compact' ? ['directory', 'apply'] : ['path', 'out'];
+    for (const key of Object.keys(options)) if (!['project-root', 'helix-project', ...allowed].includes(key)) throw new Error('Invalid evidence option');
+    if (pos.length !== 1) throw new Error('Use evidence compact|recover');
+    if (pos[0] === 'compact' && options.directory) {
+      if (options.apply !== undefined && options.apply !== 'true') throw new Error('Use --apply true to compact');
+      return compactEvidence(root, options.directory, options.apply === 'true');
+    }
+    if (pos[0] === 'recover' && options.path && options.out) return recoverEvidence(root, options.path, options.out);
+    throw new Error('Use evidence compact --directory BATCH [--apply true] or evidence recover --path ORIGINAL --out NEW_FILE');
   }
   if (command === 'acceptance') {
     if (pos.length !== 1) throw new Error('Supply one acceptance operation');

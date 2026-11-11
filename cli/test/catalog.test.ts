@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { catalogStatus, loadCatalog, catalogTree, renderCatalogTree } from '../src/catalog.ts';
 import { acceptanceBackend } from '../workbench/acceptance-backend.ts';
-import { digest } from '../src/acceptance-format.ts';
+import { digest, recordHash } from '../src/acceptance-format.ts';
 function fixture(t: any) {
   const root = mkdtempSync(join(tmpdir(), 'catalog-')); t.after(() => rmSync(root, { recursive: true, force: true }));
   const put = (path: string, value: any) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), typeof value === 'string' ? value : JSON.stringify(value)); };
@@ -105,4 +105,20 @@ test('folder selection includes descendants and Dev/TA includes shared open work
   assert.throws(() => selectCatalogEntries(report, { discipline: 'artist' }), /Invalid/);
   const tree = catalogTree(report, report.entries); assert.match(renderCatalogTree(tree), /Game.*\n.*Home.*\n.*screen.home/);
   report.entries[0].issues[0].status = 'resolved'; assert.equal(selectCatalogEntries(report, { discipline: 'dev' }).length, 0);
+});
+
+test('reconciliation is exact to record content and revision, preserves history and never grants acceptance', t => {
+  const f = fixture(t);
+  const finding = { id: 'home-layout', revision: 1, recordSha256: recordHash(f.discrepancy), kind: 'tooling', reason: 'Fixture issue only' };
+  f.put('Tools/Helix/catalog/reconciliation.json', { version: 1, project: 'synthetic', findings: [finding] });
+  let report = catalogStatus(f.root, 'synthetic');
+  assert.equal(report.entries[0].issues[0].kind, 'tooling'); assert.equal(report.summary.accepted, 0);
+  f.put('Tools/Helix/discrepancies/home-layout/1.json', { ...f.discrepancy, observed: 'Changed' });
+  assert.equal(catalogStatus(f.root, 'synthetic').entries[0].issues[0].kind, 'untriaged');
+  f.put('Tools/Helix/discrepancies/home-layout/2.json', f.discrepancy);
+  assert.equal(catalogStatus(f.root, 'synthetic').entries[0].issues[0].kind, 'untriaged');
+  f.put('Tools/Helix/discrepancies/home-layout/3.json', { ...f.discrepancy, status: 'resolved' });
+  assert.equal(catalogStatus(f.root, 'synthetic').entries[0].issues[0].kind, 'history');
+  f.put('Tools/Helix/catalog/reconciliation.json', { version: 1, project: 'synthetic', findings: [finding, finding] });
+  assert.throws(() => catalogStatus(f.root, 'synthetic'), /Invalid reconciliation/);
 });
