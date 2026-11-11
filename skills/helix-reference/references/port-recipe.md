@@ -10,6 +10,8 @@ For animation work, follow [editable animation authoring](animation-porting.md):
 4. Compare that counterpart in the final player composition. Use a disclosed isolate only to diagnose geometry, material, lighting or timing; restore diagnostic overrides before accepting the intended result.
 5. Fix the identified cause, then extend to required variants affected by the implementation. Reuse evidence for cases whose dependencies are unchanged. Record deviations and missing coverage explicitly.
 
+For rendering changes, apply the consuming project's technical-art authoring and rendering measurement rules. Use its measurement workflow when available and retain comparable steady-state and peak-effect evidence with the port case. Explain significant workload changes separately from visual acceptance and device timing. Missing counters or a baseline limit those claims; they do not authorize new tooling, a player build or project-wide numeric limits.
+
 ## Reusable fixture recipes
 
 Before writing another scratch helper, inspect existing scenarios and repository tools for the same setup. Promote a successful reusable helper into a maintained project script with a small recipe containing:
