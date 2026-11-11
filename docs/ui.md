@@ -101,6 +101,8 @@ Use real pointer steps followed by assertions to test disabled controls, scrolli
 
 `uiClockHold: "phaser-loop"` temporarily sleeps the configured Phaser loop after readiness/capture setup, obtains the snapshot and PNG, and restores the previous running state even on failure. This is disclosed instrumentation. Document whether the project's Unity capture holds its frame and how it restores the prior state. Neither hold synchronizes animation phase across engines, freezes DOM/CSS animation, nor establishes transition timing. For transition cases use explicitly instrumented checkpoints or the separate motion workflow.
 
+Native PNG capture is viewport-only. Do not enable CDP `captureBeyondViewport` for this path: Chromium can temporarily resize the page while taking the screenshot, clearing the canvas while its render loop is asleep. A correct final PNG size does not detect that loss of content.
+
 ## Matrix plan and explicit execution
 
 ```json

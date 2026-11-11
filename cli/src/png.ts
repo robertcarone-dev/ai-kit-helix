@@ -8,7 +8,8 @@ export async function nativePng(page: Page): Promise<Buffer> {
     const result = await session.send('Page.captureScreenshot', {
       format: 'png',
       fromSurface: true,
-      captureBeyondViewport: true,
+      // Full-page capture can resize the viewport and clear a sleeping game's canvas.
+      captureBeyondViewport: false,
       optimizeForSpeed: true,
       clip: {
         x: 0,
