@@ -1,3 +1,4 @@
+import { evidencePath } from './evidence-archive.ts';
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, lstatSync, cpSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve, relative, join } from 'node:path';
@@ -56,11 +57,13 @@ function compactEvidenceLocked(root: string, directory: string, apply: boolean) 
 }
 export function recoverEvidence(root: string, path: string, out: string) {
   const file = evidenceRecovery(root).files.find((entry: any) => entry.path === path);
-  if (!file) throw new Error('No registered recovery path');
-  const bytes = git(root, ['show', file.commit + ':' + file.path]);
-  if (bytes.length !== file.bytes || digest(bytes) !== file.sha256) throw new Error('Recovered evidence differs from retained hash');
+  const archived = evidencePath(root, path);
+  if (!file && archived === catalogPath(root, path)) throw new Error('No registered recovery path');
+  const bytes = file ? git(root, ['show', file.commit + ':' + file.path]) : readFileSync(archived);
+  const expected = file ?? { bytes: bytes.length, sha256: digest(bytes) }; // Archive resolution already verifies the indexed hash.
+  if (bytes.length !== expected.bytes || digest(bytes) !== expected.sha256) throw new Error('Recovered evidence differs from retained hash');
   const target = resolve(root, out); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, bytes, { flag: 'wx' });
-  return { path, out: target, sha256: file.sha256, bytes: bytes.length };
+  return { path, out: target, sha256: expected.sha256, bytes: bytes.length };
 }
 
 /** Retain declared evidence once; generated HTML, crops and debug output stay in execution scratch. */

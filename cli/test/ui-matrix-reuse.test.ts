@@ -171,3 +171,26 @@ for (const withScene of [false, true])
             rmSync(root, { recursive: true, force: true });
           }
         });
+
+for (const failed of [false, true]) test('candidate-only execution skips browser/review and restores after capture, failure=' + failed, async t => {
+  const root = mkdtempSync(join(tmpdir(), 'candidate-only-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const put = (path: string, value: any) => { mkdirSync(join(root, path, '..'), { recursive: true }); writeFileSync(join(root, path), JSON.stringify(value)); };
+  put('.aikit/lane.json', {}); put('Tools/Helix/reference.json', { helix: { project: 'synthetic', variant: 'Default' }, ready: 'true', scenarios: { s: { unity: {}, steps: [], ready: 'true' } }, viewports: { phone: { width: 2, height: 2 } } });
+  put('matrix.json', { schemaVersion: 1, cases: [{ id: 'case', scenario: 's', viewport: 'phone' }] });
+  const calls: string[] = []; let output = '';
+  const command = async (executable: string, args: string[]) => {
+    const action = executable === process.execPath ? args[1] : args[0]; calls.push(action);
+    let value: any = {};
+    if (action === 'unity-plan') {
+      output = args[args.indexOf('--out') + 1];
+      value = { backend: 'unity', executable: 'unity', out: output, configHash: readProjectConfig(root).configHash, revision: { revision: 'synthetic' }, stages: { preflight: [['preflight']], prepare: [['prepare']], capture: [['capture-unity']], restore: [['restore']] } };
+    }
+    if (action === 'capture-unity') { if (failed) throw new Error('Assertion capture unavailable'); writeFileSync(join(output, 'unity.json'), '{}'); }
+    return { executable, args, exitCode: 0, stdout: JSON.stringify(value), stderr: '', elapsedMs: 1 };
+  };
+  const result = await runMatrix({ root, cli: 'cli.ts', specPath: join(root, 'matrix.json'), out: join(root, '.aikit/scratch/run'), execute: 'yes', candidateOnly: true }, command);
+  assert.deepEqual(calls, ['unity-plan', 'preflight', 'prepare', 'capture-unity', 'restore']);
+  assert.equal(result.status, failed ? 'blocked' : 'passed');
+  assert.equal(existsSync(join(root, '.helix/unity-reconciliation.json')), false);
+  assert.equal(existsSync(join(root, '.aikit/scratch/run/case/review')), false);
+});

@@ -1,3 +1,7 @@
+import { historicalInputState } from './input-migration.ts';
+import { collectionKey } from './capture-identity.ts';
+import { dependencyPinState } from './dependency-pins.ts';
+import { evidencePath } from './evidence-archive.ts';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, createReadStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve, relative, sep } from 'node:path';
@@ -29,7 +33,7 @@ async function fileHash(path: string) {
   return hash.digest('hex');
 }
 async function pinState(root: string, pin: { path: string; sha256: string }) {
-  const path = pathIn(root, pin.path);
+  const path = evidencePath(root, pin.path);
   if (!existsSync(path)) return 'missing';
   return await fileHash(path) === pin.sha256 ? 'match' : 'changed';
 }
@@ -114,7 +118,7 @@ function runCoverageGaps(entry: AcceptanceCase, run: Run): string[] {
   if (missingCriteria.length) gaps.push('Missing required observation: ' + missingCriteria.map(criterion => criterion.id).join(', '));
   const missingAnchors = entry.recipe.anchors.filter(anchor => !run.capture.anchors.includes(anchor));
   if (missingAnchors.length) gaps.push('Missing event anchor: ' + missingAnchors.join(', '));
-  const missingInputs = entry.dependencies.filter(path => !run.candidate.inputs.some(pin => pin.path === path));
+  const missingInputs = entry.dependencies.filter(path => !run.candidate.inputs.some(pin => pin.path === path && isDeepStrictEqual(pin.selectors, entry.dependencySelections?.find(selection => selection.path === path)?.selectors)));
   if (!entry.dependencies.length || missingInputs.length) gaps.push('Missing declared input pins: ' + (missingInputs.length ? missingInputs.join(', ') : 'case declares no dependencies'));
   const kind = { appearance: 'image', motion: 'video', behavior: 'observations', audio: 'audio' }[entry.dimension];
   const sides = entry.basis.kind === 'reference' ? ['reference', 'candidate'] : ['candidate'];
@@ -193,7 +197,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
       const linkedDiscrepancies = discrepancies(root, { ...entry, discrepancies: [...new Set([...entry.discrepancies, ...(latestAssessment?.discrepancies ?? [])])] });
       const defects = linkedDiscrepancies.filter(record => record.status !== 'resolved');
       const prior = links.find(link => link.item === screen.id && link.caseId === entry.id);
-      const priorEvidence = prior ? { note: prior.note, sources: prior.sources.map(path => ({ path, available: existsSync(pathIn(root, path)) && statSync(pathIn(root, path)).isFile() })) } : null;
+      const priorEvidence = prior ? { note: prior.note, sources: prior.sources.map(path => ({ path, available: existsSync(evidencePath(root, path)) && statSync(evidencePath(root, path)).isFile() })) } : null;
       let freshness: 'current' | 'needs-recheck' | 'unknown' = 'unknown';
       let availability: 'available' | 'missing' | 'unverified' = 'unverified';
       if (run) {
@@ -201,9 +205,9 @@ export async function acceptanceStatus(root: string, project: string, reference?
         else validateRunTarget(scope, screen, entry, run);
         const coverageGaps = runCoverageGaps(entry, run);
         reasons.push(...coverageGaps.filter(reason => reason.startsWith('Missing declared input pins:')));
-        for (const pin of run.candidate.inputs) { const state = await pinState(root, pin); if (state !== 'match') reasons.push('Candidate input ' + state + ': ' + pin.path); }
-        if (reference && reference.identity !== run.reference.identity) reasons.push('Reference identity changed');
-        freshness = reasons.length ? 'needs-recheck' : reference && run.candidate.inputs.length ? 'current' : 'unknown';
+        for (const pin of run.candidate.inputs) { const state = historicalInputState(root, run, pin); if (state !== 'match') reasons.push('Candidate input ' + state + ': ' + pin.path); }
+        if (entry.basis.kind === 'reference' && reference && reference.identity !== run.reference.identity) reasons.push('Reference identity changed');
+        freshness = reasons.length ? 'needs-recheck' : (entry.basis.kind === 'product' || reference) && run.candidate.inputs.length ? 'current' : 'unknown';
         const artifactStates = await Promise.all(run.artifacts.map(artifact => pinState(root, artifact)));
         availability = artifactStates.includes('missing') ? 'missing' : artifactStates.includes('changed') || !artifactStates.length ? 'unverified' : 'available';
         if (availability !== 'available') reasons.push('Evidence ' + availability);
@@ -213,7 +217,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
       if (!run) reasons.push('No capture run exists for this case/viewport');
       else if (run.outcome !== 'matched') reasons.push('Capture verdict is ' + run.outcome + '; a scoped agent assessment does not replace a matched capture verdict');
       if (run && freshness === 'unknown') reasons.push('Capture source freshness is unknown');
-      if (!reference) reasons.push('Current reference identity has not been supplied');
+      if (entry.basis.kind === 'reference' && !reference) reasons.push('Current reference identity has not been supplied');
       if (entry.recipe.blockers.length) reasons.push(...entry.recipe.blockers);
       if (defects.length) reasons.push(...defects.map(defect => 'Linked discrepancy ' + defect.status + ': ' + defect.id));
       const decisionApplies = Boolean(decision && run && decision.runId === run.id && decision.runSha256 === recordHash(run));
@@ -223,11 +227,34 @@ export async function acceptanceStatus(root: string, project: string, reference?
       const reviewRequirement = automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id && workflow.viewports.includes(viewport))?.review ?? 'human';
       const review = decisionApplies ? decision!.status : 'pending';
       const accepted = canAccept && (review === 'accepted' || (reviewRequirement === 'automated' && review === 'pending'));
-      cases.push({ coverage: supplemental.get(JSON.stringify([screen.id, entry.id])) ?? null, reviewRequirement, latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required && !supplemental.has(JSON.stringify([screen.id, entry.id])), criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review, freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
+      cases.push({ supportingCases: [] as any[], workflowId: automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id && workflow.viewports.includes(viewport))?.id ?? null, coverage: supplemental.get(JSON.stringify([screen.id, entry.id])) ?? null, reviewRequirement, latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required && !supplemental.has(JSON.stringify([screen.id, entry.id])), criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review, freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
     }
     const required = cases.filter(entry => entry.required), accepted = required.filter(entry => entry.accepted).length;
     const counts = (entries: typeof cases) => ({ required: entries.filter(entry => entry.required).length, accepted: entries.filter(entry => entry.required && entry.accepted).length });
     items.push({ id: screen.id, title: screen.title, implementation: screen.implementation, status: !required.length ? 'unconfigured' : accepted === required.length && screen.implementation === 'implemented' ? 'accepted' : 'incomplete', ...counts(cases), byViewport: Object.fromEntries(scope.viewports.map(viewport => [viewport.id, counts(cases.filter(entry => entry.viewport === viewport.id))])), byDimension: Object.fromEntries(['appearance', 'motion', 'behavior', 'audio'].map(dimension => [dimension, counts(cases.filter(entry => entry.dimension === dimension))])), cases });
+  }
+  const routeIndex = new Map(adapters.map(route => [JSON.stringify([route.item, route.caseId, route.viewport]), route]));
+  const caseIndex = new Map(items.flatMap(item => item.cases.map(row => [JSON.stringify([item.id, row.id, row.viewport]), row] as const)));
+  const supportingIndex = new Map<string, string[]>();
+  for (const [key, mapping] of supplemental) for (const parent of mapping.coveredBy) {
+    const id = JSON.stringify([parent.item, parent.caseId]), sources = supportingIndex.get(id) ?? []; sources.push(key); supportingIndex.set(id, sources);
+  }
+  const currentCollections = new Map<string, { item: string; row: any }>();
+  for (const item of items) for (const row of item.cases) {
+    if (!row.latestRun || row.freshness !== 'current' || row.availability !== 'available') continue;
+    const route = routeIndex.get(JSON.stringify([item.id, row.id, row.viewport]));
+    if (route?.capture) currentCollections.set(collectionKey(route), { item: item.id, row });
+  }
+  for (const item of items) for (const row of item.cases) {
+    row.supportingCases = (supportingIndex.get(JSON.stringify([item.id, row.id])) ?? []).map(key => {
+      const [sourceItem, sourceCase] = JSON.parse(key);
+      const source = caseIndex.get(JSON.stringify([sourceItem, sourceCase, row.viewport]));
+      if (!source) return null; // Supplemental cases may have narrower viewport coverage.
+      const route = routeIndex.get(JSON.stringify([sourceItem, sourceCase, row.viewport]));
+      const shared = route?.capture ? currentCollections.get(collectionKey(route)) : undefined;
+      const capture = shared?.row ?? source;
+      return { item: sourceItem, caseId: sourceCase, viewport: source.viewport, dimension: source.dimension, workflowId: source.workflowId, runner: source.runner, priorEvidence: source.priorEvidence, captureFrom: shared ? { item: shared.item, caseId: capture.id } : { item: sourceItem, caseId: sourceCase }, latestRun: capture.latestRun ? { id: capture.latestRun.id, capturedUtc: capture.latestRun.capturedUtc } : null, freshness: capture.freshness, availability: capture.availability, accepted: source.accepted };
+    }).filter(source => source !== null);
   }
   return { format: 'helix-acceptance-status', version: 1, project: scope.project, variant: scope.variant, assessedUtc: new Date().toISOString(), referenceObservation: reference ?? null, scopeStatus: scope.status, exclusions: scope.exclusions, items, historicalRunIds: runs.filter(run => !activeKeys.has(caseKey(run))).map(run => run.id) };
 }
@@ -253,7 +280,8 @@ export async function saveRun(root: string, project: string, input: unknown) {
   return writeRecord(root, 'runs', run, async () => {
     const { scope, screens } = loadAcceptance(root, project), { screen, entry } = target(scope, screens, run);
     validateRunTarget(scope, screen, entry, run);
-    for (const pin of [...run.candidate.inputs, ...run.artifacts]) if (await pinState(root, pin) !== 'match') throw new Error('Run input/evidence missing or changed: ' + pin.path);
+    for (const pin of run.candidate.inputs) if (dependencyPinState(root, pin) !== 'match') throw new Error('Run input missing or changed: ' + pin.path);
+    for (const pin of run.artifacts) if (await pinState(root, pin) !== 'match') throw new Error('Run input/evidence missing or changed: ' + pin.path);
     const existing = records(root, 'runs', readRun);
     if (existing.some(record => caseKey(record) === caseKey(run) && record.capturedUtc === run.capturedUtc)) throw new Error('Ambiguous capture timestamp for this case');
   });
@@ -291,6 +319,12 @@ export async function saveDecision(root: string, project: string, input: unknown
   });
 }
 export async function acceptanceCommand(root: string, project: string, operation: string, options: Record<string, string>) {
+  if (operation === 'consolidate') {
+    for (const key of Object.keys(options)) if (!['project-root', 'helix-project', 'apply'].includes(key)) throw new Error('Invalid consolidation option');
+    if (options.apply !== undefined && options.apply !== 'true') throw new Error('Use --apply true');
+    const { consolidateAdapters } = await import('./adapter-consolidation.ts');
+    return consolidateAdapters(root, project, options.apply === 'true');
+  }
   if (options.folder !== undefined || options.discipline !== undefined) {
     if (!['plan', 'status'].includes(operation)) throw new Error('Folder/discipline selection supports acceptance plan or status only');
     const allowed = ['project-root', 'helix-project', 'folder', 'discipline', ...(operation === 'plan' ? ['out', 'viewport'] : ['reference'])];

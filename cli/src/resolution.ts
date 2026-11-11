@@ -1,3 +1,5 @@
+import { dependencyPinState } from './dependency-pins.ts';
+import { evidencePath } from './evidence-archive.ts';
 import { existsSync, readFileSync, readdirSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,9 +28,10 @@ export function resolutionDefinitions(root: string, project: string) {
   }
   return document.findings;
 }
-function checkPin(root: string, pin: any) {
+function checkPin(root: string, pin: any, input = false) {
   if (!pin || typeof pin.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(pin.sha256)) throw new Error('Invalid retained evidence pin');
-  const path = catalogPath(root, pin.path);
+  if (input && pin.selectors !== undefined) { const state = dependencyPinState(root, pin); return { path: pin.path, status: state === 'match' ? 'intact' : state, expected: pin.sha256, actual: state === 'match' ? pin.sha256 : null }; }
+  const path = input ? catalogPath(root, pin.path) : evidencePath(root, pin.path);
   if (!existsSync(path)) return { path: pin.path, status: 'missing', expected: pin.sha256, actual: null };
   if (!statSync(path).isFile() || statSync(path).size > 128 * 1024 * 1024) throw new Error('Resolution artifact must be a file within 128 MiB');
   const actual = digest(readFileSync(path));
@@ -56,7 +59,7 @@ export function resolutionStatus(root: string, project: string, id: string) {
     text(evidence.claim); if (!Array.isArray(evidence.inputs)) throw new Error('Missing input pins');
     for (const pin of evidence.inputs) {
       const previous = inputs.get(pin.path); if (previous && previous.expected !== pin.sha256) throw new Error('Conflicting evidence input pins');
-      if (!previous) inputs.set(pin.path, checkPin(root, pin));
+      if (!previous) inputs.set(pin.path, checkPin(root, pin, true));
     }
     return { index, claim: evidence.claim, ...checkPin(root, evidence), hasInputs: evidence.inputs.length > 0 };
   });

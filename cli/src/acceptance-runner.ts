@@ -1,3 +1,7 @@
+import { expandAdapterManifest } from './adapter-format.ts';
+import { captureDependencyPins, dependencyPinState } from './dependency-pins.ts';
+import { validateDependencySelectors } from './dependency-selection.ts';
+import { evidencePath } from './evidence-archive.ts';
 /** Executes authored case adapters. Game setup stays in consumer manifests and lifecycle recipes. */
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -24,14 +28,15 @@ function fields(value: any, keys: string[], label: string) {
 }
 function text(value: any) { if (typeof value !== 'string' || !value.trim()) throw new Error('Expected adapter text'); }
 function pin(root: string, value: any) {
-  fields(value, ['path', 'sha256'], 'adapter pin'); catalogPath(root, value.path);
+  fields(value, ['path', 'sha256', ...(value.selectors === undefined ? [] : ['selectors'])], 'adapter pin'); if (value.selectors !== undefined) validateDependencySelectors(value.selectors); catalogPath(root, value.path);
   if (typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256)) throw new Error('Expected adapter SHA-256');
 }
 export function loadCaseAdapters(root: string, project: string): CaseAdapter[] {
   const path = catalogPath(root, adaptersPath);
   if (!existsSync(path)) return [];
   if (statSync(path).size > 32 * 1024 * 1024) throw new Error('Case adapter manifest exceeds 32 MiB');
-  const value = JSON.parse(readFileSync(path, 'utf8'));
+  let value = JSON.parse(readFileSync(path, 'utf8'));
+  value = expandAdapterManifest(value);
   fields(value, ['version', 'project', 'routes'], 'case adapter manifest');
   if (value.version !== 1 || value.project !== project || !Array.isArray(value.routes)) throw new Error('Invalid case adapter project/version/routes');
   const { screens } = loadAcceptance(root, project), keys = new Set<string>();
@@ -62,8 +67,9 @@ export function loadCaseAdapters(root: string, project: string): CaseAdapter[] {
   }
   return value.routes;
 }
-function inspectPin(root: string, file: Pin, cache: Map<string, string>) {
-  const path = catalogPath(root, file.path);
+function inspectPin(root: string, file: Pin & { selectors?: import('./dependency-selection.ts').DependencySelector[] }, cache: Map<string, string>) {
+  if (file.selectors !== undefined) { const state = dependencyPinState(root, file); return { ...file, status: state === 'match' ? 'intact' : state }; }
+  const path = evidencePath(root, file.path);
   if (!existsSync(path)) return { ...file, status: 'missing' };
   let actual = cache.get(path);
   if (actual === undefined) { actual = hashFile(path); cache.set(path, actual); }
@@ -154,12 +160,12 @@ export async function runAcceptanceCase(root: string, project: string, item: str
       const { referenceObservation } = await import('../workbench/acceptance-backend.ts');
       const identity = await discover(adapterSettings(root));
       const reference = referenceObservation(root, identity.sourceRoot, project);
-      const inputs = entry.dependencies.map(path => ({ path, sha256: hashFile(catalogPath(root, path)) }));
+      const inputs = captureDependencyPins(root, entry);
       write(join(out, 'capture-inputs.json'), { reference, inputs, criteriaSha256: plan.criteriaSha256 });
       await runMatrix({ root, cli: fileURLToPath(new URL('./cli.ts', import.meta.url)), specPath: catalogPath(root, capture.spec), caseId: capture.caseId, out: join(out, 'capture'), execute: 'yes' });
       const matrix = JSON.parse(readFileSync(join(out, 'capture/matrix.json'), 'utf8')), row = matrix.cases[0];
       if (!row || row.captureComplete !== true || row.cleanupFailed || row.executionOutcome !== 'restored') throw new Error('Capture or restoration incomplete; inspect capture/matrix.json and reconcile the owned session');
-      if (referenceObservation(root, identity.sourceRoot, project).identity !== reference.identity || inputs.some(pin => hashFile(catalogPath(root, pin.path)) !== pin.sha256)) throw new Error('Inputs changed during capture; retain artifacts but do not import');
+      if (referenceObservation(root, identity.sourceRoot, project).identity !== reference.identity || inputs.some(pin => dependencyPinState(root, pin) !== 'match')) throw new Error('Inputs changed during capture; retain artifacts but do not import');
       const current = await planAcceptanceCase(root, project, item, caseId, viewport, out);
       if (current.criteriaSha256 !== plan.criteriaSha256 || current.routeSha256 !== plan.routeSha256) throw new Error('Case/adapter changed during capture');
       const artifacts: any[] = [];

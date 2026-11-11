@@ -13,7 +13,7 @@ export function caseStatus(entry: CaseRow): WorkStatus {
 }
 export function featureStatus(item: CatalogItem): WorkStatus {
   if (item.acceptance?.status === 'accepted') return 'accepted';
-  if (item.issues.some(issue => issue.kind === 'defect')) return 'fix';
+  if (item.issues.some(issue => issue.kind === 'defect') || (item.acceptance && (item.acceptance.nextSteps?.fix ?? 0) > 0)) return 'fix';
   if (!item.acceptance) return 'define';
   if (item.acceptance.ready > 0) return 'ready';
   return 'evidence';

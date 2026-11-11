@@ -326,3 +326,121 @@ test('primary coverage consolidates regressions without changing criteria hashes
  const status=await acceptanceStatus(f.root,'synthetic',f.reference);assert.equal(status.items[0].required,2);assert.equal(status.items[0].accepted,0);assert.equal(status.items[0].cases[0].required,false);assert.equal(status.items[0].cases[0].criteriaSha256,f.run.criteriaSha256);
  f.put('Tools/Helix/acceptance/coverage-plan.json',{version:1,project:'synthetic',supplemental:[rule,{...rule,caseId:'primary'}]});assert.throws(()=>loadAcceptance(f.root,'synthetic'),/primary coverage/);
 });
+
+test('archiving evidence preserves exact acceptance, review history and recoverable bytes', async t => {
+  const { archiveEvidence, evidencePath } = await import('../src/evidence-archive.ts');
+  const f = fixture(t), directory = 'Tools/Helix/evidence/verification/synthetic';
+  for (const artifact of f.run.artifacts) { const content = artifact.side; artifact.path = directory + '/' + content + '.png'; f.put(artifact.path, content); }
+  f.decision.runSha256 = recordHash(f.run);
+  await saveRun(f.root, 'synthetic', f.run); await saveDecision(f.root, 'synthetic', f.decision, f.reference);
+  const before = (await acceptanceStatus(f.root, 'synthetic', f.reference)).items;
+  const archived = archiveEvidence(f.root, directory, true);
+  assert.equal(archived.files, 2);
+  const after = (await acceptanceStatus(f.root, 'synthetic', f.reference)).items;
+  assert.deepEqual(after, before);
+  assert.equal(readFileSync(evidencePath(f.root, f.run.artifacts[0].path), 'utf8'), 'reference');
+  rmSync(join(f.root, '.helix/evidence-cache'), { recursive: true });
+  assert.equal((await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].accepted, 1);
+  const { recoverEvidence } = await import('../src/evidence-retention.ts');
+  const recovered = recoverEvidence(f.root, f.run.artifacts[0].path, 'recovered.png');
+  assert.equal(readFileSync(recovered.out, 'utf8'), 'reference');
+  assert.throws(() => recoverEvidence(f.root, f.run.artifacts[0].path, 'recovered.png'), /EEXIST/);
+  const archiveBytes = readFileSync(join(f.root, archived.archive!));
+  rmSync(join(f.root, archived.archive!));
+  assert.equal((await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].accepted, 0, 'warm cache cannot hide a missing archive');
+  writeFileSync(join(f.root, archived.archive!), archiveBytes);
+  f.put(f.run.artifacts[0].path, 'modified original');
+  assert.equal((await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].accepted, 0, 'archive cannot conceal a modified logical artifact');
+  rmSync(join(f.root, f.run.artifacts[0].path));
+  f.put(archived.archive!, 'corrupt');
+  await assert.rejects(acceptanceStatus(f.root, 'synthetic', f.reference), /archive changed/);
+});
+
+test('direct product workflows need no finding, paired reference or duplicate assessment', async t => {
+  const f = fixture(t);
+  f.screen.cases[0].basis = { kind: 'product', source: 'source.txt' }; f.put('Tools/Helix/acceptance/screens/result.json', f.screen);
+  f.put('Tools/Helix/catalog/catalog.json', { version: 1, project: 'synthetic', title: 'Synthetic', sources: [], exclusions: [], legacyReport: 'legacy.json', entries: [{ id: 'screen.result', title: 'Result', kind: 'screen', group: 'Screens', scope: 'game', summary: 'Synthetic', sources: [], implementationReferences: [], discrepancies: [], evidence: [], acceptanceItem: 'screen.result' }] });
+  f.put('Tools/Helix/resolutions/automation.json', { version: 2, project: 'synthetic', workflows: [{ id: 'result-check', item: 'screen.result', caseId: 'settled', review: 'automated', unity: { scene: 'scene.unity', preflightScripts: ['audit.cs'] } }] });
+  const { automationDefinitions } = await import('../src/verification-jobs.ts');
+  assert.equal(automationDefinitions(f.root, 'synthetic')[0].finding, null);
+  const { scope, screens } = loadAcceptance(f.root, 'synthetic');
+  f.run.criteriaSha256 = criteriaHash(scope, screens[0], screens[0].cases[0], 'phone');
+  f.run.artifacts = f.run.artifacts.filter(artifact => artifact.side === 'candidate');
+  await saveRun(f.root, 'synthetic', f.run);
+  const row = (await acceptanceStatus(f.root, 'synthetic')).items[0].cases[0];
+  assert.equal(row.accepted, true); assert.equal(row.workflowId, 'result-check'); assert.equal(row.latestAssessment, null); assert.equal(row.review, 'pending');
+  f.put('source.txt', 'changed'); assert.equal((await acceptanceStatus(f.root, 'synthetic')).items[0].cases[0].accepted, false);
+});
+
+test('catalog execution profile discovers capture adapters and keeps judgment policy and viewport scope', async t => {
+  const f = fixture(t);
+  f.put('Tools/Helix/catalog/catalog.json', { version: 1, project: 'synthetic', title: 'Synthetic', sources: [], exclusions: [], legacyReport: 'legacy.json', entries: [{ id: 'screen.result', title: 'Result', kind: 'screen', group: 'Screens', scope: 'game', summary: 'Synthetic', sources: [], implementationReferences: [], discrepancies: [], evidence: [], acceptanceItem: 'screen.result' }] });
+  f.put('Tools/Helix/acceptance/execution.json', { version: 1, project: 'synthetic', unity: { scene: 'scene.unity', preflightScripts: ['audit.cs'] } });
+  f.put('Tools/Helix/acceptance/adapters.json', { version: 1, project: 'synthetic', routes: [{ item: 'screen.result', caseId: 'settled', viewport: 'phone', retained: [], capture: { kind: 'node', script: 'run.ts', args: [], limitations: 'Synthetic collection' } }] });
+  const { automationDefinitions } = await import('../src/verification-jobs.ts');
+  const workflows = automationDefinitions(f.root, 'synthetic');
+  assert.equal(workflows.length, 1); assert.equal(workflows[0].review, 'human'); assert.equal(workflows[0].finding, null); assert.deepEqual(workflows[0].viewports, ['phone']);
+  const rows = (await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].cases;
+  assert.equal(rows.find(row => row.viewport === 'phone')!.workflowId, workflows[0].id);
+  assert.equal(rows.find(row => row.viewport === 'tablet')!.workflowId, null);
+});
+
+test('catalog consolidation preserves expanded adapters, run hashes and completion; rejects broken shared references', async t => {
+  const f = fixture(t);
+  const { loadCaseAdapters } = await import('../src/acceptance-runner.ts');
+  const { consolidateAdapters } = await import('../src/adapter-consolidation.ts');
+  f.put('Tools/Helix/acceptance/adapters.json', { version: 1, project: 'synthetic', routes: ['phone', 'tablet'].map(viewport => ({ item: 'screen.result', caseId: 'settled', viewport, retained: [{ path: 'historical.json', sha256: digest('historical') }], capture: { kind: 'node', script: 'run.ts', args: ['{viewport}'], limitations: 'Synthetic' } })) });
+  await saveRun(f.root, 'synthetic', f.run);
+  const before = loadCaseAdapters(f.root, 'synthetic'), status = await acceptanceStatus(f.root, 'synthetic', f.reference);
+  const original = readFileSync(join(f.root, 'Tools/Helix/acceptance/adapters.json'), 'utf8');
+  const preview = consolidateAdapters(f.root, 'synthetic', false);
+  assert.equal(preview.authoringRoutes, 1); assert.equal(preview.sharedEvidence, 1); assert.equal(preview.sharedCaptures, 1);
+  assert.equal(readFileSync(join(f.root, 'Tools/Helix/acceptance/adapters.json'), 'utf8'), original);
+  consolidateAdapters(f.root, 'synthetic', true);
+  assert.deepEqual(loadCaseAdapters(f.root, 'synthetic'), before);
+  assert.deepEqual((await acceptanceStatus(f.root, 'synthetic', f.reference)).items, status.items);
+  assert.equal(consolidateAdapters(f.root, 'synthetic', true).changed, false);
+  const path = 'Tools/Helix/acceptance/adapters.json', broken = JSON.parse(readFileSync(join(f.root, path), 'utf8'));
+  broken.routes[0].capture = 'missing'; f.put(path, broken);
+  assert.throws(() => loadCaseAdapters(f.root, 'synthetic'), /Unknown shared adapter definition/);
+});
+
+test('workflow overrides inherit one catalog setup without changing expanded definitions', async t => {
+  const f = fixture(t);
+  f.put('Tools/Helix/catalog/catalog.json', { version: 1, project: 'synthetic', title: 'Synthetic', sources: [], exclusions: [], legacyReport: 'legacy.json', entries: [{ id: 'screen.result', title: 'Result', kind: 'screen', group: 'Screens', scope: 'game', summary: 'Synthetic', sources: [], implementationReferences: [], discrepancies: [], evidence: [], acceptanceItem: 'screen.result' }] });
+  const unity = { scene: 'scene.unity', preflightScripts: ['audit.cs'] }, workflow = { id: 'result', item: 'screen.result', caseId: 'settled', review: 'automated' };
+  f.put('Tools/Helix/acceptance/execution.json', { version: 1, project: 'synthetic', unity });
+  f.put('Tools/Helix/resolutions/automation.json', { version: 2, project: 'synthetic', workflows: [{ ...workflow, unity }] });
+  const { automationDefinitions } = await import('../src/verification-jobs.ts');
+  const before = automationDefinitions(f.root, 'synthetic');
+  f.put('Tools/Helix/resolutions/automation.json', { version: 2, project: 'synthetic', workflows: [workflow] });
+  assert.deepEqual(automationDefinitions(f.root, 'synthetic'), before);
+  rmSync(join(f.root, 'Tools/Helix/acceptance/execution.json'));
+  assert.throws(() => automationDefinitions(f.root, 'synthetic'), /requires unity setup/);
+});
+
+
+test('reviewed input migration preserves only exact historical runs and exact replacement inputs', async t => {
+  const f = fixture(t);
+  const { historicalInputState } = await import('../src/input-migration.ts');
+  await saveRun(f.root, 'synthetic', f.run);
+  const pin = f.run.candidate.inputs[0];
+  f.put(pin.path, 'equivalent representation');
+  f.put('Tools/Helix/acceptance/input-migrations.json', { version: 1, migrations: [{ reason: 'Reviewed format-only rewrite', runs: [{ id: f.run.id, sha256: recordHash(f.run) }], changes: [{ path: pin.path, before: pin.sha256, after: digest('equivalent representation') }] }] });
+  assert.equal(historicalInputState(f.root, f.run, pin), 'match');
+  assert.equal(historicalInputState(f.root, { ...f.run, notes: 'different record' }, pin), 'changed');
+  f.put(pin.path, 'subsequent edit');
+  assert.equal(historicalInputState(f.root, f.run, pin), 'changed');
+});
+
+test('adapter dependency selections use the same logical routes before and after consolidation', async t => {
+  const f = fixture(t);
+  const path = 'Tools/Helix/acceptance/adapters.json';
+  f.put(path, { version: 1, project: 'synthetic', routes: ['phone', 'tablet'].map(viewport => ({ item: 'screen.result', caseId: 'settled', viewport, retained: [], capture: null })) });
+  const { dependencyPin } = await import('../src/dependency-pins.ts');
+  const { consolidateAdapters } = await import('../src/adapter-consolidation.ts');
+  const selectors = [{ pointer: '/routes', where: { item: 'screen.result', caseId: 'settled' } }];
+  const before = dependencyPin(f.root, path, selectors);
+  consolidateAdapters(f.root, 'synthetic', true);
+  assert.deepEqual(dependencyPin(f.root, path, selectors), before);
+});

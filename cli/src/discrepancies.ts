@@ -1,3 +1,6 @@
+import { dependencyPinState } from './dependency-pins.ts';
+import { validateDependencySelectors } from './dependency-selection.ts';
+import { evidencePath } from './evidence-archive.ts';
 import { spawnSync } from 'node:child_process';
 // A feature's continuation travels with the checkout. Evidence stays at its original location.
 import { createHash } from 'node:crypto';
@@ -20,7 +23,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { root } from './config.ts';
 
-type Pin = { path: string; sha256: string };
+type Pin = import('./acceptance-format.ts').InputPin;
 type Evidence = Pin & {
   claim: string;
   inputs: Pin[];
@@ -77,6 +80,7 @@ function validatePath(path: string) {
 }
 function validatePin(pin: Pin) {
   validatePath(pin.path);
+  if (pin.selectors !== undefined) validateDependencySelectors(pin.selectors);
   if (typeof pin.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(pin.sha256))
     throw new Error('Expected capture-time SHA-256 for ' + pin.path);
 }
@@ -169,7 +173,8 @@ async function latest(id: string) {
 
 // Compare the pinned bytes with this checkout, never repin evidence on a read or update.
 async function inspectPin(pin: Pin, hashes: Map<string, string>): Promise<Check> {
-  const path = resolve(root, pin.path);
+  if (pin.selectors !== undefined) { const state = dependencyPinState(root, pin); return { path: pin.path, status: state === 'missing' ? 'unavailable' : state }; }
+  const path = evidencePath(root, pin.path);
   try {
     const actual = await realpath(path);
     if (!actual.startsWith(root + sep) || !(await stat(actual)).isFile())

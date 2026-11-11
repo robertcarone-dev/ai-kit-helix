@@ -26,8 +26,11 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   catalog validate
   resolution status --finding ID
   resolution review --spec FILE
+  acceptance consolidate [--apply true] (configuration only; no execution)
   acceptance validate|summary|status|publish [--reference CURRENT_REFERENCE_JSON]
   acceptance record-run|assess|review --spec RECORD_JSON [--reference CURRENT_REFERENCE_JSON]
+  catalog-batch plan|run|resume|status [--folder ID] [--mode ready|changed] [--id BATCH]
+  evidence archive --directory BATCH [--apply true]
   evidence compact --directory BATCH [--apply true]
   evidence recover --path ORIGINAL --out NEW_FILE
   acceptance adapters
@@ -180,10 +183,11 @@ async function main() {
     return;
   }
   const allowed: Record<string, string[]> = {
+    'catalog-batch': ['folder', 'discipline', 'scope', 'mode', 'reference', 'token', 'id'],
     resolution: ['finding', 'spec'],
     catalog: ['reference', 'folder', 'discipline', 'scope', 'format'],
     evidence: ['directory', 'apply', 'path', 'out'],
-    acceptance: ['folder', 'discipline', 'spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
+    acceptance: ['apply', 'folder', 'discipline', 'spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
     'discrepancy-resume': ['feature', 'assignment', 'status'],
     'discrepancy-recover': ['id', 'issue', 'board-root'],
     'discrepancy-rerun': ['id', 'out', 'execute', 'ai-kit'],
@@ -280,17 +284,37 @@ async function main() {
     }
     return { ...report, entries, selection: { folder: options.folder ?? null, discipline: options.discipline ?? 'all', scope: options.scope ?? 'all' }, summary: { total: entries.length, game: entries.filter(entry => entry.scope === 'game').length, definedCoverage: entries.filter(entry => entry.acceptance !== null).length, accepted: entries.filter(entry => entry.acceptance?.status === 'accepted').length, discrepancies: new Set(entries.flatMap(entry => entry.issues.map(issue => issue.id))).size } };
   }
+  if (command === 'catalog-batch') {
+    if (pos.length !== 1 || !['plan', 'run', 'resume', 'status'].includes(pos[0])) throw new Error('Use catalog-batch plan|run|resume|status');
+    const { planCatalogBatch, startCatalogBatch, catalogBatchStatus } = await import('./catalog-batch.ts');
+    if (pos[0] === 'status') return catalogBatchStatus(root, options.id);
+    const project = adapterSettings(root).helix.project;
+    const previous = pos[0] === 'resume' ? catalogBatchStatus(root, options.id) : null;
+    if (pos[0] === 'resume' && !previous) throw new Error('Select an existing batch to resume');
+    const selection = previous ? previous.selection : { mode: options.mode ?? 'ready', ...(options.folder ? { folder: options.folder } : {}), ...(options.discipline ? { discipline: options.discipline } : {}), ...(options.scope ? { scope: options.scope } : {}) };
+    const { readReferenceObservation } = await import('./acceptance-format.ts');
+    let reference = options.reference ? readReferenceObservation(JSON.parse(readFileSync(resolve(root, options.reference), 'utf8'))) : undefined;
+    if (pos[0] === 'plan') return planCatalogBatch(root, project, selection, reference);
+    const identity = await discover(adapterSettings(root));
+    if (!reference) { const { referenceObservation } = await import('../workbench/acceptance-backend.ts'); reference = referenceObservation(root, identity.sourceRoot, project); }
+    return startCatalogBatch(root, identity.sourceRoot, project, selection, options.token, reference, previous?.id);
+  }
   if (command === 'evidence') {
     const { compactEvidence, recoverEvidence } = await import('./evidence-retention.ts');
-    const allowed = pos[0] === 'compact' ? ['directory', 'apply'] : ['path', 'out'];
+    const allowed = ['compact', 'archive'].includes(pos[0]) ? ['directory', 'apply'] : ['path', 'out'];
     for (const key of Object.keys(options)) if (!['project-root', 'helix-project', ...allowed].includes(key)) throw new Error('Invalid evidence option');
-    if (pos.length !== 1) throw new Error('Use evidence compact|recover');
+    if (pos.length !== 1) throw new Error('Use evidence archive|compact|recover');
+    if (pos[0] === 'archive' && options.directory) {
+      if (options.apply !== undefined && options.apply !== 'true') throw new Error('Use --apply true to archive');
+      const { archiveEvidence } = await import('./evidence-archive.ts');
+      return archiveEvidence(root, options.directory, options.apply === 'true');
+    }
     if (pos[0] === 'compact' && options.directory) {
       if (options.apply !== undefined && options.apply !== 'true') throw new Error('Use --apply true to compact');
       return compactEvidence(root, options.directory, options.apply === 'true');
     }
     if (pos[0] === 'recover' && options.path && options.out) return recoverEvidence(root, options.path, options.out);
-    throw new Error('Use evidence compact --directory BATCH [--apply true] or evidence recover --path ORIGINAL --out NEW_FILE');
+    throw new Error('Use evidence archive|compact --directory BATCH [--apply true] or evidence recover --path ORIGINAL --out NEW_FILE');
   }
   if (command === 'acceptance') {
     if (pos.length !== 1) throw new Error('Supply one acceptance operation');

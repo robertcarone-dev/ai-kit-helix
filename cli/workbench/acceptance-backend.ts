@@ -1,3 +1,5 @@
+import { planCatalogBatch, startCatalogBatch, catalogBatchStatus } from '../src/catalog-batch.ts';
+import { evidencePath } from '../src/evidence-archive.ts';
 import { verificationStatus, startVerification } from '../src/verification-jobs.ts';
 import { resolutionDefinitions, resolutionStatus, reviewResolution } from '../src/resolution.ts';
 import { planAcceptanceCase } from '../src/acceptance-runner.ts';
@@ -32,6 +34,12 @@ export function referenceObservation(root: string, referenceRoot: string, projec
   return { version: 1 as const, project, variant: scope.variant, identity: recordHash([...files].sort(([a], [b]) => a.localeCompare(b))), observedUtc: new Date().toISOString() };
 }
 export async function acceptanceBackend(root: string, referenceRoot: string, project: string, route: string, input: any): Promise<Response> {
+  if (route === '/acceptance/batch-status') return Response.json(catalogBatchStatus(root, input.id));
+  if (route === '/acceptance/batch-plan' || route === '/acceptance/batch-start') {
+    const reference = referenceObservation(root, referenceRoot, project);
+    if (route === '/acceptance/batch-plan') return Response.json(await planCatalogBatch(root, project, input.selection, reference));
+    return Response.json(await startCatalogBatch(root, referenceRoot, project, input.selection, input.expectedToken, reference, input.resume), { status: 202 });
+  }
   if (route === '/acceptance/verification-start') return Response.json(startVerification(root, referenceRoot, project, input.id, input.expectedToken), { status: 202 });
   if (route === '/acceptance/verification-status') {
     const execution = verificationStatus(root, project, input.id);
@@ -55,7 +63,7 @@ export async function acceptanceBackend(root: string, referenceRoot: string, pro
     if (!Number.isInteger(input.artifact) || input.artifact < 0 || input.artifact >= status.artifacts.length) throw new Error('Select registered resolution evidence');
     const artifact = status.artifacts[input.artifact];
     if (artifact.status !== 'intact') throw new Error('Retained evidence is missing or changed');
-    const bytes = readFileSync(catalogPath(root, artifact.path));
+    const bytes = readFileSync(evidencePath(root, artifact.path));
     if (digest(bytes) !== artifact.expected) throw new Error('Evidence changed while opening');
     const mime: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', json: 'text/plain', txt: 'text/plain', md: 'text/plain' };
     const extension = artifact.path.split('.').pop()!;
@@ -71,7 +79,7 @@ export async function acceptanceBackend(root: string, referenceRoot: string, pro
     const artifact = item.evidence[input.artifact];
     if (artifact.path !== input.expectedPath || artifact.sha256 !== input.expectedSha256) throw new Error('Catalog evidence changed; refresh before opening');
     if (!artifact.availability.startsWith('local;')) throw new Error('Evidence is not available in this checkout');
-    const full = catalogPath(root, artifact.path);
+    const full = evidencePath(root, artifact.path);
     if (lstatSync(full).size > 128 * 1024 * 1024) throw new Error('Evidence exceeds the 128 MiB review limit');
     const bytes = readFileSync(full);
     if (artifact.sha256 !== null && digest(bytes) !== artifact.sha256) throw new Error('Evidence hash differs from the retained record; recover the original artifact');
@@ -89,7 +97,7 @@ export async function acceptanceBackend(root: string, referenceRoot: string, pro
   const run = entry.latestRun;
   if (route === '/acceptance/media') {
     if (!Number.isInteger(input.artifact) || input.artifact < 0 || input.artifact >= run.artifacts.length) throw new Error('Select a registered artifact');
-    const artifact = run.artifacts[input.artifact], full = within(root, artifact.path);
+    const artifact = run.artifacts[input.artifact], full = evidencePath(root, artifact.path);
     if (lstatSync(full).size > 128 * 1024 * 1024) throw new Error('Artifact exceeds the 128 MiB inline review limit');
     const bytes = readFileSync(full);
     if (digest(bytes) !== artifact.sha256) throw new Error('Artifact bytes changed since capture');

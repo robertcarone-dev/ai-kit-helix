@@ -33,6 +33,8 @@ export interface MatrixOptions {
   root: string;
   cli: string;
   specPath: string;
+  /** Product assertions need only the candidate lifecycle, not a paired browser capture. */
+  candidateOnly?: boolean;
   out: string;
   /** Omit to plan. Only the literal "yes" authorizes execution. */
   execute?: string;
@@ -224,7 +226,7 @@ export function caseIdentity(c: any, side: 'reference' | 'candidate', receipt: s
 }
 
 function reviewCase(c: any, row: any, retained: NonNullable<MatrixOptions['retained']>) {
-  if (sha(readFileSync(c.uiSpec)) !== c.uiSpecSha256 ||
+  if ((c.uiSpec ? sha(readFileSync(c.uiSpec)) : null) !== c.uiSpecSha256 ||
       (c.sceneSpec ? sha(readFileSync(c.sceneSpec)) : null) !== c.sceneSpecSha256)
     throw new Error('Comparison spec changed after planning.');
   const reference = retained.reference ?? join(c.out, 'reference/reference.json');
@@ -276,6 +278,8 @@ function reviewCase(c: any, row: any, retained: NonNullable<MatrixOptions['retai
  * Reconcile uncertain session state; stop subsequent cases on timeouts or failed cleanup. */
 export async function runMatrix(options: MatrixOptions, command = runCommand) {
   const { root, cli, specPath } = options;
+  const candidateOnly = options.candidateOnly === true;
+  if (candidateOnly && options.retained) throw new Error('Candidate-only execution does not accept paired retained captures');
   const spec = JSON.parse(readFileSync(specPath, 'utf8'));
   const { config, configHash } = readProjectConfig(root);
   if (spec.schemaVersion !== 1 || !Array.isArray(spec.cases) || !spec.cases.length)
@@ -301,9 +305,10 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         Object.keys(c.safeAreaInsets).length !== 4)
     )
       throw new Error('Invalid safe-area insets.');
-    if (typeof c.uiSpec !== 'string') throw new Error('Case needs uiSpec path.');
-    const uiSpec = resolve(root, c.uiSpec);
-    validateSpec(JSON.parse(readFileSync(uiSpec, 'utf8')));
+    if (!candidateOnly && typeof c.uiSpec !== 'string') throw new Error('Case needs uiSpec path.');
+    if (candidateOnly && (c.uiSpec !== undefined || c.sceneSpec !== undefined)) throw new Error('Candidate-only cases declare assertions in their adapter, not paired comparison specs');
+    const uiSpec = candidateOnly ? null : resolve(root, c.uiSpec);
+    if (uiSpec) validateSpec(JSON.parse(readFileSync(uiSpec, 'utf8')));
     if (c.sceneSpec !== undefined) {
       if (typeof c.sceneSpec !== 'string' || typeof c.sceneProfile !== 'string')
         throw new Error('Scene case requires sceneSpec and sceneProfile');
@@ -319,7 +324,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       // Full config remains provenance; reuse depends only on this side's recipe.
       configSha256: configHash,
       recipeSha256: caseRecipeHashes(config, c),
-      uiSpecSha256: sha(readFileSync(uiSpec)),
+      uiSpecSha256: uiSpec ? sha(readFileSync(uiSpec)) : null,
       sceneSpecSha256: c.sceneSpec ? sha(readFileSync(c.sceneSpec)) : null,
       widthPx: config.viewports[c.viewport].width,
       heightPx: config.viewports[c.viewport].height,
@@ -427,7 +432,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
       }
     }
     recoveryComplete = true;
-    if (!retained.reference && existsSync(join(root, '.helix/connection.json')))
+    if (!candidateOnly && !retained.reference && existsSync(join(root, '.helix/connection.json')))
       throw new Error('An existing browser session is owned elsewhere; stop it explicitly before the matrix.');
     for (const [caseIndex, c] of cases.entries()) {
       if (interrupted) break;
@@ -518,7 +523,7 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
             environment: plan.environment, restore: plan.stages.restore }));
           for (const argv of plan.stages.preflight) await invoke(executable, argv, 'preflight', unityEnv);
         }
-        if (!retained.reference) {
+        if (!candidateOnly && !retained.reference) {
           browserAttempted = true;
           const started = await helix(['start', '--viewport', c.viewport], 'reference-start');
           browserOwned = true;
@@ -553,13 +558,14 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         const current = readProjectConfig(root).config;
         const currentCase = { ...c, sceneOptions: c.sceneSpec ? resolveSceneOptions(current, c.sceneProfile) : undefined };
         const currentHashes = caseRecipeHashes(current, currentCase);
-        if (sha(readFileSync(c.uiSpec)) !== c.uiSpecSha256 ||
+        if ((c.uiSpec ? sha(readFileSync(c.uiSpec)) : null) !== c.uiSpecSha256 ||
             (c.sceneSpec ? sha(readFileSync(c.sceneSpec)) : null) !== c.sceneSpecSha256)
           throw new Error('Comparison spec changed during capture; retained artifacts need a fresh review.');
         for (const [side, file] of [
           ['reference', 'reference/reference.json'],
           ['candidate', 'unity/unity.json'],
         ] as const) {
+          if (candidateOnly && side === 'reference') continue;
           if (!retained[side]) {
             if (currentHashes[side] !== c.recipeSha256[side])
               throw new Error('Selected ' + side + ' recipe changed during capture; no reusable case identity was published.');
@@ -574,7 +580,10 @@ export async function runMatrix(options: MatrixOptions, command = runCommand) {
         }
         capturesComplete = true;
         row.captureComplete = true;
-        reviewCase(c, row, retained);
+        if (candidateOnly) {
+          row.receipts = { candidate: join(c.out, 'unity/unity.json') };
+          row.status = 'captured'; // The project assertion adapter owns the verdict.
+        } else reviewCase(c, row, retained);
       } catch (e) {
         row.status = 'blocked';
         row.error = String(e);

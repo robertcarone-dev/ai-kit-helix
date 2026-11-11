@@ -1,3 +1,4 @@
+import { evidencePath } from './evidence-archive.ts';
 import type { CatalogReport, CatalogItem } from '../workbench/catalog-view.ts';
 import { featureStatus, statusText, nextCaseAction } from '../workbench/workbench-presentation.ts';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
@@ -138,7 +139,7 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
       // Historical external locators are retained verbatim; only portable paths are read from the checkout.
       let availability = 'external locator';
       if (!path.startsWith('/') && !path.includes(':') && !path.includes('..') && !path.includes('\\')) {
-        const file = catalogPath(root, path);
+        const file = evidencePath(root, path);
         availability = existsSync(file) && statSync(file).isFile() ? sha256 ? 'local; hash checked on open' : 'local; unpinned' : 'missing locally';
       }
       if (!evidence.some(value => value.path === path && value.sha256 === sha256)) evidence.push({ path, sha256, origin, availability });
@@ -159,7 +160,7 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
       missingSources: [...entry.sources, ...entry.implementationReferences].filter(path => !existsSync(catalogPath(root, path))),
       issues, evidence, comparisons: comparisons.filter(record => record.links.some((link: any) => link.item === entry.id)),
       legacy: previous ? { status: previous.status, summary: previous.summary, reportedUtc: legacy.reportedUtc } : null,
-      acceptance: result ? { nextSteps: result.cases.reduce((counts: Record<string, number>, row: any) => { if (row.required) { const action = nextCaseAction(row); counts[action] = (counts[action] ?? 0) + 1; } return counts; }, {}), status: result.status, required: result.required, accepted: result.accepted, cases: result.cases.length, verified: result.cases.filter((row: any) => row.freshness === 'current' && row.availability === 'available' && row.verification === 'matched' && (!row.assessmentAvailable || row.latestAssessment.outcome === 'matched')).length, mismatches: result.cases.filter((row: any) => row.assessmentAvailable && row.latestAssessment.outcome === 'mismatch').length, pendingReview: result.cases.filter((row: any) => row.reviewRequirement !== 'automated' && row.latestRun && row.review === 'pending').length, ready: result.cases.filter((row: any) => row.canAccept && !row.accepted && row.review !== 'changes-requested').length, needsEvidence: result.cases.filter((row: any) => !row.accepted && !row.canAccept && nextCaseAction(row) !== 'verified').length } : null };
+      acceptance: result ? { nextSteps: result.cases.reduce((counts: Record<string, number>, row: any) => { if (row.required) { const action = nextCaseAction(row); counts[action] = (counts[action] ?? 0) + 1; } return counts; }, {}), status: result.status, required: result.required, accepted: result.accepted, cases: result.cases.length, verified: result.cases.filter((row: any) => row.freshness === 'current' && row.availability === 'available' && row.verification === 'matched' && (!row.assessmentAvailable || row.latestAssessment.outcome === 'matched')).length, mismatches: result.cases.filter((row: any) => row.required && row.freshness === 'current' && row.availability === 'available' && (row.verification === 'mismatch' || (row.assessmentAvailable && row.latestAssessment.outcome === 'mismatch'))).length, pendingReview: result.cases.filter((row: any) => row.reviewRequirement !== 'automated' && row.latestRun && row.review === 'pending').length, ready: result.cases.filter((row: any) => row.canAccept && !row.accepted && row.review !== 'changes-requested').length, needsEvidence: result.cases.filter((row: any) => !row.accepted && !row.canAccept && nextCaseAction(row) !== 'verified').length } : null };
   });
   return { format: 'helix-game-catalog', version: 1, project, title: catalog.title, assessedUtc: new Date().toISOString(), folders: catalog.folders ?? [], sources: catalog.sources, exclusions: catalog.exclusions, entries,
     summary: { total: entries.length, game: entries.filter((entry: any) => entry.scope === 'game').length, definedCoverage: entries.filter((entry: any) => entry.acceptance !== null).length, accepted: entries.filter((entry: any) => entry.acceptance?.status === 'accepted').length, discrepancies: discrepancies.size },

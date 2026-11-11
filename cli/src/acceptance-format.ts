@@ -1,13 +1,16 @@
+import { validateDependencySelectors } from './dependency-selection.ts';
+import type { DependencySelector } from './dependency-selection.ts';
 /** Portable acceptance contracts. No game identities, selectors, or runtime execution. */
 import { createHash } from 'node:crypto';
 
 export type Dimension = 'appearance' | 'motion' | 'behavior' | 'audio';
 export type Pin = { path: string; sha256: string };
+export type InputPin = Pin & { selectors?: DependencySelector[] };
 export type Criterion = { id: string; expected: string };
-export type AcceptanceCase = { id: string; dimension: Dimension; required: boolean; viewports: string[]; basis: { kind: 'reference' | 'product'; source: string }; criteria: Criterion[]; dependencies: string[]; discrepancies: string[]; recipe: { reference: string | null; candidate: string | null; blockers: string[]; setup: string; anchors: string[] } };
+export type AcceptanceCase = { id: string; dimension: Dimension; required: boolean; viewports: string[]; basis: { kind: 'reference' | 'product'; source: string }; criteria: Criterion[]; dependencies: string[]; dependencySelections?: { path: string; selectors: DependencySelector[] }[]; discrepancies: string[]; recipe: { reference: string | null; candidate: string | null; blockers: string[]; setup: string; anchors: string[] } };
 export type Screen = { version: 1; id: string; title: string; implementation: 'missing' | 'in-progress' | 'implemented'; implementationReferences: string[]; cases: AcceptanceCase[] };
 export type Scope = { version: 1; project: string; variant: string; status: 'draft' | 'approved'; rationale: string; screens: string[]; exclusions: string[]; viewports: { id: string; width: number; height: number; safeArea: string }[] };
-export type Run = { version: 1; id: string; project: string; variant: string; item: string; caseId: string; viewport: string; criteriaSha256: string; capturedUtc: string; reference: { identity: string; description: string }; candidate: { revision: string; inputs: Pin[] }; capture: { width: number; height: number; safeArea: string; setup: string; anchors: string[] }; outcome: 'matched' | 'mismatch' | 'blocked' | 'unmeasured'; observations: { criterion: string; result: 'match' | 'mismatch' | 'unmeasured'; note: string }[]; artifacts: (Pin & { kind: 'image' | 'video' | 'audio' | 'observations'; side: 'reference' | 'candidate'; recovery: string })[]; notes: string };
+export type Run = { version: 1; id: string; project: string; variant: string; item: string; caseId: string; viewport: string; criteriaSha256: string; capturedUtc: string; reference: { identity: string; description: string }; candidate: { revision: string; inputs: InputPin[] }; capture: { width: number; height: number; safeArea: string; setup: string; anchors: string[] }; outcome: 'matched' | 'mismatch' | 'blocked' | 'unmeasured'; observations: { criterion: string; result: 'match' | 'mismatch' | 'unmeasured'; note: string }[]; artifacts: (Pin & { kind: 'image' | 'video' | 'audio' | 'observations'; side: 'reference' | 'candidate'; recovery: string })[]; notes: string };
 export type Decision = { version: 1; id: string; project: string; variant: string; item: string; caseId: string; viewport: string; runId: string; runSha256: string; reviewer: { name: string; identity: 'self-reported' | 'host-verified' }; status: 'accepted' | 'changes-requested' | 'blocked'; notes: string; savedUtc: string; supersedes: string | null };
 export type ReferenceObservation = { version: 1; project: string; variant: string; identity: string; observedUtc: string };
 
@@ -61,14 +64,15 @@ export function readScreen(value: any): Screen {
   if (value.version !== 1) throw new Error('Unsupported screen version');
   identifier(value.id); text(value.title, 'screen title'); choice(value.implementation, ['missing', 'in-progress', 'implemented'], 'implementation'); array(value.implementationReferences, 'implementation references', portablePath);
   array(value.cases, 'cases', entry => {
-    object(entry, ['id', 'dimension', 'required', 'viewports', 'basis', 'criteria', 'dependencies', 'discrepancies', 'recipe'], 'case');
+    object(entry, ['id', 'dimension', 'required', 'viewports', 'basis', 'criteria', 'dependencies', 'discrepancies', 'recipe', ...(entry.dependencySelections === undefined ? [] : ['dependencySelections'])], 'case');
     identifier(entry.id); choice(entry.dimension, ['appearance', 'motion', 'behavior', 'audio'], 'dimension');
     if (typeof entry.required !== 'boolean') throw new Error('Expected required boolean');
     array(entry.viewports, 'case viewports', identifier); if (!entry.viewports.length) throw new Error('Case requires a viewport');
     object(entry.basis, ['kind', 'source'], 'basis'); choice(entry.basis.kind, ['reference', 'product'], 'basis'); text(entry.basis.source, 'basis source');
     array(entry.criteria, 'criteria', criterion => { object(criterion, ['id', 'expected'], 'criterion'); identifier(criterion.id); text(criterion.expected, 'expected'); }, criterion => criterion.id);
     if (!entry.criteria.length) throw new Error('Case requires criteria');
-    array(entry.dependencies, 'dependencies', portablePath); array(entry.discrepancies, 'discrepancies', identifier);
+    array(entry.dependencies, 'dependencies', portablePath);
+    if (entry.dependencySelections !== undefined) array(entry.dependencySelections, 'dependency selections', selection => { object(selection, ['path', 'selectors'], 'dependency selection'); portablePath(selection.path); if (!entry.dependencies.includes(selection.path) || !['.json', '.md'].some(extension => selection.path.endsWith(extension))) throw new Error('Selection must name a declared JSON or Markdown dependency'); validateDependencySelectors(selection.selectors); if (selection.selectors.some(selector => ('heading' in selector) !== selection.path.endsWith('.md'))) throw new Error('Dependency selector does not match file type'); }, selection => selection.path); array(entry.discrepancies, 'discrepancies', identifier);
     object(entry.recipe, ['reference', 'candidate', 'blockers', 'setup', 'anchors'], 'recipe');
     for (const side of ['reference', 'candidate']) if (entry.recipe[side] !== null) text(entry.recipe[side], side + ' recipe');
     array(entry.recipe.blockers, 'blockers', blocker => text(blocker, 'blocker')); text(entry.recipe.setup, 'setup'); array(entry.recipe.anchors, 'anchors', identifier);
@@ -80,7 +84,7 @@ export function readRun(value: any): Run {
   object(value, ['version', 'id', 'project', 'variant', 'item', 'caseId', 'viewport', 'criteriaSha256', 'capturedUtc', 'reference', 'candidate', 'capture', 'outcome', 'observations', 'artifacts', 'notes'], 'run'); identity(value); hash(value.criteriaSha256); utc(value.capturedUtc); text(value.notes, 'run notes');
   object(value.reference, ['identity', 'description'], 'reference'); hash(value.reference.identity); text(value.reference.description, 'reference description');
   object(value.candidate, ['revision', 'inputs'], 'candidate'); text(value.candidate.revision, 'candidate revision');
-  array(value.candidate.inputs, 'inputs', pin => { object(pin, ['path', 'sha256'], 'input'); portablePath(pin.path); hash(pin.sha256); }, pin => pin.path);
+  array(value.candidate.inputs, 'inputs', pin => { object(pin, ['path', 'sha256', ...(pin.selectors === undefined ? [] : ['selectors'])], 'input'); portablePath(pin.path); hash(pin.sha256); if (pin.selectors !== undefined) validateDependencySelectors(pin.selectors); }, pin => pin.path);
   object(value.capture, ['width', 'height', 'safeArea', 'setup', 'anchors'], 'capture'); positive(value.capture.width); positive(value.capture.height); text(value.capture.safeArea, 'safe area'); text(value.capture.setup, 'setup'); array(value.capture.anchors, 'anchors', identifier);
   choice(value.outcome, ['matched', 'mismatch', 'blocked', 'unmeasured'], 'outcome');
   array(value.observations, 'observations', entry => { object(entry, ['criterion', 'result', 'note'], 'observation'); identifier(entry.criterion); choice(entry.result, ['match', 'mismatch', 'unmeasured'], 'observation result'); text(entry.note, 'observation'); }, entry => entry.criterion);
