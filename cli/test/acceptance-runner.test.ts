@@ -55,3 +55,9 @@ test('interruption forwards termination and waits for the child cleanup before r
   try { await assert.rejects(pending, (error: any) => { assert.match(error.message, /interrupted/); assert.match(error.record.stdout, /cleanup-complete/); return true; }); }
   finally { clearTimeout(timer); }
 });
+
+test('an already canceled command does not attempt to launch an executable', async () => {
+  const { runCommand } = await import('../src/ui-runner.ts');
+  const signal = new AbortController(); signal.abort();
+  await assert.rejects(runCommand('/nonexistent/helix-canceled-command', [], process.cwd(), 5000, process.env, signal.signal), /interrupted before launch/);
+});

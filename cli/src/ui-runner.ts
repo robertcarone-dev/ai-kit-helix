@@ -51,6 +51,7 @@ export function runCommand(
   env: NodeJS.ProcessEnv = process.env,
   interruption?: AbortSignal,
 ): Promise<CommandRecord> {
+  if (interruption?.aborted) return Promise.reject(new Error('Command interrupted before launch.'));
   return new Promise((done, reject) => {
     const started = Date.now(),
       child = spawn(executable, args, {
@@ -126,6 +127,7 @@ export async function waitForPreparationReceipt(barrier: any, output: string, in
     if (Date.now() >= deadline) throw new Error('Preparation receipt timeout: ' + barrier.path);
     await new Promise(resolve => setTimeout(resolve, 100));
   }
+  if (interrupted()) throw new Error('Interrupted while awaiting preparation receipt');
   const within = relative(realpathSync(output), realpathSync(barrier.path));
   if (!within || within.startsWith('..') || isAbsolute(within)) throw new Error('Preparation receipt escaped output');
   const bytes = readFileSync(barrier.path);
