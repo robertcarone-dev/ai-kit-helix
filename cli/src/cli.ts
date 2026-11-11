@@ -29,6 +29,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   acceptance consolidate [--apply true] (configuration only; no execution)
   acceptance validate|summary|status|publish [--reference CURRENT_REFERENCE_JSON]
   acceptance record-run|assess|review --spec RECORD_JSON [--reference CURRENT_REFERENCE_JSON]
+  aikit-checks plan|run [--item ID] [--case ID] [--mode remaining|all] [--token TOKEN]
   catalog-batch plan|run|resume|status [--folder ID] [--mode ready|changed] [--id BATCH]
   evidence archive --directory BATCH [--apply true]
   evidence compact --directory BATCH [--apply true]
@@ -183,6 +184,7 @@ async function main() {
     return;
   }
   const allowed: Record<string, string[]> = {
+    'aikit-checks': ['item', 'case', 'mode', 'token', 'reference'],
     'catalog-batch': ['folder', 'discipline', 'scope', 'mode', 'reference', 'token', 'id'],
     resolution: ['finding', 'spec'],
     catalog: ['reference', 'folder', 'discipline', 'scope', 'format'],
@@ -283,6 +285,17 @@ async function main() {
       console.log(tree.length ? renderCatalogTree(tree) : 'No matching features.'); return;
     }
     return { ...report, entries, selection: { folder: options.folder ?? null, discipline: options.discipline ?? 'all', scope: options.scope ?? 'all' }, summary: { total: entries.length, game: entries.filter(entry => entry.scope === 'game').length, definedCoverage: entries.filter(entry => entry.acceptance !== null).length, accepted: entries.filter(entry => entry.acceptance?.status === 'accepted').length, discrepancies: new Set(entries.flatMap(entry => entry.issues.map(issue => issue.id))).size } };
+  }
+  if (command === 'aikit-checks') {
+    if (pos.length !== 1 || !['plan', 'run'].includes(pos[0]) || (options.mode !== undefined && !['remaining', 'all'].includes(options.mode))) throw new Error('Use aikit-checks plan|run --mode remaining|all');
+    const { prepareAiKitChecks } = await import('./aikit-checks.ts');
+    const { submitPmTask } = await import('./pm-tasks.ts');
+    const { readReferenceObservation } = await import('./acceptance-format.ts');
+    const reference = options.reference ? readReferenceObservation(JSON.parse(readFileSync(resolve(root, options.reference), 'utf8'))) : undefined;
+    const plan = await prepareAiKitChecks(root, adapterSettings(root).helix.project, { item: options.item ?? null, caseId: options.case ?? null, remaining: options.mode !== 'all' }, reference);
+    if (pos[0] === 'plan') return plan;
+    if (plan.blocker) throw new Error(plan.blocker);
+    return submitPmTask(root, plan, options.token);
   }
   if (command === 'catalog-batch') {
     if (pos.length !== 1 || !['plan', 'run', 'resume', 'status'].includes(pos[0])) throw new Error('Use catalog-batch plan|run|resume|status');

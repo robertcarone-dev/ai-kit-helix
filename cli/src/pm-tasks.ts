@@ -11,7 +11,7 @@ import { evidencePath } from './evidence-archive.ts';
 export type TaskTarget = { item: string; kind: 'finding' | 'tooling'; finding?: string };
 type Attachment = { path: string; sha256: string | null; status: 'available' | 'missing' | 'changed'; resolved: string | null };
 export type TaskPlan = { key: string; token: string; title: string; body: string; attachments: Attachment[]; specs: { title: string; target: string; kind: string }[]; blocker: string | null; receipt: any };
-function pmConfig(root: string) {
+export function pmConfig(root: string) {
   const path = catalogPath(root, '.helix/aikit-pm.json');
   if (!existsSync(path)) throw new Error('Configure .helix/aikit-pm.json with {"version":1,"executable":"/absolute/path/to/ai-kit"}.');
   const value = JSON.parse(readFileSync(path, 'utf8'));
@@ -82,6 +82,7 @@ export async function preparePmTask(root: string, project: string, target: TaskT
 }
 export async function submitPmTask(root: string, plan: TaskPlan, expectedToken: string) {
   if (plan.token !== expectedToken) throw new Error('Finding, specifications or evidence changed. Refresh the task preview.');
+  if (plan.blocker !== null) throw new Error(plan.blocker);
   const executable = pmConfig(root), directory = taskDirectory(root, plan.key); mkdirSync(directory, { recursive: true });
   const lock = join(directory, 'submit.lock');
   try { writeFileSync(lock, '', { flag: 'wx' }); } catch (error: any) { if (error.code === 'EEXIST') throw new Error('This task is already being submitted. Refresh its preview.'); throw error; }

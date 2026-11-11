@@ -1,6 +1,7 @@
+import { AiKitChecks } from './AiKitChecks';
 import { useEffect, useState } from 'react';
 import { connectHelix } from '@helix/kit';
-import { Play, AlertTriangle } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { VerificationRun } from './VerificationRun';
 import { primaryCases } from './primary-checks-view';
 import type { PrimaryCase } from './primary-checks-view';
@@ -20,14 +21,17 @@ export function PrimaryChecks({ root, itemId, onSaved }: { root: string; itemId:
     })();
     return () => abort.abort();
   }, [root, itemId, revision]);
-  const selectedCase = cases.find(entry => entry.id === selected), runnable = cases.filter(entry => entry.workflows.length > 0).length;
+  const selectedCase = cases.find(entry => entry.id === selected);
   const workflow = selectedCase?.workflows.find(entry => entry.id === selectedWorkflow) ?? selectedCase?.workflows[0];
   return <section className="wb-panel wb-stack" aria-label="Run primary checks">
-    <div><h3><Play size={16} className="inline" /> Primary checks</h3><p className="wb-muted">{cases.length ? `${runnable} of ${cases.length} primary scenarios have capture workflows. Select a scenario to run its available checks.` : error ? 'Could not load primary checks.' : loading ? 'Loading primary checks…' : 'No primary scenarios are defined.'}</p></div>
-    {cases.length > 0 && <label className="wb-field">Scenario<select className="wb-select" aria-label="Primary check to run" value={selected} onChange={event => setSelected(event.target.value)}>{cases.map(entry => <option key={entry.id} value={entry.id}>{readableCase(entry.id)} · {entry.complete}/{entry.viewports.length} complete{entry.workflows.length === 0 ? ' · adapter needed' : ''}</option>)}</select></label>}
+    <div><h3><Play size={16} className="inline" /> Primary checks</h3><p className="wb-muted">{cases.length ? `${cases.length} primary scenarios. Request AI Kit verification using the declared setup and criteria.` : error ? 'Could not load primary checks.' : loading ? 'Loading primary checks…' : 'No primary scenarios are defined.'}</p></div>
+    {cases.length > 0 && <label className="wb-field">Scenario<select className="wb-select" aria-label="Primary check to run" value={selected} onChange={event => setSelected(event.target.value)}>{cases.map(entry => <option key={entry.id} value={entry.id}>{readableCase(entry.id)} · {entry.complete}/{entry.viewports.length} complete</option>)}</select></label>}
+    {selectedCase && <AiKitChecks root={root} selection={{ item: itemId, caseId: selectedCase.id, remaining: false }} onRefresh={() => { setRevision(value => value + 1); onSaved(); }} />}
+    {workflow && <details><summary className="wb-small">Existing capture tools</summary>
     {selectedCase && selectedCase.workflows.length > 1 && <label className="wb-field">Check<select className="wb-select" aria-label="Capture check to run" value={workflow!.id} onChange={event => setSelectedWorkflow(event.target.value)}>{selectedCase.workflows.map(entry => <option key={entry.id} value={entry.id}>{readableCase(entry.caseId)} · {entry.viewports.join(', ')}{entry.supporting ? ' · supporting check' : ''}</option>)}</select></label>}
     {workflow && <><p className="wb-small wb-muted">{workflow.supporting ? 'Supporting check: this collects evidence for part of the scenario; it does not complete the primary case.' : 'Scenario check'} · {workflow.viewports.join(', ')}</p><VerificationRun key={workflow.id} root={root} id={workflow.id} onFinished={() => { setRevision(value => value + 1); onSaved(); }} /></>}
-    {selectedCase && !workflow && <div className="wb-filter-explanation"><AlertTriangle size={16} /><div><p>No capture adapter is defined for this scenario.</p>{selectedCase.blockers.map(blocker => <p key={blocker} className="wb-small">{blocker}</p>)}</div></div>}
+    </details>}
+    {selectedCase && !workflow && <p className="wb-small wb-muted">AI Kit uses this case's setup and criteria; no custom capture adapter is required.</p>}
     {error && <p role="alert" className="wb-error">{error}</p>}
   </section>;
 }

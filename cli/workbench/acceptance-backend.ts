@@ -1,3 +1,4 @@
+import { prepareAiKitChecks } from '../src/aikit-checks.ts';
 import { preparePmTask, submitPmTask } from '../src/pm-tasks.ts';
 import { planCatalogBatch, startCatalogBatch, catalogBatchStatus } from '../src/catalog-batch.ts';
 import { evidencePath } from '../src/evidence-archive.ts';
@@ -35,6 +36,12 @@ export function referenceObservation(root: string, referenceRoot: string, projec
   return { version: 1 as const, project, variant: scope.variant, identity: recordHash([...files].sort(([a], [b]) => a.localeCompare(b))), observedUtc: new Date().toISOString() };
 }
 export async function acceptanceBackend(root: string, referenceRoot: string, project: string, route: string, input: any): Promise<Response> {
+  if (route === '/acceptance/aikit-checks-plan' || route === '/acceptance/aikit-checks-start') {
+    const plan = await prepareAiKitChecks(root, project, input.selection, referenceObservation(root, referenceRoot, project));
+    if (route === '/acceptance/aikit-checks-plan') return Response.json(plan);
+    if (plan.blocker) throw new Error(plan.blocker);
+    return Response.json(await submitPmTask(root, plan, input.expectedToken), { status: 202 });
+  }
   if (route === '/acceptance/task-preview' || route === '/acceptance/task-submit') {
     const plan = await preparePmTask(root, project, input.target, referenceObservation(root, referenceRoot, project));
     return Response.json(route === '/acceptance/task-preview' ? plan : await submitPmTask(root, plan, input.expectedToken));
