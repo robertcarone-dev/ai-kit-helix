@@ -196,3 +196,5 @@ For command details, see [CLI](docs/cli.md), [project adapter](docs/project-adap
 ## UI comparison
 
 Helix 1.1 adds semantic UI inspection, element-level comparison reports, and opt-in viewport matrix execution. See [the UI comparison contract](docs/ui.md) for configuration, supported measurements, isolation, and explicit limitations.
+
+Optional Three scenes: adapters may declare `three.active` as a JavaScript expression that returns `true` when the scene exists. General inspection skips inactive Three scenes; active scenes still require valid `three.scene` and `three.camera`. Dedicated scene/debug capture retains its stricter readiness requirements.

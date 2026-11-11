@@ -124,7 +124,7 @@ export const REFERENCE_INSPECTOR = String.raw`(config) => {
       'Phaser bounds use each active scene main camera; masks, other cameras and occlusion are not resolved.',
     );
   }
-  if (config.three) {
+  if (config.three && (config.three.active === undefined || evaluate(config.three.active) === true)) {
     const root = evaluate(config.three.scene),
       cam = evaluate(config.three.camera);
     cameras.push({

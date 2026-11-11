@@ -157,7 +157,7 @@ export function readProjectConfig(root: string, url?: string) {
   )
     throw new Error('sceneTimeline must be an expression');
   if (config.three) {
-    for (const key of ['scene', 'camera', 'surface', 'renderer']) {
+    for (const key of ['scene', 'camera', 'surface', 'renderer', 'active']) {
       if (
         (key === 'scene' || key === 'camera' || config.three[key] !== undefined) &&
         (typeof config.three[key] !== 'string' || !config.three[key])
