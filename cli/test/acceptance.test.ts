@@ -195,3 +195,21 @@ test('a mismatching assessment blocks accepting a previously matched run', async
   await saveAssessment(f.root, 'synthetic', { version: 1, id: 'assessment-mismatch', project: f.run.project, variant: f.run.variant, item: f.run.item, caseId: f.run.caseId, viewport: f.run.viewport, runId: f.run.id, runSha256: recordHash(f.run), assessor: { name: 'Test agent', kind: 'agent' }, assessedUtc: '2026-11-11T12:00:00.000Z', outcome: 'mismatch', observations: [{ criterion: 'layout', result: 'mismatch', note: 'Visible difference' }], evidence: [{ path: 'media/candidate.png', sha256: digest('candidate') }], discrepancies: [], notes: 'Needs correction' });
   await assert.rejects(saveDecision(f.root, 'synthetic', f.decision, f.reference), /eligible/);
 });
+
+test('review gates explain every structural refusal without promoting a scoped assessment', async t => {
+  const f = fixture(t); f.scope.status = 'draft'; f.screen.implementation = 'in-progress';
+  f.put('Tools/Helix/acceptance/scope.json', f.scope); f.put('Tools/Helix/acceptance/screens/result.json', f.screen);
+  f.run.outcome = 'unmeasured'; f.run.candidate.inputs = []; f.run.capture.anchors = []; f.run.observations = []; f.run.artifacts = [];
+  await saveRun(f.root, 'synthetic', f.run);
+  const row = (await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].cases[0];
+  for (const message of ['scope is not approved', 'Implementation is not declared complete', 'Capture verdict is unmeasured', 'Missing declared input pins', 'Missing event anchor', 'Missing required observation', 'Missing required paired evidence type', 'Evidence unverified']) assert.ok(row.reasons.some(reason => reason.includes(message)), message);
+  assert.equal(row.canAccept, false); assert.equal(row.freshness, 'needs-recheck');
+  assert.equal((await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].cases[1].reasons.some(reason => reason.includes('No capture run')), true);
+});
+test('approved deviations require explicit criterion reconciliation and do not silently pass', async t => {
+  const f = fixture(t); f.screen.cases[0].discrepancies.push('deviation');
+  f.put('Tools/Helix/acceptance/screens/result.json', f.screen); f.put('Tools/Helix/discrepancies/deviation/1.json', { id: 'deviation', status: 'accepted-deviation' });
+  const { scope, screens } = loadAcceptance(f.root, 'synthetic'); f.run.criteriaSha256 = criteriaHash(scope, screens[0], screens[0].cases[0], 'phone'); await saveRun(f.root, 'synthetic', f.run);
+  const row = (await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].cases[0];
+  assert.equal(row.canAccept, false); assert.ok(row.reasons.some(reason => reason.includes('accepted-deviation')));
+});

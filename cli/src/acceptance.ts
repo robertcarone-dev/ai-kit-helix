@@ -86,14 +86,25 @@ function validateRunTarget(scope: Scope, screen: Screen, entry: AcceptanceCase, 
   if (run.capture.width !== profile.width || run.capture.height !== profile.height || run.capture.safeArea !== profile.safeArea || run.capture.setup !== entry.recipe.setup) throw new Error('Run capture/setup differs from case profile');
   if (run.observations.some(observation => !entry.criteria.some(criterion => criterion.id === observation.criterion))) throw new Error('Unknown observed criterion');
   if (run.outcome === 'matched' || run.outcome === 'mismatch') {
-    if (!entry.criteria.every(criterion => run.observations.some(observation => observation.criterion === criterion.id))) throw new Error('Missing required observation');
-    if (!entry.recipe.anchors.every(anchor => run.capture.anchors.includes(anchor))) throw new Error('Missing event anchor');
-    if (!entry.dependencies.length || !entry.dependencies.every(path => run.candidate.inputs.some(pin => pin.path === path))) throw new Error('Missing declared input pins');
-    const kind = { appearance: 'image', motion: 'video', behavior: 'observations', audio: 'audio' }[entry.dimension];
-    const sides = entry.basis.kind === 'reference' ? ['reference', 'candidate'] : ['candidate'];
-    if (!sides.every(side => run.artifacts.some(artifact => artifact.kind === kind && artifact.side === side))) throw new Error('Missing required paired evidence type: ' + kind);
+    const gaps = runCoverageGaps(entry, run);
+    if (gaps.length) throw new Error(gaps.join('; '));
   }
 }
+/** Required capture coverage is shared by import validation and review-gate explanations. */
+function runCoverageGaps(entry: AcceptanceCase, run: Run): string[] {
+  const gaps: string[] = [];
+  const missingCriteria = entry.criteria.filter(criterion => !run.observations.some(observation => observation.criterion === criterion.id));
+  if (missingCriteria.length) gaps.push('Missing required observation: ' + missingCriteria.map(criterion => criterion.id).join(', '));
+  const missingAnchors = entry.recipe.anchors.filter(anchor => !run.capture.anchors.includes(anchor));
+  if (missingAnchors.length) gaps.push('Missing event anchor: ' + missingAnchors.join(', '));
+  const missingInputs = entry.dependencies.filter(path => !run.candidate.inputs.some(pin => pin.path === path));
+  if (!entry.dependencies.length || missingInputs.length) gaps.push('Missing declared input pins: ' + (missingInputs.length ? missingInputs.join(', ') : 'case declares no dependencies'));
+  const kind = { appearance: 'image', motion: 'video', behavior: 'observations', audio: 'audio' }[entry.dimension];
+  const sides = entry.basis.kind === 'reference' ? ['reference', 'candidate'] : ['candidate'];
+  for (const side of sides) if (!run.artifacts.some(artifact => artifact.kind === kind && artifact.side === side)) gaps.push('Missing required paired evidence type: ' + kind + ' / ' + side);
+  return gaps;
+}
+
 function decisionHead(decisions: Decision[]) {
   if (!decisions.length) return null;
   const byId = new Map(decisions.map(decision => [decision.id, decision]));
@@ -169,21 +180,29 @@ export async function acceptanceStatus(root: string, project: string, reference?
       if (run) {
         if (run.criteriaSha256 !== criteriaHash(scope, screen, entry, viewport)) reasons.push('Acceptance criteria, recipe, dependencies or viewport changed');
         else validateRunTarget(scope, screen, entry, run);
+        const coverageGaps = runCoverageGaps(entry, run);
+        reasons.push(...coverageGaps.filter(reason => reason.startsWith('Missing declared input pins:')));
         for (const pin of run.candidate.inputs) { const state = await pinState(root, pin); if (state !== 'match') reasons.push('Candidate input ' + state + ': ' + pin.path); }
         if (reference && reference.identity !== run.reference.identity) reasons.push('Reference identity changed');
         freshness = reasons.length ? 'needs-recheck' : reference && run.candidate.inputs.length ? 'current' : 'unknown';
         const artifactStates = await Promise.all(run.artifacts.map(artifact => pinState(root, artifact)));
         availability = artifactStates.includes('missing') ? 'missing' : artifactStates.includes('changed') || !artifactStates.length ? 'unverified' : 'available';
         if (availability !== 'available') reasons.push('Evidence ' + availability);
+        reasons.push(...coverageGaps.filter(reason => !reason.startsWith('Missing declared input pins:')));
       }
+      if (scope.status !== 'approved') reasons.push('Acceptance scope is not approved: ' + scope.status);
+      if (screen.implementation !== 'implemented') reasons.push('Implementation is not declared complete: ' + screen.implementation);
+      if (!run) reasons.push('No capture run exists for this case/viewport');
+      else if (run.outcome !== 'matched') reasons.push('Capture verdict is ' + run.outcome + '; a scoped agent assessment does not replace a matched capture verdict');
+      if (run && freshness === 'unknown') reasons.push('Capture source freshness is unknown');
       if (!reference) reasons.push('Current reference identity has not been supplied');
       if (entry.recipe.blockers.length) reasons.push(...entry.recipe.blockers);
       if (defects.length) reasons.push(...defects.map(defect => 'Linked discrepancy ' + defect.status + ': ' + defect.id));
       const decisionApplies = Boolean(decision && run && decision.runId === run.id && decision.runSha256 === recordHash(run));
       const assessmentAllowsAcceptance = !latestAssessment || (assessmentAvailable && latestAssessment.outcome === 'matched');
       if (!assessmentAllowsAcceptance) reasons.push('Agent assessment requires recheck: ' + (assessmentAvailable ? latestAssessment!.outcome : 'evidence missing or changed'));
-      const canAccept = assessmentAllowsAcceptance && scope.status === 'approved' && screen.implementation === 'implemented' && run?.outcome === 'matched' && freshness === 'current' && availability === 'available' && !entry.recipe.blockers.length && !defects.length;
-      const accepted = assessmentAllowsAcceptance && scope.status === 'approved' && screen.implementation === 'implemented' && run?.outcome === 'matched' && decisionApplies && decision!.status === 'accepted' && freshness === 'current' && availability === 'available' && !entry.recipe.blockers.length && !defects.length;
+      const canAccept = reasons.length === 0;
+      const accepted = canAccept && decisionApplies && decision!.status === 'accepted';
       cases.push({ latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required, criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review: decisionApplies ? decision!.status : 'pending', freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
     }
     const required = cases.filter(entry => entry.required), accepted = required.filter(entry => entry.accepted).length;
