@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { caseStatus, featureStatus, nextCaseAction } from '../workbench/workbench-presentation.ts';
+import { caseStatus, featureStatus, nextCaseAction, featureSummary } from '../workbench/workbench-presentation.ts';
 import type { CaseRow } from '../workbench/acceptance-view.ts';
 import type { CatalogItem } from '../workbench/catalog-view.ts';
 test('historical matches and pending review never create review eligibility', () => {
@@ -37,6 +37,13 @@ test('an agent assessment cannot promote an unmeasured or failed automated captu
   const row = { accepted: false, canAccept: false, review: 'pending', reviewRequirement: 'automated', latestRun: { id: 'capture' }, recipe: { blockers: [] }, availability: 'available', freshness: 'current', verification: 'unmeasured', latestAssessment: { outcome: 'matched' }, assessmentAvailable: true } as unknown as CaseRow;
   assert.notEqual(caseStatus(row), 'verified'); assert.equal(nextCaseAction(row), 'measure');
   assert.equal(caseStatus({ ...row, verification: 'mismatch' }), 'fix'); assert.equal(nextCaseAction({ ...row, verification: 'mismatch' }), 'fix');
-  assert.equal(caseStatus({ ...row, verification: 'matched' }), 'verified');
+  assert.equal(caseStatus({ ...row, verification: 'matched' }), 'evidence');
+  assert.equal(caseStatus({ ...row, accepted: true, verification: 'matched' }), 'verified');
   assert.equal(caseStatus({ ...row, verification: 'matched', latestAssessment: { ...row.latestAssessment!, outcome: 'mismatch' } }), 'fix');
+});
+
+test('feature progress counts automatic completion without listing it as remaining work', () => {
+  const item = { issues: [], acceptance: { status: 'incomplete', required: 2, accepted: 2, nextSteps: { verified: 2 } } } as unknown as CatalogItem;
+  assert.equal(featureSummary(item), '2/2 checks complete · implementation incomplete');
+  assert.equal(featureSummary({ ...item, acceptance: { ...item.acceptance!, status: 'accepted' } }), '2/2 checks complete');
 });

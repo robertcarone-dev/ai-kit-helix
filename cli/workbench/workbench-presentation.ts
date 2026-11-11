@@ -4,9 +4,8 @@ import type { CaseRow } from './acceptance-view.ts';
 export type WorkStatus = 'fix' | 'evidence' | 'ready' | 'accepted' | 'define' | 'recheck' | 'verified';
 export function finding(entry: CaseRow) { return entry.latestAssessment && entry.assessmentAvailable ? entry.latestAssessment.outcome : entry.verification; }
 export function caseStatus(entry: CaseRow): WorkStatus {
-  if (entry.accepted) return 'accepted';
+  if (entry.accepted) return entry.reviewRequirement === 'automated' && entry.review === 'pending' ? 'verified' : 'accepted';
   if (entry.reviewRequirement === 'automated' && entry.verification === 'mismatch') return 'fix';
-  if (entry.reviewRequirement === 'automated' && entry.review !== 'changes-requested' && entry.review !== 'blocked' && entry.recipe.blockers.length === 0 && entry.verification === 'matched' && entry.freshness === 'current' && entry.availability === 'available' && finding(entry) === 'matched') return 'verified';
   if (finding(entry) === 'mismatch' || entry.review === 'changes-requested') return 'fix';
   if (entry.canAccept) return 'ready';
   if (entry.latestRun && entry.freshness === 'needs-recheck') return 'recheck';
@@ -20,8 +19,8 @@ export function featureStatus(item: CatalogItem): WorkStatus {
   return 'evidence';
 }
 export function readableCase(id: string) { const label = id.replace(/^regression-/, '').replace(/[-_.]+/g, ' '); return label.charAt(0).toUpperCase() + label.slice(1); }
-export const statusText: Record<WorkStatus, string> = { verified: 'Automatically verified', fix: 'Open findings', evidence: 'Verification incomplete', ready: 'Ready for review', accepted: 'Accepted', define: 'Define coverage', recheck: 'Needs recheck' };
-export const nextAction: Record<WorkStatus, string> = { verified: 'Inspect automated results', fix: 'Review open findings', evidence: 'Prepare missing evidence', ready: 'Review eligible cases', accepted: 'Inspect accepted scope', define: 'Define acceptance cases', recheck: 'Recheck changed inputs' };
+export const statusText: Record<WorkStatus, string> = { verified: 'Automatically verified', fix: 'Open findings', evidence: 'Verification incomplete', ready: 'Ready for review', accepted: 'Complete', define: 'Define coverage', recheck: 'Needs recheck' };
+export const nextAction: Record<WorkStatus, string> = { verified: 'Inspect automated results', fix: 'Review open findings', evidence: 'Prepare missing evidence', ready: 'Review eligible cases', accepted: 'Inspect completed scope', define: 'Define acceptance cases', recheck: 'Recheck changed inputs' };
 
 export type CaseAction = 'verified' | 'accepted' | 'setup' | 'capture' | 'recover' | 'fix' | 'recheck' | 'measure' | 'gates' | 'review';
 export const caseActionText: Record<CaseAction, { title: string; detail: string }> = {
@@ -37,9 +36,8 @@ export const caseActionText: Record<CaseAction, { title: string; detail: string 
   review: { title: 'Record human review', detail: 'The prerequisite gates passed. Inspect the evidence and record a decision.' },
 };
 export function nextCaseAction(entry: CaseRow): CaseAction {
-  if (entry.accepted) return 'accepted';
+  if (entry.accepted) return entry.reviewRequirement === 'automated' && entry.review === 'pending' ? 'verified' : 'accepted';
   if (entry.reviewRequirement === 'automated' && entry.verification === 'mismatch') return 'fix';
-  if (entry.reviewRequirement === 'automated' && entry.review !== 'changes-requested' && entry.review !== 'blocked' && entry.recipe.blockers.length === 0 && entry.verification === 'matched' && entry.freshness === 'current' && entry.availability === 'available' && finding(entry) === 'matched') return 'verified';
   if (!entry.latestRun) return entry.recipe.blockers.length ? 'setup' : 'capture';
   if (entry.availability !== 'available') return 'recover';
   if (finding(entry) === 'mismatch' || entry.review === 'changes-requested') return 'fix';
@@ -50,10 +48,11 @@ export function nextCaseAction(entry: CaseRow): CaseAction {
 
 export function featureSummary(item: CatalogItem) {
   const open = item.issues.filter(issue => ['open', 'blocked'].includes(issue.status)).length;
-  if (open) return `${open} recorded findings`;
+  const progress = item.acceptance ? `${item.acceptance.accepted}/${item.acceptance.required} checks complete · ` : '';
+  if (open) return `${progress}${open} recorded findings`;
   if (!item.acceptance) return 'Acceptance cases not defined';
-  const next = Object.entries(item.acceptance.nextSteps).filter(([action]) => action !== 'accepted').sort((a, b) => b[1]! - a[1]!)[0];
-  if (!next) return `${item.acceptance.accepted} checks accepted`;
+  const next = Object.entries(item.acceptance.nextSteps).filter(([action]) => action !== 'accepted' && action !== 'verified').sort((a, b) => b[1]! - a[1]!)[0];
+  if (!next) return `${item.acceptance.accepted}/${item.acceptance.required} checks complete${item.acceptance.status === 'accepted' ? '' : ' · implementation incomplete'}`;
   const labels: Record<string, string> = { setup: 'checks have setup blockers', capture: 'checks without captures', recover: 'checks need evidence recovery', fix: 'captured differences', recheck: 'captures need freshness checks', measure: 'checks need measurements', gates: 'checks have acceptance prerequisites', review: 'checks ready for review' };
-  return `${next[1]} ${labels[next[0]]}`;
+  return `${progress}${next[1]} ${labels[next[0]]}`;
 }
