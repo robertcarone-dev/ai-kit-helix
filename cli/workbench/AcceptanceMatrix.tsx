@@ -41,7 +41,7 @@ function EvidenceMedia({ root, item, entry, screenshotsOnly = false }: { root: s
     {loading && <p role="status" className="wb-muted">Loading and verifying captured media…</p>}{error && <p role="alert" className="wb-error">{error}</p>}
     {media.some(file => ['video', 'audio'].includes(file.kind)) && <div><Button variant="outline" onClick={() => void playBoth()}><Play size={16} aria-hidden="true" />Play both from start</Button><p className="wb-small wb-muted">Use recorded anchors to judge event alignment; simultaneous playback is not timing proof.</p></div>}
     <div className="wb-media">{media.map(file => <figure key={file.url}><figcaption><span>{file.side === 'reference' ? 'Helix reference' : 'Unity capture'}</span><a href={file.url} target="_blank" rel="noreferrer" aria-label={`Open full-size ${file.side} evidence`}><ZoomIn size={18} aria-hidden="true" /></a></figcaption>{file.kind === 'image' ? <a href={file.url} target="_blank" rel="noreferrer"><img src={file.url} alt={`${file.side} ${readableCase(entry.id)} ${entry.viewport}`} onError={() => setError(`Cannot decode image: ${file.path}`)} /></a> : file.kind === 'video' ? <video controls preload="metadata" src={file.url} /> : <audio controls src={file.url} />}</figure>)}</div>
-    {!loading && !error && !media.length && <p className="wb-muted">This run has observation records rather than visual media. Open them in historical evidence below.</p>}
+    {!loading && !error && !media.length && <p className="wb-muted">This run has no visual media. See its observations under Acceptance criteria and its file references under Case setup and technical details.</p>}
   </div>;
 }
 function SupportingEvidence({ root, entry }: { root: string; entry: CaseRow }) {
