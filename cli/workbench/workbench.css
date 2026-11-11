@@ -198,3 +198,7 @@
 .wb-work-track { text-align: left; width: 100%; }
 .wb-work-track:hover { background: var(--accent); }
 .wb-work-track > div { flex: 1; }
+
+.wb-task-request { display: grid; gap: 12px; margin-top: 12px; }
+.wb-task-preview { display: grid; gap: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--card); }
+.wb-task-body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 340px; overflow: auto; font-size: 12px; line-height: 1.6; }

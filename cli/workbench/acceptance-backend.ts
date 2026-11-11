@@ -1,3 +1,4 @@
+import { preparePmTask, submitPmTask } from '../src/pm-tasks.ts';
 import { planCatalogBatch, startCatalogBatch, catalogBatchStatus } from '../src/catalog-batch.ts';
 import { evidencePath } from '../src/evidence-archive.ts';
 import { verificationStatus, startVerification } from '../src/verification-jobs.ts';
@@ -34,6 +35,10 @@ export function referenceObservation(root: string, referenceRoot: string, projec
   return { version: 1 as const, project, variant: scope.variant, identity: recordHash([...files].sort(([a], [b]) => a.localeCompare(b))), observedUtc: new Date().toISOString() };
 }
 export async function acceptanceBackend(root: string, referenceRoot: string, project: string, route: string, input: any): Promise<Response> {
+  if (route === '/acceptance/task-preview' || route === '/acceptance/task-submit') {
+    const plan = await preparePmTask(root, project, input.target, referenceObservation(root, referenceRoot, project));
+    return Response.json(route === '/acceptance/task-preview' ? plan : await submitPmTask(root, plan, input.expectedToken));
+  }
   if (route === '/acceptance/batch-status') return Response.json(catalogBatchStatus(root, input.id));
   if (route === '/acceptance/batch-plan' || route === '/acceptance/batch-start') {
     const reference = referenceObservation(root, referenceRoot, project);

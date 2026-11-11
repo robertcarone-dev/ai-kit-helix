@@ -444,3 +444,18 @@ test('adapter dependency selections use the same logical routes before and after
   consolidateAdapters(f.root, 'synthetic', true);
   assert.deepEqual(dependencyPin(f.root, path, selectors), before);
 });
+
+test('tooling task preview packages existing specs and evidence without sending or granting completion', async t => {
+  const f = fixture(t);
+  f.put('spec.md', '# Synthetic specification');
+  f.put('legacy.json', { format: 'helix-porting-dashboard', version: 1, project: 'synthetic', reportedUtc: '2026-11-11T12:00:00.000Z', items: [] });
+  f.put('Tools/Helix/catalog/catalog.json', { version: 1, project: 'synthetic', title: 'Synthetic', sources: [], exclusions: [], legacyReport: 'legacy.json', entries: [{ id: 'screen.result', title: 'Result', kind: 'screen', group: 'Screens', scope: 'game', summary: 'Synthetic', sources: ['spec.md'], implementationReferences: [], discrepancies: [], evidence: [], acceptanceItem: 'screen.result', specs: [{ kind: 'markdown', title: 'Spec', target: 'spec.md' }] }] });
+  await saveRun(f.root, 'synthetic', f.run); rmSync(join(f.root, 'media/candidate.png'));
+  const { preparePmTask } = await import('../src/pm-tasks.ts');
+  const task = await preparePmTask(f.root, 'synthetic', { item: 'screen.result', kind: 'tooling' }, f.reference);
+  assert.match(task.body, /Do not run Unity/); assert.match(task.body, /settled · tablet/); assert.match(task.body, /Matching layout/);
+  assert.equal(task.attachments.find(file => file.path === 'spec.md')!.status, 'available');
+  assert.equal(task.attachments.find(file => file.path === 'media/candidate.png')!.status, 'missing');
+  assert.equal(task.receipt, null); assert.match(task.blocker!, /Configure/);
+  f.put('spec.md', '# Changed spec'); assert.notEqual((await preparePmTask(f.root, 'synthetic', { item: 'screen.result', kind: 'tooling' }, f.reference)).token, task.token);
+});
