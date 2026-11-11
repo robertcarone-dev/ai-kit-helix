@@ -176,3 +176,25 @@
 .wb-status-verified { color: #34d399; border-color: #34d39966; }
 
 .wb-verify > button { justify-self: start; }
+
+/* Independent work tracks share the same language in the tree and detail panel. */
+.wb-work-implementation { color: #ed8580; }
+.wb-work-tooling { color: #c69840; }
+.wb-work-review { color: #7ba7e8; }
+.wb-work-complete { color: #55b39a; }
+.wb-work-badge { padding: 5px 10px; border: 1px solid currentColor; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.wb-work-tracks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.wb-work-track { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.wb-work-track svg { flex-shrink: 0; margin-top: 2px; }
+.wb-work-track strong { font-size: 13px; font-weight: 650; }
+.wb-work-track p { margin-top: 4px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.wb-work-inactive { color: var(--muted-foreground); }
+.wb-tree-work-tags { display: flex; flex-wrap: wrap; gap: 3px 9px; margin-top: 5px; font-size: 11px; font-weight: 600; line-height: 1.5; }
+.wb-tree-legend button { display: inline-flex; align-items: center; gap: 5px; background: transparent; border: 1px solid var(--border); border-radius: 5px; padding: 5px 7px; font-size: 11px; }
+.wb-tree-legend button[aria-pressed="true"] { border-color: currentColor; background: var(--accent); }
+.wb-track-note { padding: 0 12px 10px; }
+@media (max-width: 700px) { .wb-work-tracks { grid-template-columns: 1fr; } }
+
+.wb-work-track { text-align: left; width: 100%; }
+.wb-work-track:hover { background: var(--accent); }
+.wb-work-track > div { flex: 1; }
