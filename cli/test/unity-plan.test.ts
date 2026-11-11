@@ -88,3 +88,11 @@ test('unknown backends, alternate targets and escaping output are refused', () =
   assert.throws(() => unityPlan(config(commands), root, 'lobby', 'phone', '../outside'), /scratch/);
   assert.throws(() => unityExecutable({ backend: 'unity', executable: 'sh' }), /backend/);
 });
+test('preparation receipt barriers are scoped to a command and fresh output', () => {
+  const barrier = { afterCommand: 0, path: '{{out}}/prepared.json', expected: { prepared: true }, timeoutMs: 1000 };
+  const recipe = { backend: 'unity', stages: commands, prepareReceipts: [barrier] };
+  assert.equal(plan(recipe).prepareReceipts[0].path, join(root, '.aikit/scratch/case/prepared.json'));
+  assert.throws(() => plan({ ...recipe, prepareReceipts: [{ ...barrier, path: '{{out}}/../old.json' }] }), /fresh output/);
+  assert.throws(() => plan({ ...recipe, prepareReceipts: [{ ...barrier, afterCommand: 1 }] }), /barrier/);
+  assert.throws(() => plan({ ...recipe, prepareReceipts: [{ ...barrier, timeoutMs: 120001 }] }), /barrier/);
+});

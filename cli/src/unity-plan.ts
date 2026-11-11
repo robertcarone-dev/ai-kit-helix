@@ -96,6 +96,16 @@ export function unityPlan(
       ];
     }),
   );
+  const prepareReceipts = (recipe.prepareReceipts ?? []).map((barrier: any) => {
+    if (!barrier || Object.keys(barrier).sort().join() !== 'afterCommand,expected,path,timeoutMs' ||
+        !Number.isInteger(barrier.afterCommand) || barrier.afterCommand < 0 || barrier.afterCommand >= rendered.prepare.length ||
+        typeof barrier.path !== 'string' || !Number.isInteger(barrier.timeoutMs) || barrier.timeoutMs < 1 || barrier.timeoutMs > 120000 ||
+        !barrier.expected || Array.isArray(barrier.expected) || typeof barrier.expected !== 'object' || !Object.keys(barrier.expected).length)
+      throw new Error('Invalid preparation receipt barrier');
+    const path = resolve(root, render(barrier.path)), within = relative(out, path);
+    if (!within || within.startsWith('..') || isAbsolute(within)) throw new Error('Preparation receipt must belong to this fresh output');
+    return { ...barrier, path };
+  });
   return {
     scenario,
     viewport,
@@ -109,6 +119,7 @@ export function unityPlan(
       ? { AIKIT_QA_VIEWPORT: `${size.width}x${size.height}`, AIKIT_QA_DIR: join(out, 'qa') }
       : {},
     stages: rendered,
+    prepareReceipts,
     notes: [
       'Commands are argument arrays, not shell strings. Run preflight, prepare, capture and always restore owned Unity state, including after failure.',
       'Overlay environment on the child process environment for every lifecycle command, including restoration. Do not resize the Game view independently of the play session viewport.',
