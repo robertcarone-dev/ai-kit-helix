@@ -29,7 +29,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   acceptance consolidate [--apply true] (configuration only; no execution)
   acceptance validate|summary|status|publish [--reference CURRENT_REFERENCE_JSON]
   acceptance record-run|assess|review --spec RECORD_JSON [--reference CURRENT_REFERENCE_JSON]
-  aikit-checks plan|run [--item ID] [--case ID] [--mode remaining|all] [--token TOKEN]
+  aikit-checks plan|run [--format summary|full] [--journey ID] [--item ID] [--case ID] [--mode remaining|all] [--token TOKEN]
   catalog-batch plan|run|resume|status [--folder ID] [--mode ready|changed] [--id BATCH]
   evidence archive --directory BATCH [--apply true]
   evidence compact --directory BATCH [--apply true]
@@ -50,7 +50,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   unity-connection [--helix-project SLUG | --project-root DIR]
   assets [--match TEXT]
   unity-plan SCENARIO --out DIR [--viewport phone|tablet]
-  start [--viewport phone|tablet] [--workbench yes] [--url http://127.0.0.1:PORT/...]
+  start [--viewport phone|tablet] [--audio yes] [--workbench yes] [--url http://127.0.0.1:PORT/...]
   status | reset | stop
   recover                       recheck timed-out scenario readiness; no setup replay
   scenario NAME
@@ -184,7 +184,7 @@ async function main() {
     return;
   }
   const allowed: Record<string, string[]> = {
-    'aikit-checks': ['item', 'case', 'mode', 'token', 'reference'],
+    'aikit-checks': ['format', 'journey', 'item', 'case', 'mode', 'token', 'reference'],
     'catalog-batch': ['folder', 'discipline', 'scope', 'mode', 'reference', 'token', 'id'],
     resolution: ['finding', 'spec'],
     catalog: ['reference', 'folder', 'discipline', 'scope', 'format'],
@@ -205,7 +205,7 @@ async function main() {
     assets: ['match'],
     'unity-plan': ['out', 'viewport'],
     'unity-revision': [],
-    start: ['viewport', 'url', 'workbench'],
+    start: ['viewport', 'url', 'workbench', 'audio'],
     status: [],
     reset: [],
     stop: [],
@@ -288,12 +288,13 @@ async function main() {
   }
   if (command === 'aikit-checks') {
     if (pos.length !== 1 || !['plan', 'run'].includes(pos[0]) || (options.mode !== undefined && !['remaining', 'all'].includes(options.mode))) throw new Error('Use aikit-checks plan|run --mode remaining|all');
-    const { prepareAiKitChecks } = await import('./aikit-checks.ts');
+    if (options.format !== undefined && (pos[0] !== 'plan' || !['summary', 'full'].includes(options.format))) throw new Error('Use --format summary|full with aikit-checks plan');
+    const { prepareAiKitChecks, summarizeAiKitChecks } = await import('./aikit-checks.ts');
     const { submitPmTask } = await import('./pm-tasks.ts');
     const { readReferenceObservation } = await import('./acceptance-format.ts');
     const reference = options.reference ? readReferenceObservation(JSON.parse(readFileSync(resolve(root, options.reference), 'utf8'))) : undefined;
-    const plan = await prepareAiKitChecks(root, adapterSettings(root).helix.project, { item: options.item ?? null, caseId: options.case ?? null, remaining: options.mode !== 'all' }, reference);
-    if (pos[0] === 'plan') return plan;
+    const plan = await prepareAiKitChecks(root, adapterSettings(root).helix.project, { item: options.item ?? null, caseId: options.case ?? null, remaining: options.mode !== 'all', ...(options.journey ? { journey: options.journey } : {}) }, reference);
+    if (pos[0] === 'plan') return options.format === 'full' ? plan : summarizeAiKitChecks(plan);
     if (plan.blocker) throw new Error(plan.blocker);
     return submitPmTask(root, plan, options.token);
   }
@@ -709,6 +710,8 @@ async function main() {
   }
   if (command === 'start') {
     const { config, configHash: adapterConfigHash } = readConfig(options.url);
+    if (options.audio !== undefined && options.audio !== 'yes') throw new Error('--audio accepts yes.');
+    config.audioOutput = options.audio === 'yes';
     if (options.workbench !== undefined) {
       if (options.workbench !== 'yes') throw new Error('--workbench accepts yes.');
       config.ready = '(' + config.ready + ') && window.__portingWorkbench?.version === 1';

@@ -10,7 +10,7 @@ import type { ReferenceObservation } from './acceptance-format.ts';
 import { evidencePath } from './evidence-archive.ts';
 export type TaskTarget = { item: string; kind: 'finding' | 'tooling'; finding?: string };
 type Attachment = { path: string; sha256: string | null; status: 'available' | 'missing' | 'changed'; resolved: string | null };
-export type TaskPlan = { key: string; token: string; title: string; body: string; attachments: Attachment[]; specs: { title: string; target: string; kind: string }[]; blocker: string | null; receipt: any };
+export type TaskPlan = { key: string; token: string; title: string; body: string; attachments: Attachment[]; specs: { title: string; target: string; kind: string }[]; blocker: string | null; receipt: any; packetFiles?: { name: string; content: string }[] };
 export function pmConfig(root: string) {
   const path = catalogPath(root, '.helix/aikit-pm.json');
   if (!existsSync(path)) throw new Error('Configure .helix/aikit-pm.json with {"version":1,"executable":"/absolute/path/to/ai-kit"}.');
@@ -83,6 +83,11 @@ export async function preparePmTask(root: string, project: string, target: TaskT
 export async function submitPmTask(root: string, plan: TaskPlan, expectedToken: string) {
   if (plan.token !== expectedToken) throw new Error('Finding, specifications or evidence changed. Refresh the task preview.');
   if (plan.blocker !== null) throw new Error(plan.blocker);
+  const names = new Set<string>();
+  for (const file of plan.packetFiles ?? []) {
+    if (!/^details-[a-z0-9][a-z0-9-]*\.(json|md)$/.test(file.name) || names.has(file.name)) throw new Error('Invalid or duplicate packet detail name');
+    names.add(file.name);
+  }
   const executable = pmConfig(root), directory = taskDirectory(root, plan.key); mkdirSync(directory, { recursive: true });
   const lock = join(directory, 'submit.lock');
   try { writeFileSync(lock, '', { flag: 'wx' }); } catch (error: any) { if (error.code === 'EEXIST') throw new Error('This task is already being submitted. Refresh its preview.'); throw error; }
@@ -91,9 +96,12 @@ export async function submitPmTask(root: string, plan: TaskPlan, expectedToken: 
     const previous = taskReceipt(root, plan.key); if (previous) return previous;
     const files = plan.attachments.filter(file => file.status === 'available');
     for (const file of files) if (digest(readFileSync(file.resolved!)) !== file.sha256) throw new Error('Attachment changed: ' + file.path);
+    const details = (plan.packetFiles ?? []).map(file => ({ path: join(directory, file.name), content: file.content }));
+    const attachmentPaths = [...files.map(file => file.resolved!), ...details.map(file => file.path)];
     const packet = join(directory, 'request.md');
-    if ([packet, ...files.map(file => file.resolved!)].some(path => /[,\r\n]/.test(path))) throw new Error('AI Kit attachment paths cannot contain commas or line breaks');
-    writeFileSync(packet, plan.body + (files.length ? '\n\nAttached files: ' + files.map(file => file.resolved!).join(', ') : '') + '\n', { flag: 'wx' });
+    if ([packet, ...attachmentPaths].some(path => /[,\r\n]/.test(path))) throw new Error('AI Kit attachment paths cannot contain commas or line breaks');
+    for (const file of details) writeFileSync(file.path, file.content, { flag: 'wx' });
+    writeFileSync(packet, plan.body + (attachmentPaths.length ? '\n\nAttached files: ' + attachmentPaths.join(', ') : '') + '\n', { flag: 'wx' });
     const receipt: any = { key: plan.key, token: plan.token, title: plan.title, status: 'pending', messageId: null, createdUtc: new Date().toISOString(), packet, error: null }; save(receipt);
     try {
       const { stdout } = await promisify(execFile)(executable, ['assistant', 'send', '@' + packet], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });

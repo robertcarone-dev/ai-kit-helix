@@ -128,7 +128,7 @@ export function GameCatalog({ root, project }: { root: string; project: string }
   const detail = useRef<HTMLElement>(null);
   const active = visible.find(item => item.id === selected);
   return <div className="porting-workbench wb-panel wb-stack wb-catalog">
-    <header className="wb-header"><h2>Features</h2><div className="flex gap-2"><Button variant="outline" onClick={() => setBatchFolder(null)}><Play size={16} />Game checks</Button><Button variant="outline" disabled={busy} onClick={() => setRevision(value => value + 1)}><RefreshCw size={16} aria-hidden="true" />Refresh</Button></div></header>
+    <header className="wb-header"><h2>Features</h2><div className="flex gap-2"><Button variant="outline" onClick={() => setBatchFolder(null)}><Play size={16} />Game journeys</Button><Button variant="outline" disabled={busy} onClick={() => setRevision(value => value + 1)}><RefreshCw size={16} aria-hidden="true" />Refresh</Button></div></header>
     {error && <p role="alert" className="wb-error">{error}</p>}{busy && <p role="status" className="wb-small wb-muted">Refreshing features and evidence…</p>}
     {batchFolder === null && <AiKitChecks root={root} selection={{ item: null, caseId: null, remaining: true }} onRefresh={() => setRevision(value => value + 1)} />}
     {batchFolder !== undefined && <details><summary className="wb-small">Existing capture tools</summary><CatalogBatch root={root} folder={batchFolder ?? undefined} title={batchFolder ? folders.find(folder => folder.id === batchFolder)!.title : "Game"} scope={scope} discipline={discipline} onFinished={() => setRevision(value => value + 1)} /></details>}

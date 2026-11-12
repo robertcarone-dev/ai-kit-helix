@@ -134,3 +134,15 @@ test('URL/input boundaries and native image comparison remain enforced', () => {
     rmSync(temp, { recursive: true, force: true });
   }
 });
+
+test('start rejects invalid audio mode before browser discovery', () => {
+  const temp = realpathSync(mkdtempSync(join(tmpdir(), 'helix-audio-')));
+  try {
+    const root = fixture(temp, 'audio');
+    const result = spawnSync(process.execPath, [cli, 'start', '--audio', 'no'], { cwd: root, encoding: 'utf8' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /--audio accepts yes/);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});

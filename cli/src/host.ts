@@ -35,7 +35,7 @@ function startupRemaining() {
   if (remaining <= 0) throw new Error('Startup deadline expired.');
   return remaining;
 }
-const browser = await chromium.launch({ headless: true, channel: 'chromium', timeout: startupRemaining() });
+const browser = await chromium.launch({ headless: true, channel: 'chromium', ignoreDefaultArgs: config.audioOutput ? ['--mute-audio'] : [], timeout: startupRemaining() });
 diagnostic('browser-launched', { executable: chromium.executablePath() });
 // State belongs to this browser session and is reset when its context is replaced.
 let context: BrowserContext;
@@ -330,6 +330,7 @@ function status() {
     pid: process.pid,
     configHash,
     adapterConfigHash,
+    audioOutput: config.audioOutput,
     referenceIdentity: config.referenceIdentity,
     viewport,
     url: page?.url(),
@@ -363,6 +364,7 @@ function sceneProvenance() {
     projectRoot: root,
     configHash,
     adapterConfigHash,
+    audioOutput: config.audioOutput,
     referenceIdentity: config.referenceIdentity,
     scenario,
     sessionId,

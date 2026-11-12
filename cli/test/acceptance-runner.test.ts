@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { digest } from '../src/acceptance-format.ts';
@@ -47,13 +47,14 @@ test('adapter identities, dimensions, traversal and live execution boundaries ar
   symlinkSync(tmpdir(), join(f.root, 'escape')); f.route.retained[0].path = 'escape/out.json'; f.save(); assert.throws(() => loadCaseAdapters(f.root, 'synthetic'), /escapes/);
 });
 
-test('interruption forwards termination and waits for the child cleanup before reporting failure', async () => {
+test('interruption forwards termination and waits for the child cleanup before reporting failure', async t => {
   const { runCommand } = await import('../src/ui-runner.ts');
+  const root = mkdtempSync(join(tmpdir(), 'runner-ready-')); t.after(() => rmSync(root, { recursive: true, force: true }));
   const signal = new AbortController();
-  const pending = runCommand(process.execPath, ['-e', "process.on('SIGTERM',()=>{console.log('cleanup-complete');process.exit(0)});setInterval(()=>{},1000)"], process.cwd(), 5000, process.env, signal.signal);
-  const timer = setTimeout(() => signal.abort(), 200);
+  const ready = setInterval(() => { if (existsSync(join(root, 'ready'))) signal.abort(); }, 10);
+  const pending = runCommand(process.execPath, ['-e', "process.on('SIGTERM',()=>{console.log('cleanup-complete');process.exit(0)});require('node:fs').writeFileSync('ready','');setInterval(()=>{},1000)"], root, 5000, process.env, signal.signal);
   try { await assert.rejects(pending, (error: any) => { assert.match(error.message, /interrupted/); assert.match(error.record.stdout, /cleanup-complete/); return true; }); }
-  finally { clearTimeout(timer); }
+  finally { clearInterval(ready); }
 });
 
 test('an already canceled command does not attempt to launch an executable', async () => {

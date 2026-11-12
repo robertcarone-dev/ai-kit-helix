@@ -1,3 +1,4 @@
+import { loadJourneys, journeyRequirements, journeyCoverage } from './journeys.ts';
 import { historicalInputState } from './input-migration.ts';
 import { collectionKey } from './capture-identity.ts';
 import { dependencyPinState } from './dependency-pins.ts';
@@ -65,7 +66,7 @@ export function loadAcceptance(root: string, project: string) {
       if (!entry?.required || supplemental.has(JSON.stringify([parent.item, parent.caseId]))) throw new Error('Supplemental cases must map to required primary coverage');
     }
   }
-  return { scope, screens, supplemental, evidence: evidenceLinks(root, project, screens) };
+  return { scope, screens, supplemental, journeys: loadJourneys(root, project, screens, supplemental), evidence: evidenceLinks(root, project, screens) };
 }
 /** Optional historical evidence index; never used to grant verification or approval. */
 function evidenceLinks(root: string, project: string, screens: Screen[]) {
@@ -163,7 +164,7 @@ function discrepancies(root: string, entry: AcceptanceCase) {
   });
 }
 export async function acceptanceStatus(root: string, project: string, reference?: ReferenceObservation) {
-  const { scope, screens, supplemental, evidence: links } = loadAcceptance(root, project);
+  const { scope, screens, supplemental, journeys, evidence: links } = loadAcceptance(root, project);
   if (reference && (reference.project !== scope.project || reference.variant !== scope.variant)) throw new Error('Reference observation belongs to another project/variant');
   const { loadCaseAdapters, acceptanceExecutions } = await import('./acceptance-runner.ts');
   const adapters = loadCaseAdapters(root, project), executions = acceptanceExecutions(root, project);
@@ -200,6 +201,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
       const priorEvidence = prior ? { note: prior.note, sources: prior.sources.map(path => ({ path, available: existsSync(evidencePath(root, path)) && statSync(evidencePath(root, path)).isFile() })) } : null;
       let freshness: 'current' | 'needs-recheck' | 'unknown' = 'unknown';
       let availability: 'available' | 'missing' | 'unverified' = 'unverified';
+      const artifactAvailability = new Map<string, string>();
       if (run) {
         if (run.criteriaSha256 !== criteriaHash(scope, screen, entry, viewport)) reasons.push('Acceptance criteria, recipe, dependencies or viewport changed');
         else validateRunTarget(scope, screen, entry, run);
@@ -209,6 +211,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
         if (entry.basis.kind === 'reference' && reference && reference.identity !== run.reference.identity) reasons.push('Reference identity changed');
         freshness = reasons.length ? 'needs-recheck' : (entry.basis.kind === 'product' || reference) && run.candidate.inputs.length ? 'current' : 'unknown';
         const artifactStates = await Promise.all(run.artifacts.map(artifact => pinState(root, artifact)));
+        run.artifacts.forEach((artifact, index) => artifactAvailability.set(artifact.path, artifactStates[index]));
         availability = artifactStates.includes('missing') ? 'missing' : artifactStates.includes('changed') || !artifactStates.length ? 'unverified' : 'available';
         if (availability !== 'available') reasons.push('Evidence ' + availability);
         reasons.push(...coverageGaps.filter(reason => !reason.startsWith('Missing declared input pins:')));
@@ -223,11 +226,13 @@ export async function acceptanceStatus(root: string, project: string, reference?
       const decisionApplies = Boolean(decision && run && decision.runId === run.id && decision.runSha256 === recordHash(run));
       const assessmentAllowsAcceptance = !latestAssessment || (assessmentAvailable && latestAssessment.outcome === 'matched');
       if (!assessmentAllowsAcceptance) reasons.push('Agent assessment requires recheck: ' + (assessmentAvailable ? latestAssessment!.outcome : 'evidence missing or changed'));
+      const coverage = journeyCoverage(journeyRequirements(root, journeys, screen.id, entry.id), run ?? null, entry.basis.kind === 'reference');
+      if (coverage.some(value => !value.complete)) reasons.push('Missing or changed journey branch/checkpoint/parameter coverage');
       const canAccept = reasons.length === 0;
       const reviewRequirement = automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id && workflow.viewports.includes(viewport))?.review ?? 'human';
       const review = decisionApplies ? decision!.status : 'pending';
       const accepted = canAccept && (review === 'accepted' || (reviewRequirement === 'automated' && review === 'pending'));
-      cases.push({ supportingCases: [] as any[], workflowId: automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id && workflow.viewports.includes(viewport))?.id ?? null, coverage: supplemental.get(JSON.stringify([screen.id, entry.id])) ?? null, reviewRequirement, latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required && !supplemental.has(JSON.stringify([screen.id, entry.id])), criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review, freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
+      cases.push({ journeyCoverage: coverage.map(value => ({ ...value, complete: value.complete && freshness === 'current' && run!.journeyCoverage!.find(record => record.journey === value.journey && record.branch === value.branch && record.parameter === value.parameter && record.checkpoint === value.checkpoint && record.definitionSha256 === value.definitionSha256)!.artifacts.every(path => artifactAvailability.get(path) === 'match') })), supportingCases: [] as any[], workflowId: automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id && workflow.viewports.includes(viewport))?.id ?? null, coverage: supplemental.get(JSON.stringify([screen.id, entry.id])) ?? null, reviewRequirement, latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required && !supplemental.has(JSON.stringify([screen.id, entry.id])), criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review, freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
     }
     const required = cases.filter(entry => entry.required), accepted = required.filter(entry => entry.accepted).length;
     const counts = (entries: typeof cases) => ({ required: entries.filter(entry => entry.required).length, accepted: entries.filter(entry => entry.required && entry.accepted).length });
@@ -253,7 +258,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
       const route = routeIndex.get(JSON.stringify([sourceItem, sourceCase, row.viewport]));
       const shared = route?.capture ? currentCollections.get(collectionKey(route)) : undefined;
       const capture = shared?.row ?? source;
-      return { item: sourceItem, caseId: sourceCase, viewport: source.viewport, dimension: source.dimension, workflowId: source.workflowId, runner: source.runner, priorEvidence: source.priorEvidence, captureFrom: shared ? { item: shared.item, caseId: capture.id } : { item: sourceItem, caseId: sourceCase }, latestRun: capture.latestRun ? { id: capture.latestRun.id, capturedUtc: capture.latestRun.capturedUtc } : null, freshness: capture.freshness, availability: capture.availability, accepted: source.accepted };
+      return { item: sourceItem, caseId: sourceCase, viewport: source.viewport, dimension: source.dimension, workflowId: source.workflowId, runner: source.runner, priorEvidence: source.priorEvidence, captureFrom: shared ? { item: shared.item, caseId: capture.id } : { item: sourceItem, caseId: sourceCase }, artifacts: capture.latestRun?.artifacts ?? [], latestRunSha256: capture.latestRunSha256, latestRun: capture.latestRun ? { id: capture.latestRun.id, capturedUtc: capture.latestRun.capturedUtc } : null, freshness: capture.freshness, availability: capture.availability, accepted: source.accepted };
     }).filter(source => source !== null);
   }
   return { format: 'helix-acceptance-status', version: 1, project: scope.project, variant: scope.variant, assessedUtc: new Date().toISOString(), referenceObservation: reference ?? null, scopeStatus: scope.status, exclusions: scope.exclusions, items, historicalRunIds: runs.filter(run => !activeKeys.has(caseKey(run))).map(run => run.id) };
@@ -278,8 +283,9 @@ async function writeRecord(root: string, kind: 'runs' | 'decisions' | 'assessmen
 export async function saveRun(root: string, project: string, input: unknown) {
   const run = readRun(input);
   return writeRecord(root, 'runs', run, async () => {
-    const { scope, screens } = loadAcceptance(root, project), { screen, entry } = target(scope, screens, run);
+    const { scope, screens, journeys } = loadAcceptance(root, project), { screen, entry } = target(scope, screens, run);
     validateRunTarget(scope, screen, entry, run);
+    if (run.outcome === 'matched' && journeyCoverage(journeyRequirements(root, journeys, screen.id, entry.id), run, entry.basis.kind === 'reference').some(value => !value.complete)) throw new Error('Matched run requires complete current journey branch/checkpoint/parameter coverage');
     for (const pin of run.candidate.inputs) if (dependencyPinState(root, pin) !== 'match') throw new Error('Run input missing or changed: ' + pin.path);
     for (const pin of run.artifacts) if (await pinState(root, pin) !== 'match') throw new Error('Run input/evidence missing or changed: ' + pin.path);
     const existing = records(root, 'runs', readRun);
