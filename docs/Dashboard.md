@@ -1,19 +1,21 @@
+> The Workbench **mod/UI is retired**. Use `helix evidence-report` and repository reports. The CLI evidence commands and historical formats documented below remain supported. Use `--project-root DIR`; feedback reads `--decisions REVIEWS_JSON` instead of mod storage.
+
 # Porting dashboard and comparison registry
 
-The CLI owns checkout-local report and comparison files. A compatible project-owned mod can display them; the shared installer does not supply a dashboard UI or backend.
+Use `helix evidence-report` and the configured existing status document for current handoffs. This page documents the retained legacy dashboard file format and comparison registry; it does not introduce a second progress tracker.
 
-## Publish a status report
+## Legacy report compatibility
 
-From the Unity checkout, agents publish a complete snapshot:
+Existing integrations can read or replace a legacy snapshot:
 
 ```sh
 Tools/Helix/bin/helix workbench dashboard --spec report.json
 Tools/Helix/bin/helix workbench dashboard
 ```
 
-Use `--helix-project sample-project` to use the saved mod connection, or `--project-root /absolute/checkout` for an isolated checkout. Neither command launches a game or Unity. The CLI validates the report, stamps `reportedUtc`, and atomically replaces `.helix/porting-dashboard.json`. With no `--spec`, it reads the current report. This path is checkout-wide and independent of browser session directories. Publication replaces the whole snapshot; coordinate publication through one reporting agent rather than having individual agents overwrite each other's inventory.
+Use cwd discovery or `--project-root /absolute/checkout`. Neither command launches a game or Unity. The CLI validates the report, stamps `reportedUtc`, and atomically replaces `.helix/porting-dashboard.json`. With no `--spec`, it reads the current report. This path is checkout-wide and independent of browser session directories. Publication replaces the whole snapshot; coordinate publication through one reporting agent rather than having individual agents overwrite each other's inventory.
 
-The mod reads this file from its connected Unity project. **Reload report** rereads it; it does not run scenarios or recapture evidence. An unreported checkout shows an empty state, never inferred completion. Read or validation failures clear displayed status and show a recovery instruction.
+The CLI reads this file locally. There is no mod reload action.
 
 Input example (illustrative, not a report of actual project completion):
 
@@ -57,11 +59,11 @@ Every item needs a stable unique ID, title, summary, issues array and evidence-r
 
 `reportedUtc` is CLI publication time, not a source revision or evidence timestamp. Statuses are agent assertions based on their work and existing CLI evidence/freshness checks. This command does not independently calculate freshness or parity and does not automatically turn a successful capture into “ported.” Include the reason for an out-of-date result and publish again when resolved. Existing `workbench prepare` and review commands remain responsible for evidence preparation; agents summarize those outcomes here.
 
-Reports are limited to 1 MiB, 1000 items and 50 issues/references per item. Unknown fields, duplicate IDs, cross-project reports and invalid states/actions are rejected before replacement. The pure validator is mirrored in the project's mod at `src/porting-dashboard-format.ts`; keep both copies identical when changing this versioned contract.
+Reports are limited to 1 MiB, 1000 items and 50 issues/references per item. Unknown fields, duplicate IDs, cross-project reports and invalid states/actions are rejected before replacement. The CLI owns the versioned validator.
 
 ## Connected evidence and feedback
 
-Select a feature or screen to see its linked comparisons. The issue filter shows evidence explicitly linked to that issue; **Show all comparisons** exposes the checkout-wide inventory. No issue relationship or verdict is inferred from pixel differences.
+List registered comparisons with the commands below. No verdict is inferred from pixel differences.
 
 Agents can register existing bundles without recapture, including bundles from an isolated checkout:
 
@@ -69,30 +71,30 @@ Agents can register existing bundles without recapture, including bundles from a
 Tools/Helix/bin/helix workbench comparisons --from-report yes
 Tools/Helix/bin/helix workbench comparisons --evidence /absolute/evidence.json --item screen.menu --issue 1
 Tools/Helix/bin/helix workbench comparisons --item screen.menu
-Tools/Helix/bin/helix workbench feedback --comparison COMPARISON_ID
+Tools/Helix/bin/helix workbench feedback --comparison COMPARISON_ID --decisions REVIEWS_JSON
 ```
 
 `--from-report yes` registers the report's explicit `evidence.json` references and links them to their items. Other report files are not treated as comparison bundles. Invalid or missing bundles are reported individually and yield exit code 2; successful entries are retained. Registration validates the complete bundle. Repeating registration preserves existing links without duplication.
 
 `--issue` is a 1-based issue number in the current dashboard report and requires `--item`. Registration stores the issue's tool, message, and next action as its identity, not its position. Reordering issues preserves the relationship; changed issues are labeled as earlier issues until an agent links the updated issue. `prepare`, `refresh`, and `evidence` accept these same link flags; invalid item or issue selections fail before preparation. Same-bundle registration uses an exclusive lock to avoid concurrent link loss; an interrupted writer may leave a lock requiring investigation.
 
-Use the connected checkout as the registration destination (`--helix-project` or explicit `--project-root`); an absolute bundle path may point into an isolated capture checkout. This does not change capture provenance or pretend the capture came from the connected revision.
+Use the connected checkout as the registration destination (cwd discovery or explicit `--project-root`); an absolute bundle path may point into an isolated capture checkout. This does not change capture provenance or pretend the capture came from the connected revision.
 
-`feedback` reads saved decisions from the current local Helix draft, with legacy account-settings fallback. No export or import is required. Output includes linked items/issues, element identity, notes, decision, and evidence-relative state (`not-reviewed`, `accepted`, `needs-work`, `blocked`, or `review-required`). Legacy report-path decisions are included with their identity explicitly labeled. A changed evidence hash requires review; this command does not assess live source freshness. Missing decisions are distinct from connection/read errors, which fail the command. Unsaved edits are not visible to agents. Saving feedback does not automatically change the CLI-owned feature status; the next agent must evaluate it and publish an updated report.
+`feedback` reads a portable decision export. It retains stable or legacy report-path identity and reports evidence-relative freshness without changing saved verdicts. See [legacy feedback recovery](Workbench.md#unity-project-selection-and-desktop-contract). It does not contact a mod or account KV.
 
 
 Successful preparation, refresh, and evidence commands register their bundles automatically. Each `.helix/comparisons/<id>.json` record pins an absolute bundle path and SHA-256; moving or changing the bundle invalidates it. Registration verifies the complete bundle, derives status only from valid preparation metadata, and writes atomically under an exclusive per-bundle lock. Registration failure fails the command but leaves completed evidence for investigation. Lists describe preparation-time status, not current source freshness.
 
-Feedback requires the optional Desktop endpoints in [Workbench](Workbench.md). It reads durable project-mod decisions first, falling back to account KV only when a record is absent. Connection failures are not treated as missing decisions.
+Feedback requires `--decisions REVIEWS_JSON`; missing or invalid exports fail explicitly.
 
 ## Task handoff
 
-Projects opting into Workbench review designate the capture/receiving checkouts, stable dashboard item and case/element IDs, verdict owner, and one dashboard reporting owner in their project adapter. Use the following sequence within existing assignment access and capture authorization:
+Projects using offline evidence review designate the capture/receiving checkouts, stable catalog item and case/element IDs, verdict owner, and the owner of the existing scoped status document in their project adapter. Use the following sequence within existing assignment access and capture authorization:
 
 1. Prepare retained paired evidence with capture-time dependencies. Use `workbench refresh` with an exported decision file and previous bundle to carry decisions across revisions; `feedback` output is not that export format. Ready means ready for review, not accepted parity.
 2. Register the retained bundle in the authorized receiving checkout, link its existing item and optional current issue, and verify registration readback. Preserve the returned comparison ID, path/hash, source and receiving revisions, and recovery attachment/package. Registration neither copies nor archives evidence. Re-register relocated bundles. Keep motion/audio originals outside the PNG/JSON bundle with their ledgers.
-3. Read saved feedback on continuation and before handoff. Distinguish missing decisions, evidence requiring review, absent review targets, and failed reads. None establishes acceptance. Record unresolved access or review as a handoff limitation and continue independent work. Check source applicability separately; saved decisions do not verify live freshness.
-4. The assigned reviewer evaluates the scoped evidence and records board/discrepancy verdicts through the project's existing workflow. Do not convert Workbench Accepted into automatic task closure or revive canceled scope. Preserve valid unaffected passes.
-5. Hand implementation/integration receipts, comparison IDs, feedback, discrepancy revisions and remaining owners to the designated reporting owner. That owner reads the latest complete report, updates affected items without dropping the inventory, publishes, and verifies readback. Publication time is not evidence freshness. Relink comparisons when issue text changes; old links remain historical.
+3. Read exported feedback using `workbench feedback --comparison ID --decisions EXPORTED_REVIEWS` on continuation and before handoff. Distinguish missing decisions, evidence requiring review, absent review targets, and failed reads. None establishes acceptance. Record unresolved access or review as a handoff limitation and continue independent work. Check source applicability separately; saved decisions do not verify live freshness.
+4. The assigned reviewer evaluates the scoped evidence and records board/discrepancy verdicts through the project's existing workflow. Do not convert an evidence-relative accepted decision into automatic task closure or revive canceled scope. Preserve valid unaffected passes.
+5. Hand scoped integration receipts, comparison IDs, feedback, discrepancy revisions and next owners to the designated status owner. Update only the affected sections of the existing summary, then regenerate the supporting evidence index with `evidence-report` using project-owned configuration. Do not publish another dashboard or acceptance progress snapshot for this workflow, or infer delivery of separately owned work. Generation time is not evidence freshness.
 
-Missing item mappings or a missing compatible mod do not authorize invented status or new services. Record the limitation in the existing handoff. These steps do not authorize cross-lane writes, external messages, or captures solely to refresh status. Project-specific procedures belong in the project adapter rather than edited installed guides.
+Missing item mappings do not authorize invented status or new services. Record the limitation in the existing handoff. These steps do not authorize cross-lane writes, external messages, or captures solely to refresh status. Project-specific procedures belong in the project adapter rather than edited installed guides.

@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { catalogStatus, loadCatalog, catalogTree, renderCatalogTree } from '../src/catalog.ts';
-import { acceptanceBackend } from '../workbench/acceptance-backend.ts';
+import { acceptanceBackend } from '../src/acceptance-backend.ts';
 import { digest, recordHash } from '../src/acceptance-format.ts';
 function fixture(t: any) {
   const root = mkdtempSync(join(tmpdir(), 'catalog-')); t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -93,7 +93,7 @@ test('folders, specifications and discipline assignments preserve feature identi
 });
 
 test('folder selection includes descendants and Dev/TA includes shared open work without treating resolved work as pending', async t => {
-  const { selectCatalogEntries } = await import('../workbench/catalog-selection.ts');
+  const { selectCatalogEntries } = await import('../src/catalog-selection.ts');
   const f = fixture(t);
   Object.assign(f.catalog, { folders: [{ id: 'game', title: 'Game', parent: null }, { id: 'home', title: 'Home', parent: 'game' }], workAssignments: { 'home-layout': 'shared' } });
   Object.assign(f.entry, { folder: 'home' }); f.put('Tools/Helix/catalog/catalog.json', f.catalog);

@@ -1,3 +1,4 @@
+import { loadQaReconciliation, evaluateQa, saveQaReconciliation, summarizeQa } from './qa-reconciliation.ts';
 import { loadJourneys, journeyRequirements, journeyCoverage } from './journeys.ts';
 import { historicalInputState } from './input-migration.ts';
 import { collectionKey } from './capture-identity.ts';
@@ -170,6 +171,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
   const adapters = loadCaseAdapters(root, project), executions = acceptanceExecutions(root, project);
   const { automationDefinitions } = await import('./verification-jobs.ts');
   const automation = automationDefinitions(root, project);
+  const qaDocument = loadQaReconciliation(root, project);
   const runs = records(root, 'runs', readRun), decisions = records(root, 'decisions', readDecision);
   checkDecisionRuns(decisions, runs);
   const assessments = records(root, 'assessments', readAssessment);
@@ -231,12 +233,16 @@ export async function acceptanceStatus(root: string, project: string, reference?
       const canAccept = reasons.length === 0;
       const reviewRequirement = automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id && workflow.viewports.includes(viewport))?.review ?? 'human';
       const review = decisionApplies ? decision!.status : 'pending';
-      const accepted = canAccept && (review === 'accepted' || (reviewRequirement === 'automated' && review === 'pending'));
-      cases.push({ journeyCoverage: coverage.map(value => ({ ...value, complete: value.complete && freshness === 'current' && run!.journeyCoverage!.find(record => record.journey === value.journey && record.branch === value.branch && record.parameter === value.parameter && record.checkpoint === value.checkpoint && record.definitionSha256 === value.definitionSha256)!.artifacts.every(path => artifactAvailability.get(path) === 'match') })), supportingCases: [] as any[], workflowId: automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id && workflow.viewports.includes(viewport))?.id ?? null, coverage: supplemental.get(JSON.stringify([screen.id, entry.id])) ?? null, reviewRequirement, latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required && !supplemental.has(JSON.stringify([screen.id, entry.id])), criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review, freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
+      const qa = evaluateQa(root, qaDocument, scope, screen, entry, viewport);
+      if (qa && ((run?.outcome === 'mismatch' && run.capturedUtc > qa.reports.reduce((latest, report) => report.at > latest ? report.at : latest, '')) || (decision?.status === 'changes-requested' && decision.savedUtc > qa.reports.reduce((latest, report) => report.at > latest ? report.at : latest, '')))) { qa.accepted = false; qa.status = 'failed'; qa.reasons.push('A later capture or review contradicts the reconciled QA verdict'); }
+      const accepted = qa?.status !== 'failed' && ((canAccept && (review === 'accepted' || (reviewRequirement === 'automated' && review === 'pending'))) || (scope.status === 'approved' && qa?.accepted === true));
+      if (qa && !accepted) { reasons.length = 0; reasons.push(...qa.reasons); if (scope.status !== 'approved') reasons.push('Acceptance scope is not approved: ' + scope.status); }
+      if (qa?.accepted && accepted) reasons.length = 0;
+      cases.push({ qa, journeyCoverage: coverage.map(value => ({ ...value, complete: value.complete && freshness === 'current' && run!.journeyCoverage!.find(record => record.journey === value.journey && record.branch === value.branch && record.parameter === value.parameter && record.checkpoint === value.checkpoint && record.definitionSha256 === value.definitionSha256)!.artifacts.every(path => artifactAvailability.get(path) === 'match') })), supportingCases: [] as any[], workflowId: automation.find((workflow: any) => workflow.acceptanceItem === screen.id && workflow.caseId === entry.id && workflow.viewports.includes(viewport))?.id ?? null, coverage: supplemental.get(JSON.stringify([screen.id, entry.id])) ?? null, reviewRequirement, latestAssessment, assessmentAvailable, id: entry.id, viewport, runner, latestExecution, priorEvidence, linkedDiscrepancies, dimension: entry.dimension, required: entry.required && !supplemental.has(JSON.stringify([screen.id, entry.id])), criteriaSha256: criteriaHash(scope, screen, entry, viewport), criteria: entry.criteria, basis: entry.basis, recipe: entry.recipe, verification: run ? run.outcome : entry.recipe.blockers.length ? 'blocked' : 'not-tested', review, freshness, availability, accepted, canAccept, reasons, latestRunSha256: run ? recordHash(run) : null, latestRun: run ?? null, lastDecision: decision, lastAccepted: history.filter(record => record.status === 'accepted').sort((a, b) => b.savedUtc.localeCompare(a.savedUtc))[0] ?? null });
     }
     const required = cases.filter(entry => entry.required), accepted = required.filter(entry => entry.accepted).length;
     const counts = (entries: typeof cases) => ({ required: entries.filter(entry => entry.required).length, accepted: entries.filter(entry => entry.required && entry.accepted).length });
-    items.push({ id: screen.id, title: screen.title, implementation: screen.implementation, status: !required.length ? 'unconfigured' : accepted === required.length && screen.implementation === 'implemented' ? 'accepted' : 'incomplete', ...counts(cases), byViewport: Object.fromEntries(scope.viewports.map(viewport => [viewport.id, counts(cases.filter(entry => entry.viewport === viewport.id))])), byDimension: Object.fromEntries(['appearance', 'motion', 'behavior', 'audio'].map(dimension => [dimension, counts(cases.filter(entry => entry.dimension === dimension))])), cases });
+    items.push({ qaSummary: summarizeQa(cases), id: screen.id, title: screen.title, implementation: screen.implementation, status: !required.length ? 'unconfigured' : accepted === required.length && (screen.implementation === 'implemented' || required.every(entry => entry.qa?.accepted)) ? 'accepted' : 'incomplete', ...counts(cases), byViewport: Object.fromEntries(scope.viewports.map(viewport => [viewport.id, counts(cases.filter(entry => entry.viewport === viewport.id))])), byDimension: Object.fromEntries(['appearance', 'motion', 'behavior', 'audio'].map(dimension => [dimension, counts(cases.filter(entry => entry.dimension === dimension))])), cases });
   }
   const routeIndex = new Map(adapters.map(route => [JSON.stringify([route.item, route.caseId, route.viewport]), route]));
   const caseIndex = new Map(items.flatMap(item => item.cases.map(row => [JSON.stringify([item.id, row.id, row.viewport]), row] as const)));
@@ -261,7 +267,7 @@ export async function acceptanceStatus(root: string, project: string, reference?
       return { item: sourceItem, caseId: sourceCase, viewport: source.viewport, dimension: source.dimension, workflowId: source.workflowId, runner: source.runner, priorEvidence: source.priorEvidence, captureFrom: shared ? { item: shared.item, caseId: capture.id } : { item: sourceItem, caseId: sourceCase }, artifacts: capture.latestRun?.artifacts ?? [], latestRunSha256: capture.latestRunSha256, latestRun: capture.latestRun ? { id: capture.latestRun.id, capturedUtc: capture.latestRun.capturedUtc } : null, freshness: capture.freshness, availability: capture.availability, accepted: source.accepted };
     }).filter(source => source !== null);
   }
-  return { format: 'helix-acceptance-status', version: 1, project: scope.project, variant: scope.variant, assessedUtc: new Date().toISOString(), referenceObservation: reference ?? null, scopeStatus: scope.status, exclusions: scope.exclusions, items, historicalRunIds: runs.filter(run => !activeKeys.has(caseKey(run))).map(run => run.id) };
+  return { qaSummary: summarizeQa(items.flatMap(item => item.cases)), format: 'helix-acceptance-status', version: 1, project: scope.project, variant: scope.variant, assessedUtc: new Date().toISOString(), referenceObservation: reference ?? null, scopeStatus: scope.status, exclusions: scope.exclusions, items, historicalRunIds: runs.filter(run => !activeKeys.has(caseKey(run))).map(run => run.id) };
 }
 /** Exclusive store lock plus atomic immutable records; an interrupted writer never publishes partial JSON. */
 async function writeRecord(root: string, kind: 'runs' | 'decisions' | 'assessments', record: Run | Decision | Assessment, check: () => Promise<void>) {
@@ -337,7 +343,7 @@ export async function acceptanceCommand(root: string, project: string, operation
     for (const key of Object.keys(options)) if (!allowed.includes(key)) throw new Error('Invalid selected acceptance option: ' + key);
     if (operation === 'plan' && !options.out) throw new Error('Acceptance plan requires --out NEW_SCRATCH_DIR');
     const { catalogStatus } = await import('./catalog.ts');
-    const { selectCatalogEntries } = await import('../workbench/catalog-selection.ts');
+    const { selectCatalogEntries } = await import('./catalog-selection.ts');
     const reference = options.reference ? readReferenceObservation(json(resolve(root, options.reference))) : undefined;
     const status = await acceptanceStatus(root, project, reference);
     const catalog = catalogStatus(root, project, status), entries = selectCatalogEntries(catalog, options);
@@ -365,8 +371,8 @@ export async function acceptanceCommand(root: string, project: string, operation
     if (operation === 'run' && !options.mode) throw new Error('Acceptance run requires explicit --mode retained or capture');
     return operation === 'plan' ? planAcceptanceCase(root, project, options.item, options.case, options.viewport, resolve(root, options.out)) : runAcceptanceCase(root, project, options.item, options.case, options.viewport, resolve(root, options.out), options.mode);
   }
-  const allowed: Record<string, string[]> = { validate: [], summary: ['reference'], status: ['reference'], publish: ['reference'], 'record-run': ['spec'], 'assess': ['spec'], review: ['spec', 'reference'] };
-  if (!Object.hasOwn(allowed, operation)) throw new Error('Use acceptance validate|summary|status|publish|record-run|assess|review');
+  const allowed: Record<string, string[]> = { reconcile: ['spec'], validate: [], summary: ['reference'], status: ['reference'], publish: ['reference'], 'record-run': ['spec'], 'assess': ['spec'], review: ['spec', 'reference'] };
+  if (!Object.hasOwn(allowed, operation)) throw new Error('Use acceptance validate|summary|status|publish|record-run|assess|review|reconcile');
   for (const option of Object.keys(options)) if (!['project-root', 'helix-project'].includes(option) && !allowed[operation].includes(option)) throw new Error('Invalid acceptance option --' + option);
   const reference = options.reference ? readReferenceObservation(json(resolve(root, options.reference))) : undefined;
   if (operation === 'validate') { const { scope, screens, supplemental } = loadAcceptance(root, project);
@@ -374,12 +380,13 @@ export async function acceptanceCommand(root: string, project: string, operation
     return { status: 'valid', project, variant: scope.variant, screens: screens.length, requiredCases: screens.reduce((count, screen) => count + screen.cases.filter(entry => entry.required && !supplemental.has(JSON.stringify([screen.id, entry.id]))).reduce((total, entry) => total + entry.viewports.length, 0), 0) }; }
   if (operation === 'summary') {
     const report = await acceptanceStatus(root, project, reference);
-    return { project, items: report.items.map(item => ({ id: item.id, implementation: item.implementation, status: item.status, required: item.required, complete: item.accepted, supplemental: item.cases.filter(entry => !entry.required).length })) };
+    return { project, qaSummary: report.qaSummary, items: report.items.map(item => ({ id: item.id, implementation: item.implementation, status: item.status, required: item.required, complete: item.accepted, reconciledQa: item.cases.filter(entry => entry.required && entry.qa).length, qaAccepted: item.cases.filter(entry => entry.required && entry.qa?.accepted).length, gaps: item.cases.filter(entry => entry.required && !entry.accepted).map(entry => ({ caseId: entry.id, viewport: entry.viewport, status: entry.qa?.status ?? entry.verification, reasons: entry.reasons })), supplemental: item.cases.filter(entry => !entry.required).length })) };
   }
   if (operation === 'status') return acceptanceStatus(root, project, reference);
   if (operation === 'publish') return publishAcceptance(root, project, reference);
   if (!options.spec) throw new Error('Acceptance record operation requires --spec FILE');
   const spec = json(resolve(root, options.spec));
+  if (operation === 'reconcile') { const { scope, screens, supplemental } = loadAcceptance(root, project); return saveQaReconciliation(root, project, spec, scope, screens, supplemental); }
   if (operation === 'assess') return saveAssessment(root, project, spec);
   return operation === 'record-run' ? saveRun(root, project, spec) : saveDecision(root, project, spec, reference);
 }
@@ -405,6 +412,6 @@ export async function publishAcceptance(root: string, project: string, reference
     writeFileSync(fullTemporary, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
     renameSync(fullTemporary, pathIn(root, '.helix/acceptance-status.json'));
     writeFileSync(temporary, JSON.stringify({ format: 'helix-porting-dashboard', version: 1, project, reportedUtc: report.assessedUtc, items }), { flag: 'wx' });
-    return { ...portingDashboard(root, project, temporary), acceptance: { required: report.items.reduce((count, item) => count + item.required, 0), accepted: report.items.reduce((count, item) => count + item.accepted, 0), note: 'Generated snapshot. Reload the Workbench report; rerun acceptance publish after evidence or source changes.' } };
+    return { ...portingDashboard(root, project, temporary), acceptance: { required: report.items.reduce((count, item) => count + item.required, 0), accepted: report.items.reduce((count, item) => count + item.accepted, 0), note: 'Generated legacy snapshot. Use porting-report for the repository evidence report; rerun acceptance publish only for legacy snapshot consumers.' } };
   } finally { for (const path of [temporary, fullTemporary, lock]) if (existsSync(path)) unlinkSync(path); }
 }

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { caseStatus, featureStatus, nextCaseAction, featureSummary, featureNextStep } from '../workbench/workbench-presentation.ts';
-import type { CaseRow } from '../workbench/acceptance-view.ts';
-import type { CatalogItem } from '../workbench/catalog-view.ts';
+import { caseStatus, featureStatus, nextCaseAction, featureSummary, featureNextStep } from '../src/acceptance-presentation.ts';
+import type { CaseRow } from '../src/acceptance-types.ts';
+import type { CatalogItem } from '../src/catalog-types.ts';
 test('historical matches and pending review never create review eligibility', () => {
   const row = { accepted: false, canAccept: false, review: 'pending', latestRun: { id: 'capture' }, freshness: 'needs-recheck', verification: 'unmeasured', latestAssessment: { outcome: 'matched' }, assessmentAvailable: true } as CaseRow;
   assert.equal(caseStatus(row), 'recheck');

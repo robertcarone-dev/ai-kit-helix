@@ -35,9 +35,9 @@ Include the resolution `decision`, fix identity, tested receiving revision in `u
 
 Do not close a partly unmet scope. If residual coverage is genuinely independent of the completed defect, retain or create separately linked stable cases and explain the split in the decision; do not leave a fixed scoped defect open solely for unrelated coverage. Deliver the new revision and verify its status and evidence readback from the receiving checkout before recounting the project status summary.
 
-## Workbench review feedback
+## Offline review feedback
 
-When the project uses Workbench review, follow the [Workbench handoff contract](../../Tools/Helix/toolkit/Dashboard.md#task-handoff) and its project adapter to register retained comparisons and read saved feedback on continuation and before handoff. Keep Workbench decisions, board verdicts and discrepancy dispositions distinct; review feedback does not transfer QA or deviation-approval ownership.
+For portable evidence reviews, follow the [offline handoff contract](../../Tools/Helix/toolkit/Dashboard.md#task-handoff) and its project adapter to register retained comparisons and read exported feedback with `workbench feedback --comparison ID --decisions EXPORTED_REVIEWS` on continuation and before handoff. Missing exports remain an explicit review limitation; do not query retired mod endpoints. Keep evidence-relative decisions, board verdicts and discrepancy dispositions distinct; review feedback does not transfer QA or deviation-approval ownership.
 
 ## Continuation and evidence recovery
 

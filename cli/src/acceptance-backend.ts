@@ -1,17 +1,17 @@
-import { prepareAiKitChecks } from '../src/aikit-checks.ts';
-import { preparePmTask, submitPmTask } from '../src/pm-tasks.ts';
-import { planCatalogBatch, startCatalogBatch, catalogBatchStatus } from '../src/catalog-batch.ts';
-import { evidencePath } from '../src/evidence-archive.ts';
-import { verificationStatus, startVerification } from '../src/verification-jobs.ts';
-import { resolutionDefinitions, resolutionStatus, reviewResolution } from '../src/resolution.ts';
-import { planAcceptanceCase } from '../src/acceptance-runner.ts';
-import { catalogStatus, catalogPath } from '../src/catalog.ts';
-/** Reusable Workbench endpoints. The host validates the connected checkout and supplies its project root. */
+import { prepareAiKitChecks } from './aikit-checks.ts';
+import { preparePmTask, submitPmTask } from './pm-tasks.ts';
+import { planCatalogBatch, startCatalogBatch, catalogBatchStatus } from './catalog-batch.ts';
+import { evidencePath } from './evidence-archive.ts';
+import { verificationStatus, startVerification } from './verification-jobs.ts';
+import { resolutionDefinitions, resolutionStatus, reviewResolution } from './resolution.ts';
+import { planAcceptanceCase } from './acceptance-runner.ts';
+import { catalogStatus, catalogPath } from './catalog.ts';
+/** Evidence API retained for CLI verification and integrations. No Workbench mod or UI is installed. */
 import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { acceptanceStatus, loadAcceptance, publishAcceptance, saveDecision } from '../src/acceptance.ts';
-import { digest, portablePath, recordHash } from '../src/acceptance-format.ts';
+import { acceptanceStatus, loadAcceptance, publishAcceptance, saveDecision } from './acceptance.ts';
+import { digest, portablePath, recordHash } from './acceptance-format.ts';
 
 function within(root: string, path: string) {
   portablePath(path);

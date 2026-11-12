@@ -1,4 +1,4 @@
-import { acceptanceBackend, referenceObservation } from '../workbench/acceptance-backend.ts';
+import { acceptanceBackend, referenceObservation } from '../src/acceptance-backend.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
@@ -257,7 +257,7 @@ test('authored automation removes manual approval only for current measured chec
   const workflow = { id: 'result-layout', review: 'automated', unity: { scene: 'scene.unity', preflightScripts: ['audit.cs'] } };
   f.put('Tools/Helix/resolutions/automation.json', { version: 1, project: 'synthetic', workflows: [workflow] });
   await saveRun(f.root, 'synthetic', f.run);
-  const { caseStatus, nextCaseAction } = await import('../workbench/workbench-presentation.ts');
+  const { caseStatus, nextCaseAction } = await import('../src/acceptance-presentation.ts');
   const { verificationStatus, startVerification, automationDefinitions } = await import('../src/verification-jobs.ts');
   const row = (await acceptanceStatus(f.root, 'synthetic', f.reference)).items[0].cases[0];
   assert.equal(row.reviewRequirement, 'automated'); assert.equal(caseStatus(row), 'verified'); assert.equal(nextCaseAction(row), 'verified');
@@ -458,4 +458,24 @@ test('tooling task preview packages existing specs and evidence without sending 
   assert.equal(task.attachments.find(file => file.path === 'media/candidate.png')!.status, 'missing');
   assert.equal(task.receipt, null); assert.match(task.blocker!, /Configure/);
   f.put('spec.md', '# Changed spec'); assert.notEqual((await preparePmTask(f.root, 'synthetic', { item: 'screen.result', kind: 'tooling' }, f.reference)).token, task.token);
+});
+
+test('reconciled QA changes shared acceptance status and removes completed work from AI Kit planning without capture runs', async t => {
+  const { qaDefinition } = await import('../src/qa-reconciliation.ts');
+  const { prepareAiKitChecks } = await import('../src/aikit-checks.ts');
+  const f = fixture(t);
+  f.screen.implementationReferences = ['Assets/game.cs']; f.screen.cases[0].dependencies = ['Assets/game.cs'];
+  f.put('Assets/game.cs', 'product'); f.put('Tools/Helix/acceptance/screens/result.json', f.screen);
+  f.put('Tools/Helix/acceptance/aikit.json', { version: 1, instructions: 'instructions.md', manualCases: [] }); f.put('instructions.md', 'Reuse existing QA.');
+  const source = { key: 'AK-1', kind: 'task', state: 'Done', test: { result: 'pass', at: '2026-11-10T12:00:00.000Z' }, cases: [{ id: 1, name: 'Both viewports', results: [{ status: 'passed', note: 'Matching layout at phone/tablet', at: '2026-11-10T11:00:00.000Z' }] }] };
+  f.put('qa.json', source);
+  const { scope, screens } = loadAcceptance(f.root, 'synthetic');
+  const bindings = ['phone', 'tablet'].map(viewport => ({ item: screens[0].id, caseId: 'settled', viewport, definitionSha256: qaDefinition(scope, screens[0], screens[0].cases[0], viewport), coverage: 'full', note: 'Reviewed exact layout scope', gaps: [], sources: [{ path: 'qa.json', sha256: digest(JSON.stringify(source)), cases: [1] }], testedRevision: 'a'.repeat(40), inputs: [{ path: 'Assets/game.cs', sha256: digest('product') }], findings: [] }));
+  f.put('Tools/Helix/acceptance/qa-reconciliations/reviewed.json', { version: 1, id: 'reviewed', project: 'synthetic', reconciledUtc: '2026-11-11T12:00:00.000Z', reviewer: 'Review of existing QA', bindings });
+  const status = await acceptanceStatus(f.root, 'synthetic'); assert.equal(status.items[0].accepted, 2); assert.equal(status.items[0].cases[0].latestRun, null);
+  const remaining = await prepareAiKitChecks(f.root, 'synthetic', { item: null, caseId: null, remaining: true }); assert.equal(remaining.scenarioCount, 0);
+  const all = await prepareAiKitChecks(f.root, 'synthetic', { item: null, caseId: null, remaining: false }); assert.equal(all.workCounts.reuse, 2); assert.equal(all.evidence.length, 1); assert.equal(all.evidence[0].consumers.length, 2);
+  assert.equal(all.checks[0].viewports[0].qa!.reports[0].sourceId, 'sha256:' + digest(JSON.stringify(source)));
+  assert.match(all.body, /never keys to resolve on the receiving AI Kit board/);
+  f.put('Assets/game.cs', 'later behavior change'); const changed = await acceptanceStatus(f.root, 'synthetic'); assert.equal(changed.items[0].accepted, 0); assert.equal(changed.items[0].cases[0].qa!.status, 'changed');
 });

@@ -157,7 +157,7 @@ export async function runAcceptanceCase(root: string, project: string, item: str
       const capture = plan.capture!;
       const { scope, screens } = loadAcceptance(root, project), screen = screens.find(screen => screen.id === item)!, entry = screen.cases.find(entry => entry.id === caseId)!;
       const size = scope.viewports.find(size => size.id === viewport)!;
-      const { referenceObservation } = await import('../workbench/acceptance-backend.ts');
+      const { referenceObservation } = await import('./acceptance-backend.ts');
       const identity = await discover(adapterSettings(root));
       const reference = referenceObservation(root, identity.sourceRoot, project);
       const inputs = captureDependencyPins(root, entry);

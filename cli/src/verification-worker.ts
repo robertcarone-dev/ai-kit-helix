@@ -8,7 +8,7 @@ import { runCommand } from './ui-runner.ts';
 import { saveRun } from './acceptance.ts';
 import { recordHash } from './acceptance-format.ts';
 import { resolutionStatus } from './resolution.ts';
-import { referenceObservation } from '../workbench/acceptance-backend.ts';
+import { referenceObservation } from './acceptance-backend.ts';
 
 const [root, id] = process.argv.slice(2), directory = jobDirectory(root, id);
 const job = JSON.parse(readFileSync(join(directory, 'job.json'), 'utf8'));

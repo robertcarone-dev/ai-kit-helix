@@ -1,8 +1,8 @@
 # Sprite and UI rendering inspector
 
-The CLI collects the evidence described here. Viewer controls require a compatible project-owned Porting Workbench; the shared installer does not install a mod or browser development hooks.
+The CLI collects the evidence described here. The Workbench mod is retired. Inspect generated comparison images and rendering JSON directly; the installer does not install a viewer or browser development hooks.
 
-`render-inspect` prepares read-only evidence for **Comparison → Inspect rendering** in the Porting Workbench. It uses the existing UI snapshot selectors and validators, optionally runs `sprite-usage` and `render-trace`, and accepts retained `UiCompositing.Inspect` observations. No Unity process is launched, no assets are imported or edited, and the mod does not collect or infer rendering state.
+`render-inspect` prepares read-only evidence for offline comparison review. It uses the existing UI snapshot selectors and validators, optionally runs `sprite-usage` and `render-trace`, and accepts retained `UiCompositing.Inspect` observations. No Unity process is launched, no assets are imported or edited, and the report does not infer rendering state.
 
 ```sh
 Tools/Helix/bin/helix render-inspect --spec render-spec.json --out .helix/evidence/render-01
@@ -50,7 +50,7 @@ Tools/Helix/bin/helix compare --reference .helix/evidence/render-01/reference.pn
 Tools/Helix/bin/helix workbench evidence --source .helix/evidence/render-01 --out .helix/evidence/render-01-bundle
 ```
 
-Open `render-01-bundle/evidence.json` in the Workbench. Click an outlined element on either image, or choose **Element** above the images, to drive both the visual drill-down and **Inspect rendering**. Unselected elements use thinner, dimmer outlines. Clicks use native image coordinates at the current shared zoom/pan; dragging more than four screen pixels pans without selecting. Repeated clicks cycle overlapping elements (smallest bounds first); the selector also provides keyboard access. Overlay and difference views accept hits on either side’s captured bounds. Reports must match both image SHA-256 values. The CLI requires `native-top-left-pixels` on each supplied snapshot and records that coordinate space in the rendering report. Older reports without this field remain readable, but require regeneration before highlights and geometry deltas are enabled; unsupported explicit coordinate spaces are rejected on import. The viewer draws captured bounds as a cyan solid reference outline and a pink dashed candidate outline, and shows native-pixel X, Y, width and height with candidate-minus-reference deltas. Missing runtime bounds remain **Unmeasured**; serialized mappings do not supply image coordinates.
+Inspect the generated comparison images and rendering JSON. Reports bind observations to both image SHA-256 values. The CLI requires `native-top-left-pixels` on supplied snapshots and records that coordinate space in the report. Older reports without it remain readable but cannot establish geometry deltas; unsupported explicit coordinate spaces are rejected. Missing runtime bounds remain **Unmeasured**; serialized mappings do not supply image coordinates.
 
 **Focus element** fits the union of both captured bounds. Both images keep the same pixel origin, scale and pan position, so focusing preserves layout offsets. Use **Fit captures**, **100%**, and **+/−** for shared zoom; drag either image or focus it and use arrow keys to pan both. Opacity overlay and the hash-verified CLI difference view retain the same navigation and outlines. Different image dimensions allow side-by-side review only. Bounds are axis-aligned capture evidence, not silhouettes, visible-pixel extents or proof of matching scenario state.
 

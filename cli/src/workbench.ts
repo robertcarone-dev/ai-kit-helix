@@ -10,7 +10,7 @@ export async function workbench(page: any, req: any, provenance: any) {
   const result = await page.evaluate(async ({ operation, name, level, seed }: any) => {
     const api = (window as any).__portingWorkbench;
     if (!api || api.version !== 1)
-      throw new Error('Porting Workbench v1 is unavailable. Pull the prototype mod and development hooks, then reload the preview.');
+      throw new Error('Porting Workbench v1 is unavailable. Enable the project-owned development hooks, then reload the preview.');
     switch (operation) {
       case 'list': return { version: api.version, scenarios: api.scenarios };
       case 'run': return api.run({ scenario: name, level: Number(level), seed: Number(seed) });

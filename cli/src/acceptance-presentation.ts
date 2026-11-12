@@ -1,5 +1,5 @@
-import type { CatalogItem } from './catalog-view.ts';
-import type { CaseRow } from './acceptance-view.ts';
+import type { CatalogItem } from './catalog-types.ts';
+import type { CaseRow } from './acceptance-types.ts';
 
 export type WorkStatus = 'fix' | 'evidence' | 'ready' | 'accepted' | 'define' | 'recheck' | 'verified';
 export function finding(entry: CaseRow) { return entry.latestAssessment && entry.assessmentAvailable ? entry.latestAssessment.outcome : entry.verification; }
@@ -7,6 +7,8 @@ export function caseStatus(entry: CaseRow): WorkStatus {
   if (entry.accepted) return entry.reviewRequirement === 'automated' && entry.review === 'pending' ? 'verified' : 'accepted';
   if (entry.reviewRequirement === 'automated' && entry.verification === 'mismatch') return 'fix';
   if (finding(entry) === 'mismatch' || entry.review === 'changes-requested') return 'fix';
+  if (entry.qa?.status === 'failed') return 'fix';
+  if (entry.qa?.status === 'changed') return 'recheck';
   if (entry.canAccept) return 'ready';
   if (entry.latestRun && entry.freshness === 'needs-recheck') return 'recheck';
   return 'evidence';
@@ -38,6 +40,7 @@ export const caseActionText: Record<CaseAction, { title: string; detail: string 
 export function nextCaseAction(entry: CaseRow): CaseAction {
   if (entry.accepted) return entry.reviewRequirement === 'automated' && entry.review === 'pending' ? 'verified' : 'accepted';
   if (entry.reviewRequirement === 'automated' && entry.verification === 'mismatch') return 'fix';
+  if (entry.qa) return entry.qa.status === 'failed' ? 'fix' : entry.qa.status === 'changed' ? 'recheck' : entry.qa.status === 'unavailable' ? 'recover' : 'gates';
   if (!entry.latestRun) return entry.recipe.blockers.length ? 'setup' : 'capture';
   if (entry.availability !== 'available') return 'recover';
   if (finding(entry) === 'mismatch' || entry.review === 'changes-requested') return 'fix';

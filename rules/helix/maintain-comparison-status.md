@@ -13,7 +13,7 @@ At the next safe checkpoint before handoff, update the designated status after a
 
 Serialize overlapping summary edits through its assigned owner. Contributing lanes supply scoped facts and evidence through the existing handoff; do not overwrite concurrent updates. Use the configured receiving branch. Before calling work landed, verify receiving-branch inclusion or patch equivalence and record the receiving revision; lane-only work remains pending. Integration establishes inclusion, not acceptance.
 
-When the project uses a Workbench dashboard, designate one reporting owner in the project adapter for the receiving checkout's `.helix/porting-dashboard.json`. Follow the [Workbench handoff contract](../../Tools/Helix/toolkit/Dashboard.md#task-handoff) and the project adapter for complete-snapshot publication and readback. Contributing lanes provide item updates through their existing handoff; they do not independently replace the shared inventory.
+Use the project-owned `Tools/Helix/report.json` when configured: it names the evidence index scope and existing status document. Route scoped updates through that document owner and regenerate supporting evidence with `helix evidence-report`. Do not introduce a dashboard or another progress summary, or infer completion of separately owned work from shared evidence. Legacy dashboard commands remain compatibility interfaces, not required delivery steps.
 
 ## Refresh the affected status
 
@@ -29,4 +29,4 @@ Follow [comparison verdict recording](record-helix-comparison-verdicts.md) for e
 
 ## Boundaries
 
-Follow [reference authority](use-helix-as-the-design-source-of-truth.md) and the project's declared reference scope. Review the documentation diff and affected links. Do not run tests, launch or control Unity or Helix, capture new runtime evidence, or perform device profiling solely to refresh the summary. Record missing verification instead. This rule authorizes no external messages, artifact writes outside the designated status/register/dashboard work, or additional runtime sessions; use only already-authorized work and existing handoff mechanisms.
+Follow [reference authority](use-helix-as-the-design-source-of-truth.md) and the project's declared reference scope. Review the documentation diff and affected links. Do not run tests, launch or control Unity or Helix, capture new runtime evidence, or perform device profiling solely to refresh the summary. Record missing verification instead. This rule authorizes no external messages, artifact writes outside the designated status/register/evidence-index work, or additional runtime sessions; use only already-authorized work and existing handoff mechanisms.

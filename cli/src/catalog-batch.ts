@@ -11,7 +11,7 @@ import { catalogPath, catalogStatus } from './catalog.ts';
 import { recordHash } from './acceptance-format.ts';
 import { loadCaseAdapters } from './acceptance-runner.ts';
 import { automationDefinitions, verificationStatus } from './verification-jobs.ts';
-import { selectCatalogEntries } from '../workbench/catalog-selection.ts';
+import { selectCatalogEntries } from './catalog-selection.ts';
 import type { ReferenceObservation } from './acceptance-format.ts';
 
 export type BatchSelection = { mode: 'ready' | 'changed'; folder?: string; discipline?: string; scope?: string };

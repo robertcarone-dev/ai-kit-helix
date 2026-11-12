@@ -44,5 +44,5 @@ export function bundleEvidence(source: string, output: string) {
   if (Buffer.byteLength(bytes) > 48 * 1024 * 1024) throw new Error('Encoded bundle exceeds 48 MiB. Select a smaller evidence directory.');
   mkdirSync(out);
   writeFileSync(join(out, 'evidence.json'), bytes, { flag: 'wx' });
-  return { out, files: files.length, skipped, sha256: sha(bytes), note: 'Open evidence.json in Porting Workbench → Comparison. Hash integrity does not establish parity or source revision.' };
+  return { out, files: files.length, skipped, sha256: sha(bytes), note: 'Inspect the portable evidence.json bundle with the offline review commands. Hash integrity does not establish parity or source revision.' };
 }

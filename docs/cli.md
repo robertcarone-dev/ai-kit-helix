@@ -1,6 +1,6 @@
 # Helix reference CLI
 
-For optional project-owned Workbench integration, scenario controls, and event traces, see [Porting Workbench](Workbench.md). Start its CLI session with `start --workbench yes`. For offline review, `workbench prepare --spec REVIEW_SPEC --out NEW_DIR` checks pinned evidence and declared source freshness, generates comparisons, and creates a bundle for the mod; see the Workbench spec and exit-code contract.
+For project-owned scenario controls and event traces (separate from the removed Workbench mod), see [Porting Workbench](Workbench.md). Start its CLI session with `start --workbench yes`. For offline review, `workbench prepare --spec REVIEW_SPEC --out NEW_DIR` checks pinned evidence and declared source freshness, generates comparisons, and creates a portable evidence bundle; see the Workbench spec and exit-code contract.
 
 Requires Node >=22.18 and a configured local Helix service. Install dependencies with `npm ci --prefix Tools/Helix/toolkit` and Chromium with `npm run install-browser --prefix Tools/Helix/toolkit`. The browser workflow does not require AI Kit. Automatic Helix Desktop launch is macOS-only; on other platforms start the local service first.
 

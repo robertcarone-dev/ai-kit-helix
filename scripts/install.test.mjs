@@ -146,7 +146,7 @@ test('explicit conflict preservation updates safe files without adopting local w
  call('install',root);
  const manifest=join(root,'Tools/Helix/toolkit-install.json');
  const original=JSON.parse(readFileSync(manifest,'utf8'));
- const conflict='Tools/Helix/toolkit/recording_sheet.py', missing='Tools/Helix/toolkit/workbench/GameCatalog.tsx';
+ const conflict='Tools/Helix/toolkit/recording_sheet.py', missing='Tools/Helix/toolkit/src/porting-report.ts';
  writeFileSync(join(root,conflict),'another owner');rmSync(join(root,missing));
  const preview=call('preview',root,'--preserve-conflicts');
  assert.deepEqual(preview.preservedConflicts,[conflict]);assert.ok(preview.changes.some(change=>change.path===missing));
@@ -206,4 +206,17 @@ test('installed launcher and Python workflow run outside a checkout with spaces'
  assert.match(help,/recipe-plan/);
  const probe='import runpy,sys; from pathlib import Path; module=runpy.run_path(sys.argv[1]); assert module["ROOT"] == Path(sys.argv[2]).resolve(); assert module["CLI"].is_file()';
  execFileSync('python3',['-B','-c',probe,join(root,'Tools/Helix/toolkit/handoff-ui/serve.py'),root],{cwd:tmpdir()});
+}));
+
+test('update removes retired UI payload and preserves project report and QA history',()=>withProject(root=>{
+ call('install',root);
+ const path='Tools/Helix/toolkit/workbench/GameCatalog.tsx', bytes='previous managed UI';
+ mkdirSync(join(root,'Tools/Helix/toolkit/workbench'),{recursive:true});writeFileSync(join(root,path),bytes);
+ const manifestPath=join(root,'Tools/Helix/toolkit-install.json'),manifest=JSON.parse(readFileSync(manifestPath,'utf8'));
+ manifest.files[path]={type:'file',sha256:createHash('sha256').update(bytes).digest('hex')};writeFileSync(manifestPath,JSON.stringify(manifest));
+ mkdirSync(join(root,'Tools/Helix/acceptance/qa-sources'),{recursive:true});writeFileSync(join(root,'Tools/Helix/acceptance/qa-sources/original.json'),'original QA');writeFileSync(join(root,'PORTING.md'),'project report');
+ const preview=call('preview',root);assert.ok(preview.changes.some(change=>change.path===path&&change.action==='remove'));
+ call('update',root);assert.equal(existsSync(join(root,path)),false);
+ assert.equal(readFileSync(join(root,'PORTING.md'),'utf8'),'project report');assert.equal(readFileSync(join(root,'Tools/Helix/acceptance/qa-sources/original.json'),'utf8'),'original QA');
+ assert.equal(existsSync(join(root,'Tools/Helix/toolkit/src/porting-report.ts')),true);
 }));

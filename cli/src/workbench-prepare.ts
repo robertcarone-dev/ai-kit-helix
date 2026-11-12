@@ -229,7 +229,7 @@ export function prepareReview(specPath: string, output: string) {
     writeFileSync(join(evidence, 'freshness.json'), JSON.stringify(report, null, 2));
     writeFileSync(join(evidence, 'review-spec.json'), specBytes);
     const bundle = bundleEvidence(evidence, join(out, 'bundle'));
-    return { out, status: report.status, cases: report.cases, bundle: join(bundle.out, 'evidence.json'), note: 'Open the bundle in Porting Workbench → Comparison. Ready means prepared for human review, not accepted parity.' };
+    return { out, status: report.status, cases: report.cases, bundle: join(bundle.out, 'evidence.json'), note: 'Inspect original comparison files and summarize saved decisions with workbench review-summary. Ready means prepared for human review, not accepted parity.' };
   } catch (error) {
     report.status = 'blocked';
     report.errors.push(String(error));

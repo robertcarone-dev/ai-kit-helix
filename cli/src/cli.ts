@@ -24,6 +24,8 @@ const file = join(stateDir, 'connection.json');
 const help = `helix — project-owned local reference tools (Node >=22.18)
   catalog summary|status|tree [--folder ID] [--discipline dev|ta|shared|unassigned] [--scope game|tooling|reference-only|all] [--format json|text]
   catalog validate
+  evidence-report (generate the scoped index configured in Tools/Helix/report.json)
+  porting-report (compatibility alias for evidence-report)
   resolution status --finding ID
   resolution review --spec FILE
   acceptance consolidate [--apply true] (configuration only; no execution)
@@ -55,7 +57,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   recover                       recheck timed-out scenario readiness; no setup replay
   scenario NAME
   workbench comparisons [--item ID] | --evidence FILE --item ID [--issue NUMBER] | --from-report yes
-  workbench feedback --comparison ID
+  workbench feedback --comparison ID --decisions REVIEWS_JSON
   workbench prepare|refresh|evidence also accept --item ID [--issue NUMBER]
   workbench dashboard [--spec FILE]  read or publish the connected checkout status
   workbench list|status|reset|stop
@@ -105,8 +107,8 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   debug-image --input PNG --out EMPTY_DIR
   debug-capture --view MODE --out EMPTY_DIR
   compare --reference PNG --candidate PNG --out EMPTY_DIR [--regions JSON]
-Every command accepts --helix-project SLUG to use the Workbench connection.
---project-root DIR overrides it without changing the saved connection. Otherwise discover from the working directory.\nRelative file paths are project-relative. Config: Tools/Helix/reference.json; optional reference.local.json top-level overrides.
+Use --project-root DIR or run inside the Unity repository. Workbench connections are retired.
+--project-root DIR selects the checkout explicitly. Otherwise discover from the working directory.\nRelative file paths are project-relative. Config: Tools/Helix/reference.json; optional reference.local.json top-level overrides.
 unity-revision prints Git metadata for a manual comparison's unity-revision.json receipt.
 Start discovers the configured project/variant and opens local Helix Desktop if needed.
 Helix serves source/assets and starts its preview on demand; stop closes only our browser.
@@ -187,6 +189,8 @@ async function main() {
     'aikit-checks': ['format', 'journey', 'item', 'case', 'mode', 'token', 'reference'],
     'catalog-batch': ['folder', 'discipline', 'scope', 'mode', 'reference', 'token', 'id'],
     resolution: ['finding', 'spec'],
+    'porting-report': [],
+    'evidence-report': [],
     catalog: ['reference', 'folder', 'discipline', 'scope', 'format'],
     evidence: ['directory', 'apply', 'path', 'out'],
     acceptance: ['apply', 'folder', 'discipline', 'spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
@@ -258,10 +262,15 @@ async function main() {
     if (!options.spec || options.finding) throw new Error('Use resolution review --spec FILE');
     return reviewResolution(root, project, JSON.parse(readFileSync(resolve(root, options.spec), 'utf8')));
   }
+  if (command === 'porting-report' || command === 'evidence-report') {
+    if (pos.length) throw new Error('Use evidence-report without arguments');
+    const { writePortingReport } = await import('./porting-report.ts');
+    return writePortingReport(root, adapterSettings(root).helix.project);
+  }
   if (command === 'catalog') {
     if (pos.length !== 1 || !['summary', 'status', 'tree', 'validate'].includes(pos[0])) throw new Error('Use catalog summary|status|tree|validate');
     const { catalogStatus, catalogTree, renderCatalogTree } = await import('./catalog.ts');
-    const { selectCatalogEntries } = await import('../workbench/catalog-selection.ts');
+    const { selectCatalogEntries } = await import('./catalog-selection.ts');
     const { acceptanceStatus } = await import('./acceptance.ts');
     const project = adapterSettings(root).helix.project;
     const { readReferenceObservation } = await import('./acceptance-format.ts');
@@ -276,7 +285,7 @@ async function main() {
     if (pos[0] !== 'tree' && options.format === 'text') throw new Error('Text format is only available for catalog tree');
     const entries = selectCatalogEntries(report, options);
     if (pos[0] === 'summary') {
-      const { featureSummary, featureNextStep } = await import('../workbench/workbench-presentation.ts');
+      const { featureSummary, featureNextStep } = await import('./acceptance-presentation.ts');
       return { project, referenceSupplied: reference !== undefined, features: entries.map(item => ({ id: item.id, title: item.title, summary: featureSummary(item), next: featureNextStep(item) })) };
     }
     if (pos[0] === 'tree') {
@@ -310,7 +319,7 @@ async function main() {
     let reference = options.reference ? readReferenceObservation(JSON.parse(readFileSync(resolve(root, options.reference), 'utf8'))) : undefined;
     if (pos[0] === 'plan') return planCatalogBatch(root, project, selection, reference);
     const identity = await discover(adapterSettings(root));
-    if (!reference) { const { referenceObservation } = await import('../workbench/acceptance-backend.ts'); reference = referenceObservation(root, identity.sourceRoot, project); }
+    if (!reference) { const { referenceObservation } = await import('./acceptance-backend.ts'); reference = referenceObservation(root, identity.sourceRoot, project); }
     return startCatalogBatch(root, identity.sourceRoot, project, selection, options.token, reference, previous?.id);
   }
   if (command === 'evidence') {
@@ -365,7 +374,7 @@ async function main() {
     if (operation === 'export' && !options.out) throw new Error('Workbench export requires --out NEW_DIR.');
     for (const option of Object.keys(options)) {
       if (['project-root', 'helix-project'].includes(option)) continue;
-      if (!(['prepare', 'refresh', 'evidence'].includes(operation) && ['item', 'issue'].includes(option)) && !(operation === 'comparisons' && ['evidence', 'item', 'issue', 'from-report'].includes(option)) && !(operation === 'feedback' && option === 'comparison') && !(operation === 'dashboard' && option === 'spec') && !(operation === 'compare-revisions' && ['previous', 'evidence', 'out'].includes(option)) && !(operation === 'refresh' && ['spec', 'decisions', 'previous', 'out'].includes(option)) && !(operation === 'review-summary' && ['decisions', 'evidence'].includes(option)) && !(operation === 'prepare' && ['spec', 'out'].includes(option)) && !(operation === 'evidence' && ['source', 'out'].includes(option)) && !(operation === 'run' && ['level', 'seed'].includes(option)) && !(operation === 'export' && option === 'out'))
+      if (!(['prepare', 'refresh', 'evidence'].includes(operation) && ['item', 'issue'].includes(option)) && !(operation === 'comparisons' && ['evidence', 'item', 'issue', 'from-report'].includes(option)) && !(operation === 'feedback' && ['comparison', 'decisions'].includes(option)) && !(operation === 'dashboard' && option === 'spec') && !(operation === 'compare-revisions' && ['previous', 'evidence', 'out'].includes(option)) && !(operation === 'refresh' && ['spec', 'decisions', 'previous', 'out'].includes(option)) && !(operation === 'review-summary' && ['decisions', 'evidence'].includes(option)) && !(operation === 'prepare' && ['spec', 'out'].includes(option)) && !(operation === 'evidence' && ['source', 'out'].includes(option)) && !(operation === 'run' && ['level', 'seed'].includes(option)) && !(operation === 'export' && option === 'out'))
         throw new Error('Option --' + option + ' is not valid for workbench ' + operation);
     }
   }
@@ -376,9 +385,9 @@ async function main() {
     return result;
   }
   if (command === 'workbench' && pos[0] === 'feedback') {
-    if (!options.comparison) throw new Error('Feedback requires --comparison ID from workbench comparisons.');
+    if (!options.comparison || !options.decisions) throw new Error('Feedback requires --comparison ID and --decisions REVIEWS_JSON; the Workbench mod has been removed.');
     const { comparisonFeedback } = await import('./comparison-feedback.ts');
-    return comparisonFeedback(root, adapterSettings(root).helix.project, options.comparison);
+    return comparisonFeedback(root, adapterSettings(root).helix.project, options.comparison, resolve(root, options.decisions));
   }
   const links = command === 'workbench' && ['prepare', 'refresh', 'evidence'].includes(pos[0]) ? comparisonLinks(root, adapterSettings(root).helix.project, options.item, options.issue) : [];
   if (command === 'workbench' && pos[0] === 'dashboard') {
@@ -395,7 +404,7 @@ async function main() {
     const { refreshReview } = await import('./review-refresh.ts');
     const result = await refreshReview(resolve(root, options.spec), resolve(root, options.decisions), resolve(root, options.previous), resolve(root, options.out), adapterSettings(root).helix.project);
     if (result.status !== 'ready') process.exitCode = 2;
-    if (result.status === 'ready' && 'bundle' in result) return { ...result, registeredComparison: await registerComparison(root, adapterSettings(root).helix.project, result.bundle, links), note: 'Available in Porting Workbench → Available comparisons. Reload comparisons to view it.' };
+    if (result.status === 'ready' && 'bundle' in result) return { ...result, registeredComparison: await registerComparison(root, adapterSettings(root).helix.project, result.bundle, links), note: 'Registered locally. Inspect original evidence files and use workbench review-summary with a decision export.' };
     return result;
   }
   if (command === 'workbench' && pos[0] === 'review-summary') {
@@ -408,14 +417,14 @@ async function main() {
     const { prepareReview } = await import('./workbench-prepare.ts');
     const result = prepareReview(resolve(root, options.spec), resolve(root, options.out));
     if (result.status !== 'ready') process.exitCode = 2;
-    if (result.status === 'ready' && 'bundle' in result) return { ...result, registeredComparison: await registerComparison(root, adapterSettings(root).helix.project, result.bundle, links), note: 'Available in Porting Workbench → Available comparisons. Reload comparisons to view it.' };
+    if (result.status === 'ready' && 'bundle' in result) return { ...result, registeredComparison: await registerComparison(root, adapterSettings(root).helix.project, result.bundle, links), note: 'Registered locally. Inspect original evidence files and use workbench review-summary with a decision export.' };
     return result;
   }
   if (command === 'workbench' && pos[0] === 'evidence') {
     if (!options.source || !options.out) throw new Error('Workbench evidence requires --source and --out.');
     const { bundleEvidence } = await import('./workbench-evidence.ts');
     const result = bundleEvidence(resolve(root, options.source), resolve(root, options.out));
-    return { ...result, registeredComparison: await registerComparison(root, adapterSettings(root).helix.project, resolve(result.out, 'evidence.json'), links), note: 'Available in Porting Workbench → Available comparisons.' };
+    return { ...result, registeredComparison: await registerComparison(root, adapterSettings(root).helix.project, resolve(result.out, 'evidence.json'), links), note: 'Registered locally; use workbench comparisons to list evidence.' };
   }
   if (['scenario', 'step', 'capture', 'record'].includes(command) && pos.length !== 1)
     throw new Error(command + ' requires one argument.');

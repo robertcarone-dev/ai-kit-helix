@@ -49,6 +49,7 @@ test('prepare, decision summary and no-op refresh preserve scoped acceptance and
   const { spec, dependency } = fixture(root);
   const result = prepareReview(spec, join(root, 'first'));
   assert.equal(result.status, 'ready', JSON.stringify(result));
+  assert.doesNotMatch(result.note, /Porting Workbench|Reload comparisons/);
   assert.ok('bundle' in result);
   const original = readFileSync(result.bundle, 'utf8');
   const bundle = await readEvidence(original);
@@ -147,6 +148,7 @@ test('explicit checkout selection bypasses Desktop and validates slug input', as
   assert.equal(await connectedProjectRoot(['--helix-project', 'sample-project', '--project-root', '/explicit'], localUrl), null);
   assert.equal(await connectedProjectRoot([], localUrl), null);
   await assert.rejects(connectedProjectRoot(['--helix-project', '../invalid'], localUrl), /project slug/);
+  await assert.rejects(connectedProjectRoot(['--helix-project', 'sample-project'], localUrl), /connections have been retired/);
 });
 
 test('Workbench export uses only the supplied v1 API and preserves output ownership', async () => temporary(async root => {
@@ -174,3 +176,53 @@ test('live Workbench commands respect an existing matrix session owner', async (
   assert.equal(result.status, 1);
   assert.match(result.stderr, /A UI matrix owns this checkout session/);
 }));
+
+
+test('legacy feedback retains report-path identity, original records and conservative freshness', async () => temporary(async root => {
+  const { spec } = fixture(root), result = prepareReview(spec, join(root, 'first'));
+  assert.ok('bundle' in result);
+  const bundle = JSON.parse(readFileSync(result.bundle, 'utf8'));
+  const file = bundle.files.find((file: any) => file.type === 'json' && JSON.parse(file.data).kind === 'helix-render-inspection');
+  const report = JSON.parse(file.data); delete report.reviewCaseId; delete report.reviewDependencies;
+  file.data = JSON.stringify(report); file.sha256 = sha(file.data);
+  // Two legacy reports with the same element must retain separate path identities.
+  bundle.files.push({ ...file, path: 'other/render-inspection.json' });
+  json(result.bundle, bundle);
+  const record = { version: 1, element: report.id, reportPath: file.path, reference: report.images.reference, candidate: report.images.candidate, evidence: sha(evidenceManifest(bundle.files)), status: 'accepted', notes: 'Original legacy review', savedUtc: '2026-11-11T12:00:00.000Z' };
+  const exported = { format: 'helix-review-decisions', version: 1, project: 'sample-project', exportedUtc: record.savedUtc, decisions: [record] };
+  const decisions = join(root, 'legacy.json'); json(decisions, exported);
+  const original = readFileSync(decisions, 'utf8');
+  const summary = await reviewSummary(decisions, result.bundle, 'sample-project');
+  assert.equal(summary.counts.accepted, 1); assert.equal(summary.counts['not-reviewed'], 1);
+  assert.deepEqual(summary.rows.find(row => row.state === 'accepted').decision, record);
+  const registered = await registerComparison(root, 'sample-project', result.bundle);
+  const { comparisonFeedback } = await import('../src/comparison-feedback.ts');
+  const feedback = await comparisonFeedback(root, 'sample-project', registered.id, decisions);
+  assert.equal(feedback.feedback.find(row => row.state === 'accepted').identity, 'legacy-report-path');
+  const stable = { ...report, reviewCaseId: 'screen' };
+  file.data = JSON.stringify(stable); file.sha256 = sha(file.data); json(result.bundle, bundle);
+  const stableSummary = await reviewSummary(decisions, result.bundle, 'sample-project');
+  assert.equal(stableSummary.rows.find(row => row.caseId === 'screen').state, 'review-required');
+  assert.deepEqual(stableSummary.rows.find(row => row.caseId === 'screen').decision, record);
+  file.data = JSON.stringify(report); file.sha256 = sha(file.data);
+  bundle.files.pop(); json(result.bundle, bundle);
+  assert.equal((await reviewSummary(decisions, result.bundle, 'sample-project')).counts['review-required'], 1);
+  bundle.files = bundle.files.filter((entry: any) => entry !== file); json(result.bundle, bundle);
+  assert.equal((await reviewSummary(decisions, result.bundle, 'sample-project')).counts['not-in-evidence'], 1);
+  assert.equal(readFileSync(decisions, 'utf8'), original);
+  json(decisions, { ...exported, decisions: [record, record] });
+  await assert.rejects(reviewSummary(decisions, result.bundle, 'sample-project'), /Duplicate legacy/);
+  json(decisions, { ...exported, project: 'other' });
+  await assert.rejects(reviewSummary(decisions, result.bundle, 'sample-project'), /project/);
+}));
+
+
+test('installed guides describe offline feedback and do not require retired mod endpoints', () => {
+  for (const name of ['Workbench.md', 'Dashboard.md', 'Acceptance.md', 'RenderInspector.md']) {
+    const guide = readFileSync(new URL('../../docs/' + name, import.meta.url), 'utf8');
+    assert.doesNotMatch(guide, /api\/mods\/MOD|use the saved mod connection|Open the new bundle in the Workbench|Reload report|optional Local AI Kit view/);
+  }
+  const guide = readFileSync(new URL('../../docs/Workbench.md', import.meta.url), 'utf8');
+  assert.match(guide, /version-1 report-path decisions/);
+  assert.match(guide, /reads the run history directly/);
+});

@@ -1,4 +1,4 @@
-import type { CatalogFolder, CatalogItem, CatalogReport } from './catalog-view.ts';
+import type { CatalogFolder, CatalogItem, CatalogReport } from './catalog-types.ts';
 
 export function folderPath(folders: CatalogFolder[], id: string | null): CatalogFolder[] {
   if (id === null) return [];

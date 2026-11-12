@@ -1,6 +1,6 @@
 import { evidencePath } from './evidence-archive.ts';
-import type { CatalogReport, CatalogItem } from '../workbench/catalog-view.ts';
-import { featureStatus, statusText, nextCaseAction } from '../workbench/workbench-presentation.ts';
+import type { CatalogReport, CatalogItem } from './catalog-types.ts';
+import { featureStatus, statusText, nextCaseAction } from './acceptance-presentation.ts';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { portablePath, recordHash } from './acceptance-format.ts';
@@ -120,6 +120,12 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
     try { comparisons.push(readComparisonEntry(read(root, '.helix/comparisons/' + file), project)); }
     catch (error) { warnings.push('Comparison index ' + file + ': ' + String(error)); }
   }
+  const classify = (key: string, record: any) => {
+    const classification = triage.get(key);
+    const current = classification && classification.revision === record.revision && classification.recordSha256 === recordHash(read(root, record.path));
+    const kind = record.status === 'resolved' ? 'history' : current ? classification.kind : 'untriaged';
+    return { kind, triageReason: current ? classification.reason : classification ? 'Record changed since reconciliation; reassess this finding.' : 'Not yet reconciled against the current implementation.', discipline: catalog.workAssignments?.[key] ?? 'unassigned', id: key, status: record.status, revision: record.revision, path: record.path, expected: record.expected, observed: record.observed, nextAction: record.nextAction ?? null };
+  };
   const used = new Set<string>();
   const entries = catalog.entries.map((entry: any) => {
     const result = entry.acceptanceItem === null ? null : acceptance?.items.find((item: any) => item.id === entry.acceptanceItem);
@@ -127,10 +133,7 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
     const issues = discrepancyIds.map((key: string) => {
       used.add(key); const record = discrepancies.get(key);
       if (!record) throw new Error('Unknown linked discrepancy: ' + key);
-      const classification = triage.get(key);
-      const current = classification && classification.revision === record.revision && classification.recordSha256 === recordHash(read(root, record.path));
-      const kind = record.status === 'resolved' ? 'history' : current ? classification.kind : 'untriaged';
-      return { kind, triageReason: current ? classification.reason : classification ? 'Record changed since reconciliation; reassess this finding.' : 'Not yet reconciled against the current implementation.', discipline: catalog.workAssignments?.[key] ?? 'unassigned', id: key, status: record.status, revision: record.revision, path: record.path, expected: record.expected, observed: record.observed, nextAction: record.nextAction ?? null };
+      return classify(key, record);
     });
     const previous = legacy.items.find(item => item.id === entry.id);
     const evidence: { path: string; sha256: string | null; origin: string; availability: string }[] = [];
@@ -150,6 +153,7 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
     if (previous) previous.evidence.forEach(path => artifact(path, null, 'legacy report'));
     if (entry.acceptanceItem !== null && !result) throw new Error('Missing declared acceptance item: ' + entry.acceptanceItem);
     if (result) for (const row of result.cases) {
+      if (row.qa) for (const source of row.qa.sources) artifact(source.path, source.sha256, 'reconciled AI Kit QA: ' + row.id);
       if (row.latestAssessment) for (const pin of row.latestAssessment.evidence) artifact(pin.path, pin.sha256, 'agent assessment: ' + row.id + ' / ' + row.viewport);
       if (row.latestExecution) for (const pin of row.latestExecution.artifacts) artifact(pin.path, pin.sha256, 'case execution: ' + row.id + ' / ' + row.viewport);
       if (row.priorEvidence) for (const source of row.priorEvidence.sources) artifact(source.path, null, 'prior case evidence: ' + row.id);
@@ -158,12 +162,13 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
     if (result) for (const row of result.cases) if (row.latestRun) for (const pin of row.latestRun.artifacts) artifact(pin.path, pin.sha256, 'acceptance: ' + row.id + ' / ' + row.viewport);
     return { ...entry, folder: entry.folder ?? null, specs: entry.specs ?? [], implementation: result ? result.implementation : 'not-assessed',
       missingSources: [...entry.sources, ...entry.implementationReferences].filter(path => !existsSync(catalogPath(root, path))),
-      issues, evidence, comparisons: comparisons.filter(record => record.links.some((link: any) => link.item === entry.id)),
+      issues: issues.map(issue => { const notes = result ? [...new Set(result.cases.filter((row: any) => row.qa && row.linkedDiscrepancies.some((finding: any) => finding.id === issue.id)).map((row: any) => row.qa.note))] : []; return notes.length ? { ...issue, triageReason: 'Reconciled QA scope: ' + notes.join(' ') } : issue; }), evidence, comparisons: comparisons.filter(record => record.links.some((link: any) => link.item === entry.id)),
       legacy: previous ? { status: previous.status, summary: previous.summary, reportedUtc: legacy.reportedUtc } : null,
-      acceptance: result ? { missingAdapters: result.cases.filter((row: any) => row.required && !row.accepted && row.workflowId === null).length, unmeasured: result.cases.filter((row: any) => row.required && !row.accepted && row.latestRun && row.verification === 'unmeasured').length, nextSteps: result.cases.reduce((counts: Record<string, number>, row: any) => { if (row.required) { const action = nextCaseAction(row); counts[action] = (counts[action] ?? 0) + 1; } return counts; }, {}), status: result.status, required: result.required, accepted: result.accepted, cases: result.cases.length, verified: result.cases.filter((row: any) => row.freshness === 'current' && row.availability === 'available' && row.verification === 'matched' && (!row.assessmentAvailable || row.latestAssessment.outcome === 'matched')).length, mismatches: result.cases.filter((row: any) => row.required && row.freshness === 'current' && row.availability === 'available' && (row.verification === 'mismatch' || (row.assessmentAvailable && row.latestAssessment.outcome === 'mismatch'))).length, pendingReview: result.cases.filter((row: any) => row.required && row.reviewRequirement !== 'automated' && row.latestRun && row.review === 'pending').length, ready: result.cases.filter((row: any) => row.required && row.canAccept && !row.accepted && row.review !== 'changes-requested').length, needsEvidence: result.cases.filter((row: any) => row.required && !row.accepted && !row.canAccept && nextCaseAction(row) !== 'verified').length } : null };
+      acceptance: result ? { qaReconciled: result.cases.filter((row: any) => row.required && row.qa).length, missingAdapters: result.cases.filter((row: any) => row.required && !row.accepted && !row.qa && row.workflowId === null).length, unmeasured: result.cases.filter((row: any) => row.required && !row.accepted && row.latestRun && row.verification === 'unmeasured').length, nextSteps: result.cases.reduce((counts: Record<string, number>, row: any) => { if (row.required) { const action = nextCaseAction(row); counts[action] = (counts[action] ?? 0) + 1; } return counts; }, {}), status: result.status, required: result.required, accepted: result.accepted, cases: result.cases.length, verified: result.cases.filter((row: any) => row.freshness === 'current' && row.availability === 'available' && row.verification === 'matched' && (!row.assessmentAvailable || row.latestAssessment.outcome === 'matched')).length, mismatches: result.cases.filter((row: any) => row.required && row.freshness === 'current' && row.availability === 'available' && (row.verification === 'mismatch' || (row.assessmentAvailable && row.latestAssessment.outcome === 'mismatch'))).length, pendingReview: result.cases.filter((row: any) => row.required && row.reviewRequirement !== 'automated' && row.latestRun && row.review === 'pending').length, ready: result.cases.filter((row: any) => row.required && row.canAccept && !row.accepted && row.review !== 'changes-requested').length, needsEvidence: result.cases.filter((row: any) => row.required && !row.accepted && !row.canAccept && nextCaseAction(row) !== 'verified').length } : null };
   });
   return { format: 'helix-game-catalog', version: 1, project, title: catalog.title, assessedUtc: new Date().toISOString(), folders: catalog.folders ?? [], sources: catalog.sources, exclusions: catalog.exclusions, entries,
     summary: { total: entries.length, game: entries.filter((entry: any) => entry.scope === 'game').length, definedCoverage: entries.filter((entry: any) => entry.acceptance !== null).length, accepted: entries.filter((entry: any) => entry.acceptance?.status === 'accepted').length, discrepancies: discrepancies.size },
+    findings: [...discrepancies].map(([key, record]) => classify(key, record)),
     unmappedDiscrepancies: [...discrepancies.keys()].filter(key => !used.has(key)), unmappedComparisons: comparisons.filter(record => record.links.length === 0 || !record.links.some((link: any) => entries.some((entry: any) => entry.id === link.item))).map(record => record.id), warnings };
 }
 

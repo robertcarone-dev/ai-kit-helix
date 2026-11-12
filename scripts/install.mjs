@@ -66,7 +66,6 @@ export function run(argv) {
   if(command!=='remove') {
     if(unityHelper)tree('unity/Editor','Assets/HelixComparison/Editor');
     tree('workflows/handoff-ui','Tools/Helix/toolkit/handoff-ui');
-    tree('cli/workbench','Tools/Helix/toolkit/workbench');
     tree('cli/src','Tools/Helix/toolkit/src');tree('cli/bin','Tools/Helix/toolkit/bin');
     add('Tools/Helix/bin/helix', Buffer.from('#!/bin/sh\nset -eu\nHERE="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$HERE/toolkit/bin/helix" "$@"\n'));
     for(const name of ['workflow.py','evidence_utils.py','event_window.py','recording_sheet.py','capture.py','delivery.py','handoff.py','coverage_plan.py','vfx.py','recovery.py','matrix_lock.py','worker_permit.py'])add('Tools/Helix/toolkit/'+name,readFileSync(join(source,'workflows',name)));
