@@ -70,7 +70,7 @@ export function run(argv) {
     add('Tools/Helix/bin/helix', Buffer.from('#!/bin/sh\nset -eu\nHERE="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexec "$HERE/toolkit/bin/helix" "$@"\n'));
     for(const name of ['workflow.py','evidence_utils.py','event_window.py','recording_sheet.py','capture.py','delivery.py','handoff.py','coverage_plan.py','vfx.py','recovery.py','matrix_lock.py','worker_permit.py'])add('Tools/Helix/toolkit/'+name,readFileSync(join(source,'workflows',name)));
     for(const [src,dest] of [['cli.md','Toolkit.md'],['ui.md','UI.md'],['ui-port.md','UIPort.md'],['scene.md','Scene.md'],['workflows.md','WorkflowToolkit.md'],['project-adapter.md','Adapter.md'],['migration.md','Migration.md'],['DebugViews.md','DebugViews.md'],['Workbench.md','Workbench.md'],['EvidenceBaselines.md','EvidenceBaselines.md'],['RenderInspector.md','RenderInspector.md'],['Objects.md','Objects.md'],['Dashboard.md','Dashboard.md'],['Acceptance.md','Acceptance.md']])add(`Tools/Helix/toolkit/${dest}`,readFileSync(join(source,'docs',src)));
-    const installed={...pkg,scripts:{'install-browser':'playwright install chromium'}};
+    const installed={...pkg,scripts:{'install-browser':'node src/install-browser.ts'}};
     add('Tools/Helix/toolkit/package.json',Buffer.from(JSON.stringify(installed,null,2)+'\n'));
     add('Tools/Helix/toolkit/package-lock.json',readFileSync(join(source,'package-lock.json')));
     tree('skills','.claude/skills');

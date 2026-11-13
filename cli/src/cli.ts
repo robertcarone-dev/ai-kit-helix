@@ -477,7 +477,7 @@ async function main() {
   }
   if (command === 'doctor') {
     const { config, configHash } = readConfig();
-    const { chromium } = await import('playwright');
+    const { chromium } = await import('./playwright.ts');
     let identity: any = null,
       error: string | null = null;
     try {

@@ -7,7 +7,7 @@ import { resolveSceneOptions } from './scene-options.ts';
 import { sampleScene } from './scene-sampler.ts';
 import { nativePng } from './png.ts';
 import { performance } from 'node:perf_hooks';
-import { chromium, type BrowserContext, type Page } from 'playwright';
+import { chromium, type BrowserContext, type Page } from './playwright.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { createServer } from 'node:net';
 import { readFileSync, writeFileSync, rmSync, renameSync } from 'node:fs';

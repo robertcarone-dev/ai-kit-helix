@@ -9,7 +9,7 @@
   "scripts": {
     "test": "node --test cli/test/*.test.ts scripts/*.test.mjs",
     "test:workflow": "python3 -B -m unittest discover -s workflows/tests -v",
-    "install-browser": "playwright install chromium",
+    "install-browser": "node cli/src/install-browser.ts",
     "format": "node scripts/format.mjs",
     "format:check": "node scripts/format.mjs --check",
     "test:unity": "node scripts/test-unity.mjs"

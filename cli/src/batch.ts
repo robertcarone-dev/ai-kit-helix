@@ -1,7 +1,7 @@
 import { acquireProcessLock } from './process-lock.ts';
 import { randomUUID } from 'node:crypto';
 import { nativePng } from './png.ts';
-import { chromium } from 'playwright';
+import { chromium } from './playwright.ts';
 import {
   readFileSync,
   writeFileSync,

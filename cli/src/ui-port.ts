@@ -108,7 +108,7 @@ async function decode(bytes: Buffer, session: any) {
     throw new Error(
       'Only PNG, WebP and JPEG assets are supported; vector/procedural assets need a project exporter.',
     );
-  const { chromium } = await import('playwright');
+  const { chromium } = await import('./playwright.ts');
   if (!session.browser)
     session.browser = await chromium.launch({ headless: true, channel: 'chromium' });
   const page = await session.browser.newPage();
