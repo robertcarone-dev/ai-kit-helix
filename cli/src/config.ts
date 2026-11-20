@@ -56,6 +56,7 @@ export function validateStep(s: any) {
     typeof s.expression === 'string'
   )
     return s;
+  if (s.kind === 'cheat' && s.purpose === 'fixture' && typeof s.name === 'string' && s.name.length && s.args && typeof s.args === 'object' && !Array.isArray(s.args) && (s.sceneKey === undefined || (typeof s.sceneKey === 'string' && s.sceneKey.length))) return s;
   if (s.kind === 'wait' && typeof s.until === 'string') return s;
   if (s.kind === 'assert' && typeof s.expression === 'string' && Object.hasOwn(s, 'expected'))
     return s;
@@ -79,7 +80,7 @@ export function validateStep(s: any) {
   )
     return s;
   throw new Error(
-    'Invalid step: use press, drag, hover, pointerDown, pointerUp, wheel, wait, assert, or a script labelled fixture/instrumentation.',
+    'Invalid step: use press, drag, hover, pointerDown, pointerUp, wheel, wait, assert, cheat (fixture), or a script labelled fixture/instrumentation.',
   );
 }
 
@@ -189,6 +190,7 @@ export function readProjectConfig(root: string, url?: string) {
       ids.add(b.id);
     }
   }
+  if (config.previewMode !== undefined && !['direct', 'native'].includes(config.previewMode)) throw new Error('previewMode must be direct or native.');
   if (config.uiClockHold !== undefined && config.uiClockHold !== 'phaser-loop')
     throw new Error('Supported uiClockHold is phaser-loop.');
   if (config.uiClockHold && !config.phaser)

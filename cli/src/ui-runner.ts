@@ -198,7 +198,7 @@ function caseRecipeHashes(config: any, c: any) {
     sceneOptions: c.sceneOptions,
   };
   const web = Object.fromEntries([
-    'helix', 'url', 'expectedRevision', 'ready', 'phaser', 'three', 'inspect',
+    'helix', 'url', 'previewMode', 'expectedRevision', 'ready', 'phaser', 'three', 'inspect',
     'uiProbe', 'uiBindings', 'uiClockHold', 'sceneBindings', 'sceneTimeline',
   ].map((key) => [key, config[key]]));
   const selected = Object.fromEntries([

@@ -28,9 +28,9 @@ export function serviceUrl(config: any) {
   return url.origin;
 }
 
-export async function getJson(url: string) {
+export async function getJson(url: string, timeoutMs = 10000) {
   const response = await fetch(localUrl(url), {
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(timeoutMs),
     redirect: 'error',
   });
   if (!response.ok)
@@ -112,18 +112,7 @@ export async function discover(config: any, launch = false) {
     await exec('/usr/bin/open', ['-g', app], {
       env: desktopLaunchEnvironment(process.env, userInfo().homedir),
     });
-    const deadline = Date.now() + 45000;
-    while (Date.now() < deadline) {
-      try {
-        catalog = await getJson(origin + '/api/projects');
-        break;
-      } catch {}
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    if (!catalog)
-      throw new Error(
-        `Helix did not become ready at ${origin} within 45 seconds. Complete Desktop setup/sign-in; then retry.`,
-      );
+    catalog = await waitForCatalog(origin);
   }
   if (!Array.isArray(catalog.projects))
     throw new Error('Unexpected Helix project catalog response.');
@@ -143,4 +132,40 @@ export async function assets(identity: any, match = '') {
         url: identity.assetsUrl + '/' + a.path.split('/').map(encodeURIComponent).join('/'),
       })),
   };
+}
+
+/** Only connection refusal is transient during launch; HTTP and schema errors are actionable. */
+export async function waitForCatalog(origin: string, timeoutMs = 45000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const catalog = await getJson(origin + '/api/projects', Math.min(10000, deadline - Date.now()));
+      if (!Array.isArray(catalog.projects)) throw new Error('Unexpected Helix project catalog response.');
+      return catalog;
+    } catch (error) {
+      if (!(error instanceof TypeError) || !['ECONNREFUSED', 'ENOTFOUND'].includes((error.cause as any)?.code)) throw error;
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(500, Math.max(0, deadline - Date.now()))));
+  }
+  throw new Error(`Helix did not become ready at ${origin} within ${timeoutMs} ms: ${String(lastError)}`, { cause: lastError });
+}
+export async function previewStatus(identity: any) {
+  const data = await getJson(`${identity.serviceUrl}/api/projects/${encodeURIComponent(identity.project)}/preview-status`);
+  if (typeof data.phase !== 'string') throw new Error('Unexpected Helix preview-status response.');
+  return data;
+}
+/** index never enqueues work. compute explicitly allows Helix to enqueue a classification job. */
+export async function shippedAssets(identity: any, mode = 'index', match = '') {
+  if (!['index', 'compute'].includes(mode)) throw new Error('--shipped must be index or compute.');
+  const url = `${identity.serviceUrl}/api/projects/${encodeURIComponent(identity.project)}/shipped-assets?variant=${encodeURIComponent(identity.variant)}${mode === 'index' ? '&index=1' : ''}`;
+  const data = await getJson(url);
+  if (!['ready', 'pending', 'failed'].includes(data.state)) throw new Error('Unexpected shipped-assets state.');
+  if (data.state !== 'ready') return { identity, mode, ...data };
+  if (!Array.isArray(data.variants)) throw new Error('Unexpected shipped-assets variants.');
+  const row = data.variants.find((row: any) => row.playableKey === identity.variant);
+  if (!row) return { identity, mode, state: 'not-indexed', worktree: data.worktree, paths: null };
+  if (!Array.isArray(row.paths) || row.paths.some((path: unknown) => typeof path !== 'string')) throw new Error('Unexpected shipped-assets paths.');
+  return { identity, mode, state: 'ready', worktree: data.worktree, scope: 'variant shipped assets; not proof of runtime use', paths: row.paths.filter((path: string) => path.includes(match)) };
 }

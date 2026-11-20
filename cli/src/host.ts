@@ -20,6 +20,9 @@ import { SCENE_INSPECTOR } from './scene-inspector.ts';
 import { UI_INSPECTOR } from './ui-inspector.ts';
 import { ScenarioReadiness } from './readiness.ts';
 import { receiptValue } from './receipt.ts';
+import type { Frame } from 'playwright';
+import { previewBridge, nativeRequest, NativePreviewTransportError, previewReading, validateCheat, validateNativeRequest, writeNativeCapture } from './native-preview.ts';
+import { previewStatus } from './discovery.ts';
 
 /** Long-lived browser owner, started by cli.ts with an explicit consuming project root.
  * Commands run sequentially; receipts describe observations, not a parity verdict. */
@@ -40,6 +43,9 @@ diagnostic('browser-launched', { executable: chromium.executablePath() });
 // State belongs to this browser session and is reset when its context is replaced.
 let context: BrowserContext;
 let page: Page;
+let game: Frame;
+let documentReading: any = null;
+let documentInvalidated = false;
 let ready = false;
 let scenario: string | null = null;
 let actions: any[] = [];
@@ -54,9 +60,9 @@ let closing: Promise<void> | undefined;
 let activeCommand: AbortController | undefined;
 const readiness = new ScenarioReadiness();
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const evaluate = async (expression: string) => receiptValue(await page.evaluate(expression));
+const evaluate = async (expression: string) => receiptValue(await game.evaluate(expression));
 const until = (expression: string, timeout = 20000) =>
-  page.waitForFunction(expression, undefined, { timeout });
+  game.waitForFunction(expression, undefined, { timeout });
 function native(f: any) {
   if (f.width !== size.width || f.height !== size.height || f.dpr !== 1 || f.zoom !== 1)
     throw new Error('Native viewport mismatch: ' + JSON.stringify(f));
@@ -119,7 +125,9 @@ async function load(recordDir?: string, startup = false) {
       await route.abort();
     }
   });
+  await context.addInitScript({ content: previewBridge });
   page = await context.newPage();
+  game = page.mainFrame();
   page.setDefaultTimeout(20000);
   page.on('pageerror', (e: Error) => {
     errors.push(e.message);
@@ -133,6 +141,7 @@ async function load(recordDir?: string, startup = false) {
   const generationSources = sources,
     generationPending = pending;
   page.on('response', (response) => {
+    if (response.url().includes('/__helix_cli__/')) return;
     if (!['document', 'script', 'stylesheet', 'font'].includes(response.request().resourceType()))
       return;
     if (response.status() >= 400) diagnostic('http-error', { url: response.url(), status: response.status() });
@@ -148,29 +157,45 @@ async function load(recordDir?: string, startup = false) {
         });
       })
       .catch(() => {
-        sourceFailures++;
+        if (pending === generationPending) sourceFailures++;
       })
       .finally(() => generationPending.delete(job));
     generationPending.add(job);
   });
   try {
     diagnostic('navigation-started', { url: config.url });
-    await page.goto(config.url, {
+    if (config.previewMode === 'native') {
+      const wrapper = new URL('/__helix_cli__/' + sessionId, config.url).href;
+      await page.route(wrapper, (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><head><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{border:0;width:100%;height:100%;display:block}</style></head><body></body></html>' }));
+      await page.goto(wrapper);
+      const attached = page.waitForEvent('frameattached');
+      await page.evaluate(() => {
+        const frame = document.createElement('iframe');
+        frame.id = frame.name = 'helix-cli-preview';
+        document.body.appendChild(frame);
+      });
+      game = await attached;
+    }
+    await game.goto(config.url, {
       waitUntil: 'domcontentloaded',
       timeout: startup ? startupRemaining() : 25000,
     });
   } catch (cause) {
-    throw new Error('Navigation failed: ' + String(cause), { cause });
+    const provisioning = await previewStatus(config.referenceIdentity).catch((error) => ({ error: String(error) }));
+    throw new Error('Navigation failed: ' + String(cause) + '; preview provisioning: ' + JSON.stringify(provisioning), { cause });
   }
   try {
-    diagnostic('readiness-started', { url: page.url(), expression: config.ready });
+    diagnostic('readiness-started', { url: game.url(), expression: config.ready });
     await until(config.ready, startup ? startupRemaining() : 20000);
   } catch (cause) {
-    throw new Error('Readiness failed: ' + String(cause), { cause });
+    const provisioning = await previewStatus(config.referenceIdentity).catch((error) => ({ error: String(error) }));
+    throw new Error('Readiness failed: ' + String(cause) + '; preview provisioning: ' + JSON.stringify(provisioning), { cause });
   }
   native(await facts());
+  documentReading = await previewReading(page);
+  documentInvalidated = false;
   ready = true;
-  diagnostic('page-ready', { url: page.url() });
+  diagnostic('page-ready', { url: game.url() });
 }
 
 async function look(match = '') {
@@ -178,7 +203,7 @@ async function look(match = '') {
     sessionId,
     scenario,
     viewport: await facts(),
-    ...(await page.evaluate(
+    ...(await game.evaluate(
       '(' +
         REFERENCE_INSPECTOR +
         ')(' +
@@ -232,6 +257,7 @@ async function step(raw: any) {
       if (s.kind === 'wheel') await page.mouse.wheel(s.deltaX, s.deltaY);
     }
     if (s.kind === 'script') entry.result = await evaluate(s.expression);
+    if (s.kind === 'cheat') entry.result = await runNative('run', validateCheat({ name: s.name, args: s.args, ...(s.sceneKey ? { sceneKey: s.sceneKey } : {}) }));
     if (s.kind === 'press') {
       let p;
       if (s.target) {
@@ -333,10 +359,13 @@ function status() {
     audioOutput: config.audioOutput,
     referenceIdentity: config.referenceIdentity,
     viewport,
-    url: page?.url(),
+    url: game?.url(),
     ready,
     scenario,
     pendingScenario: readiness.pending,
+    preview: documentReading,
+    previewMode: config.previewMode,
+    documentInvalidated,
     scenarios: Object.entries(config.scenarios).map(([name, s]: any) => ({
       name,
       description: s.description,
@@ -371,7 +400,7 @@ function sceneProvenance() {
   };
 }
 async function lookScene(profile?: string) {
-  const snapshot = await page.evaluate(
+  const snapshot = await game.evaluate(
     '(' + SCENE_INSPECTOR + ')(' + JSON.stringify(sceneConfig(profile)) + ')',
   );
   return { ...snapshot, provenance: sceneProvenance() };
@@ -396,7 +425,7 @@ async function recordScene(req: any) {
     out = emptyOutput(req.out);
   let sequence;
   try {
-    sequence = await page.evaluate(
+    sequence = await game.evaluate(
       '(' +
         sampleScene.toString() +
         ')(' +
@@ -431,7 +460,7 @@ async function recordScene(req: any) {
 
 async function lookUI(match = '') {
   const s = scenario ? config.scenarios[scenario] : null;
-  const snapshot = await page.evaluate(
+  const snapshot = await game.evaluate(
     '(' +
       UI_INSPECTOR +
       ')(' +
@@ -451,7 +480,7 @@ async function lookUI(match = '') {
   return snapshot;
 }
 
-async function capture(label: string, output?: string, sceneProfile?: string, dependenciesPath?: string) {
+async function capture(label: string, output?: string, sceneProfile?: string, dependenciesPath?: string, keepState = false) {
   if (!ready) throw new Error('Session not ready; reset after diagnosing the failure.');
   const s = scenario ? config.scenarios[scenario] : null;
   if (s) {
@@ -463,14 +492,14 @@ async function capture(label: string, output?: string, sceneProfile?: string, de
   let restore = false;
   try {
     if (hold)
-      restore = await page.evaluate(
+      restore = await game.evaluate(
         '(()=>{const g=(' +
           config.phaser +
           ');if(!g?.loop?.sleep||!g?.loop?.wake)throw new Error("Phaser clock hold unavailable");const running=g.loop.running;g.loop.sleep();return running;})()',
       );
-    return await captureHeld(label, output, !!hold, sceneProfile, dependenciesPath);
+    return await captureHeld(label, output, !!hold, sceneProfile, dependenciesPath, keepState);
   } finally {
-    if (restore) await page.evaluate('(' + config.phaser + ').loop.wake(true)');
+    if (restore) await game.evaluate('(' + config.phaser + ').loop.wake(true)');
   }
 }
 
@@ -481,6 +510,7 @@ async function captureHeld(
   clockHeld = false,
   sceneProfile?: string,
   dependenciesPath?: string,
+  keepState = false,
 ) {
   const dependencies = captureDependencies(dependenciesPath);
   const captureStarted = performance.now();
@@ -503,13 +533,15 @@ async function captureHeld(
     throw new Error('Screenshot dimensions differ from native viewport.');
   await Promise.allSettled([...pending]);
   requireUnchanged(dependencies);
+  await requireDocument(keepState);
   const out = emptyOutput(output ?? join(stateDir, 'evidence', randomUUID())),
     capturePath = join(out, 'reference.png'),
     manifestPath = join(out, 'reference.json');
   writeFileSync(capturePath, png);
   const identity = {
+    preview: documentReading,
     reference: config.referenceIdentity,
-    url: page.url(),
+    url: game.url(),
     expectedRevision: config.expectedRevision ?? null,
     revisionVerified: false,
     sources: [...sources.values()].sort((a, b) => a.url.localeCompare(b.url)),
@@ -567,8 +599,8 @@ async function captureDebug(req: any) {
     throw new Error('Configure explicit Three scene, camera and renderer expressions.');
   const out = emptyOutput(req.out);
   const instrumentation = readFileSync(fileURLToPath(new URL('./browser/three-debug.js', import.meta.url)), 'utf8');
-  await page.evaluate(instrumentation);
-  const result = await page.evaluate(
+  await game.evaluate(instrumentation);
+  const result = await game.evaluate(
     ({ three, view, stateExpression }) => {
       const evaluate = (expression) => (0, eval)('(' + expression + ')');
       const state = stateExpression ? evaluate(stateExpression) : null;
@@ -595,6 +627,7 @@ async function captureDebug(req: any) {
     sha256: sha(bytes),
     scenario,
     viewport,
+    preview: documentReading,
     reference: config.referenceIdentity,
     configHash,
     adapterConfigHash,
@@ -606,19 +639,69 @@ async function captureDebug(req: any) {
   return { out, ...receipt };
 }
 
+async function runNative(operation: Parameters<typeof nativeRequest>[1], args: any = {}) {
+  try { return await nativeRequest(page, operation, args); }
+  catch (error) {
+    if (error instanceof NativePreviewTransportError) { terminating = true; ready = false; }
+    throw error;
+  }
+}
+async function observeDocument() {
+  const observed = await previewReading(page);
+  const changed = documentReading !== null && (observed.clientDocumentId !== documentReading.clientDocumentId || observed.documentId !== documentReading.documentId || observed.generation !== documentReading.generation);
+  documentReading = observed;
+  if (changed || observed.release !== null) {
+    readiness.invalidate(); ready = false; scenario = null;
+    documentInvalidated = true;
+  }
+  return changed;
+}
+async function requireDocument(keepState = false) {
+  await observeDocument();
+  if (documentInvalidated || documentReading.release !== null) throw new Error('Preview document changed or requires reload. Reset and restage the scenario.');
+  if (documentReading.heldReloadPending && !keepState) throw new Error('Preview has pending new code. Reset and restage, or explicitly use --keep-state yes to inspect the held document.');
+}
 async function dispatch(req: any, signal: AbortSignal) {
-  if (req.method === 'objects') return objects(page, req, { sessionId, configHash, reference: config.referenceIdentity, url: page.url() });
+  if (req.method === 'stop') { terminating = true; ready = false; return { stopped: true }; }
+  if (req.method === 'reset') { await load(); return status(); }
+  if (req.method === 'status') { await observeDocument(); return status(); }
+  await requireDocument(req.keepState);
+  if (req.method === 'cheats') {
+    if (config.previewMode !== 'native') throw new Error('Cheats require start --preview native.');
+    if (req.operation === 'list') return { ...(await runNative('list')), preview: documentReading };
+    if (req.operation !== 'run') throw new Error('Unknown Cheat operation.');
+    validateCheat({ name: req.name, args: req.args, sceneKey: req.sceneKey });
+    readiness.invalidate(); ready = false; scenario = null;
+    const result = await step({ kind: 'cheat', purpose: 'fixture', name: req.name, args: req.args, sceneKey: req.sceneKey });
+    await until(config.ready);
+    await requireDocument(req.keepState);
+    ready = true;
+    return { ...result, preview: documentReading };
+  }
+  if (['record-clip', 'render-object'].includes(req.method)) {
+    const operation = req.method === 'record-clip' ? 'clip' : 'render';
+    const spec = validateNativeRequest(operation, req.spec);
+    if (config.previewMode !== 'native') throw new Error('Native captures require start --preview native.');
+    const out = emptyOutput(req.out);
+    const stagedScenario = scenario;
+    if (spec.cheat) { readiness.invalidate(); ready = false; scenario = null; }
+    const entry: any = { kind: req.method, purpose: spec.cheat ? 'fixture' : 'instrumentation', request: spec, at: new Date().toISOString(), status: 'running' };
+    actions.push(entry);
+    try {
+      const result = await runNative(operation, spec);
+      await Promise.allSettled([...pending]);
+      await requireDocument(req.keepState);
+      entry.status = 'completed';
+      return writeNativeCapture(out, operation, result, { sessionId, configHash, adapterConfigHash, scenario: stagedScenario, request: spec, viewport: size, preview: documentReading, reference: config.referenceIdentity, url: game.url(), setup: actions, sources: [...sources.values()], sourceScope: 'document, script, stylesheet, font', complete: pending.size === 0 && sourceFailures === 0, errors, revisionVerified: false });
+    } catch (error) {
+      entry.status = 'failed'; entry.error = String(error);
+      ready = false;
+      writeFileSync(join(out, 'failure.json'), JSON.stringify({ error: String(error), request: spec, preview: documentReading, setup: actions }, null, 2));
+      throw error;
+    }
+  }
+  if (req.method === 'objects') return objects(game, req, { sessionId, configHash, reference: config.referenceIdentity, url: game.url() });
   if (req.method === 'debug-capture') return captureDebug(req);
-  if (req.method === 'status') return status();
-  if (req.method === 'stop') {
-    terminating = true;
-    ready = false;
-    return { stopped: true };
-  }
-  if (req.method === 'reset') {
-    await load();
-    return status();
-  }
   if (req.method === 'workbench') {
     const mutates = ['run', 'reset', 'action'].includes(req.operation);
     if (mutates) { readiness.invalidate(); scenario = null; ready = false; }
@@ -626,9 +709,10 @@ async function dispatch(req: any, signal: AbortSignal) {
     if (mutates) actions.push(entry);
     try {
       await Promise.allSettled([...pending]);
-      const result = await workbench(page, req, {
+      const result = await workbench(game, req, {
         sessionId, projectRoot: root, configHash, adapterConfigHash,
-        reference: config.referenceIdentity, url: page.url(), revisionVerified: false,
+        preview: documentReading,
+    reference: config.referenceIdentity, url: game.url(), revisionVerified: false,
         sources: [...sources.values()].sort((a, b) => a.url.localeCompare(b.url)),
         sourceScope: 'document, script, stylesheet, font', complete: pending.size === 0 && sourceFailures === 0,
       });
@@ -663,7 +747,7 @@ async function dispatch(req: any, signal: AbortSignal) {
       return { ...response, inspectionError: String(error) };
     }
   }
-  if (req.method === 'capture') return capture(req.label, req.out, req.sceneProfile, req.dependencies);
+  if (req.method === 'capture') return capture(req.label, req.out, req.sceneProfile, req.dependencies, req.keepState);
   if (req.method === 'record') {
     const seconds = Number(req.duration ?? 3);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 30)
@@ -680,19 +764,21 @@ async function dispatch(req: any, signal: AbortSignal) {
     try {
       await load(out);
       const alignment = config.scenarios[selected].alignment;
-      if (alignment) await armAlignment(page, alignment.visible);
+      if (alignment) await armAlignment(game, alignment.visible);
       await select(selected, false);
       const startedAt = new Date().toISOString();
       native(await facts());
       await pause(seconds * 1000);
+      await requireDocument();
       const video = page.video();
       const state = config.scenarios[selected].state
         ? await evaluate(config.scenarios[selected].state)
         : null;
       await Promise.allSettled([...pending]);
       const identity = {
-        reference: config.referenceIdentity,
-        url: page.url(),
+        preview: documentReading,
+    reference: config.referenceIdentity,
+        url: game.url(),
         sources: [...sources.values()].sort((a, b) => a.url.localeCompare(b.url)),
         sourceScope: 'document, script, stylesheet, font',
         complete: pending.size === 0 && sourceFailures === 0,

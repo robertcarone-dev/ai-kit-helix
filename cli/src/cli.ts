@@ -17,7 +17,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { root, stateDir, readConfig, adapterSettings, loadStep, sha } from './config.ts';
-import { discover, assets } from './discovery.ts';
+import { discover, assets, shippedAssets, previewStatus, serviceUrl } from './discovery.ts';
 
 /** Short-lived command client. The detached host owns the browser between invocations. */
 const file = join(stateDir, 'connection.json');
@@ -50,9 +50,13 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   fixture-handoff --recording DIR --notes JSON_FILE --out NEW_ZIP
   doctor | resolve
   unity-connection [--helix-project SLUG | --project-root DIR]
-  assets [--match TEXT]
+  assets [--match TEXT] [--shipped index|compute]
+  preview-status
+  cheats list | cheats run NAME [--args JSON] [--scene KEY]
+  record-clip --spec JSON_FILE --out EMPTY_DIR [--keep-state yes]
+  render-object --spec JSON_FILE --out EMPTY_DIR [--keep-state yes]
   unity-plan SCENARIO --out DIR [--viewport phone|tablet]
-  start [--viewport phone|tablet] [--audio yes] [--workbench yes] [--url http://127.0.0.1:PORT/...]
+  start [--preview direct|native] [--refresh yes] [--viewport phone|tablet] [--audio yes] [--workbench yes] [--url http://127.0.0.1:PORT/...]
   status | reset | stop
   recover                       recheck timed-out scenario readiness; no setup replay
   scenario NAME
@@ -206,10 +210,14 @@ async function main() {
     doctor: [],
     'unity-connection': [],
     resolve: [],
-    assets: ['match'],
+    assets: ['match', 'shipped'],
+    'preview-status': [],
+    cheats: ['args', 'scene', 'keep-state'],
+    'record-clip': ['spec', 'out', 'keep-state'],
+    'render-object': ['spec', 'out', 'keep-state'],
     'unity-plan': ['out', 'viewport'],
     'unity-revision': [],
-    start: ['viewport', 'url', 'workbench', 'audio'],
+    start: ['viewport', 'url', 'workbench', 'audio', 'preview', 'refresh'],
     status: [],
     reset: [],
     stop: [],
@@ -234,7 +242,7 @@ async function main() {
     'scene-case': ['spec', 'out', 'execute', 'ai-kit'],
     'scene-compare': ['reference', 'candidate', 'spec', 'out'],
     step: [],
-    capture: ['out', 'scene-profile', 'dependencies'],
+    capture: ['out', 'scene-profile', 'dependencies', 'keep-state'],
     record: ['out', 'duration', 'scenario', 'after'],
     'ui-assets': ['spec', 'out'],
     'ui-plan': ['spec', 'out'],
@@ -434,6 +442,9 @@ async function main() {
   if (
     [
       'start',
+      'cheats',
+      'record-clip',
+      'render-object',
       'stop',
       'reset',
       'scenario',
@@ -457,9 +468,15 @@ async function main() {
     const { fixtureCommand } = await import('./fixture-command.ts');
     return fixtureCommand(command, pos, options);
   }
-  if (command === 'resolve' || command === 'assets') {
+  if (command === 'resolve' || command === 'assets' || command === 'preview-status') {
     const { config } = readConfig();
     const identity = await discover(config);
+    if (command === 'preview-status') return previewStatus(identity);
+    if (command === 'assets' && options.shipped) {
+      const result = await shippedAssets(identity, options.shipped, options.match);
+      if (result.state === 'failed') process.exitCode = 1;
+      return result;
+    }
     return command === 'assets' ? assets(identity, options.match) : identity;
   }
   if (command === 'unity-revision') return unityRevision(root);
@@ -478,20 +495,25 @@ async function main() {
   if (command === 'doctor') {
     const { config, configHash } = readConfig();
     const { chromium } = await import('./playwright.ts');
-    let identity: any = null,
+    let identity: any = null, preview: any = null,
       error: string | null = null;
     try {
       identity = await discover(config);
+      preview = await previewStatus(identity);
     } catch (e) {
       error = (e as Error).message;
     }
+    const browserInstalled = existsSync(chromium.executablePath());
+    const healthy = error === null && browserInstalled && preview.phase !== 'error';
+    if (!healthy) process.exitCode = 1;
     return {
+      healthy, preview,
       node: process.version,
       projectRoot: root,
       configHash,
       identity,
       error,
-      browserInstalled: existsSync(chromium.executablePath()),
+      browserInstalled,
       browserPath: chromium.executablePath(),
       viewports: Object.keys(config.viewports),
       scenarios: Object.keys(config.scenarios),
@@ -721,9 +743,25 @@ async function main() {
     const { config, configHash: adapterConfigHash } = readConfig(options.url);
     if (options.audio !== undefined && options.audio !== 'yes') throw new Error('--audio accepts yes.');
     config.audioOutput = options.audio === 'yes';
+    config.previewMode = options.preview ?? config.previewMode ?? 'direct';
+    if (!['direct', 'native'].includes(config.previewMode)) throw new Error('--preview must be direct or native.');
+    if (options.refresh !== undefined && options.refresh !== 'yes') throw new Error('--refresh accepts yes.');
     if (options.workbench !== undefined) {
       if (options.workbench !== 'yes') throw new Error('--workbench accepts yes.');
       config.ready = '(' + config.ready + ') && window.__portingWorkbench?.version === 1';
+    }
+    if (options.refresh !== 'yes' && existsSync(file)) {
+      const owned = connection();
+      if (!processExited(owned.pid)) {
+        const live = await request(owned, { method: 'status' }, 3000);
+        const prior = JSON.parse(readFileSync(join(stateDir, 'launch.json'), 'utf8'));
+        if (prior.token !== owned.token) throw new Error('Launch identity does not belong to this session.');
+        const requestedUrl = options.url ?? config.url ?? prior.config.referenceIdentity.url;
+        const viewport = options.viewport ?? Object.keys(config.viewports)[0];
+        if (live.adapterConfigHash !== adapterConfigHash || live.viewport !== viewport || prior.config.audioOutput !== config.audioOutput || (prior.config.previewMode ?? 'direct') !== config.previewMode || prior.config.url !== requestedUrl || prior.config.referenceIdentity.serviceUrl !== serviceUrl(config) || prior.config.ready !== config.ready)
+          throw new Error('Existing session has different config/viewport. Stop it explicitly first.');
+        return { ...live, discovery: 'owned-session', identity: prior.config.referenceIdentity };
+      }
     }
     config.referenceIdentity = await discover(config, true);
     config.url = options.url ?? config.url ?? config.referenceIdentity.url;
@@ -820,6 +858,12 @@ async function main() {
       rmSync(lock, { force: true });
     }
   }
+  if (options['keep-state'] !== undefined && options['keep-state'] !== 'yes') throw new Error('--keep-state accepts yes.');
+  if (command === 'cheats') {
+    if (!['list', 'run'].includes(pos[0]) || pos.length !== (pos[0] === 'run' ? 2 : 1)) throw new Error('Use cheats list or cheats run NAME.');
+    if (pos[0] === 'list' && (options.args || options.scene)) throw new Error('cheats list takes no args or scene.');
+  }
+  if (['record-clip', 'render-object'].includes(command) && (pos.length || !options.spec || !options.out)) throw new Error(command + ' requires --spec and --out.');
   if (command === 'stop' && !existsSync(file)) return { stopped: true, alreadyStopped: true };
   const owned = connection();
   if (command === 'stop' && processExited(owned.pid)) {
@@ -832,9 +876,13 @@ async function main() {
       owned,
       {
         method: command,
+        keepState: options['keep-state'] === 'yes',
+        args: options.args ? JSON.parse(options.args) : {},
+        sceneKey: options.scene,
+        spec: ['record-clip', 'render-object'].includes(command) ? JSON.parse(readFileSync(resolve(root, options.spec), 'utf8')) : undefined,
         view: options.view,
-        name: ['workbench', 'objects'].includes(command) ? pos[1] : pos[0],
-        operation: ['workbench', 'objects'].includes(command) ? pos[0] : undefined,
+        name: ['workbench', 'objects', 'cheats'].includes(command) ? pos[1] : pos[0],
+        operation: ['workbench', 'objects', 'cheats'].includes(command) ? pos[0] : undefined,
         level: options.level,
         seed: options.seed,
         label: pos[0],

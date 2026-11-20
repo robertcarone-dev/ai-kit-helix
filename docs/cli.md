@@ -21,17 +21,19 @@ From a configured checkout:
 
 Replace scenario and viewport names with those in the project adapter. `--help` lists all commands. Every command accepts `--project-root DIR`; otherwise the nearest ancestor of the working directory with `Tools/Helix/reference.json` owns the session. Relative file arguments are relative to that project. Without a project, help and image comparison can operate from the working directory. Project commands refuse a missing adapter. The toolkit location never selects a game or lane.
 
-`doctor` and `resolve` do not launch apps. Inspect doctor’s `error` and `browserInstalled` fields as well as its exit code. `start` resolves configured project and variant through the local catalog. `HELIX_URL`, `HELIX_DESKTOP_PORT` and project-local `reference.local.json` can select another loopback service. Do not embed credentials. Local `helix` fields merge; other top-level fields replace shared values. `start --url` marks preview identity unverified. Latest locally pulled content is accepted; content hashes do not prove a source commit.
+`doctor`, `resolve` and `preview-status` do not launch apps. `doctor` returns `healthy`, `error`, `browserInstalled` and the service's `preview` provisioning phase. It exits 1 when discovery/status fails or the browser is missing. A healthy result checks these prerequisites; it does not establish that a scenario or capture is ready. `preview-status` reads the selected project's provisioning phase separately. Startup failures include provisioning diagnostics when navigation or game readiness fails.
+
+`start` resolves the configured project and variant through the local catalog. A matching live session reuses its launch identity and returns `discovery: "owned-session"`; this avoids rereading the full catalog for each workflow step. `start --refresh yes` forces discovery again. It does not reset the running game, and a changed resolved configuration requires an explicit stop and fresh start. Identity reuse lasts only for that live session. `HELIX_URL`, `HELIX_DESKTOP_PORT` and project-local `reference.local.json` can select another loopback service. Do not embed credentials. Local `helix` fields merge; other top-level fields replace shared values. `start --url` marks preview identity unverified. Latest locally pulled content is accepted; content hashes do not prove a source commit.
 
 Session tokens, locks, logs and evidence live in the checkout’s ignored `.helix/`. Reuse matching sessions; stop before changing config or viewport. Each new browser launch replaces `host.log`; its header identifies the launch ID, UTC start, project, URL and readiness predicate. Startup failures return that launch ID and the current log tail directly. Diagnose that command's output, not historical logs or another checkout's records. Browser launch, navigation, readiness, page errors and failed module responses are timestamped in the log. `status` exposes the launch ID, start time, readiness and diagnostics. `reset` and `scenario` recreate isolated browser storage. `recover` rechecks a timed-out readiness predicate without replaying setup; inspect failure before retrying. Only stop sessions you own.
 
-`step` accepts labelled fixture/instrumentation script, press, drag, hover, pointerDown, pointerUp, wheel, wait or assert JSON. Script files must resolve inside the checkout, return plain serializable data and are hashed in receipts. Fixture setup does not prove player navigation. Non-wait steps clear the selected scenario.
+`step` accepts a labeled fixture/instrumentation script, press, drag, hover, pointerDown, pointerUp, wheel, wait, assert or Cheat fixture JSON. Script files must resolve inside the checkout, return plain serializable data and are hashed in receipts. Fixture setup does not prove player navigation. Non-wait steps clear the selected scenario.
 
 `step` returns the completed action receipt in `step` and a script's value in `result` (omitted when the script returns `undefined`). Successful post-step inspection retains the usual top-level `look` fields with `inspectionError: null`. If inspection fails after execution, the command still returns the completed receipt and result, with the error in `inspectionError` and no inspection fields. Do not repeat the action to recover inspection; establish the appropriate scene and use `look` separately. Execution failures still fail the command, and standalone `look` still reports inspection failures as errors.
 
 `record` requires a named scenario and recreates it, includes setup before the observation interval, and restores baseline afterward. It cannot record arbitrary manual setup. Recordings are bounded to 30 seconds. Check actual encoded dimensions and `nativeVideo`; odd dimensions can round. Native PNGs establish spatial dimensions; video does not prove game-time samples.
 
-`assets --match TEXT` reads the project-wide asset catalog, not variant usage. `look` uses configured Phaser/Three mappings; it is not a universal model or font probe. Phaser bounds approximate main-camera output and do not resolve masks/occlusion.
+`assets --match TEXT` reads the project-wide asset catalog. For variant-specific shipped paths, use the indexed lookup below. `look` uses configured Phaser/Three mappings; it is not a universal model or font probe. Phaser bounds approximate main-camera output and do not resolve masks/occlusion.
 
 `unity-plan SCENARIO --viewport NAME --out DIR` prints configured Unity recipe argument arrays, Git metadata in `revision`, and their `ai-kit` or `unity` backend. It never executes Unity commands. Output must be within the chosen project’s `.aikit/scratch`. Before executing a plan manually, save `revision` as `DIR/unity-revision.json`; matrix and shop-motion runners do this automatically. Alternatively, `unity-revision` prints fresh metadata for redirection to that file from the lane root. Git commands run outside Unity with a 10-second deadline. Execute preflight, prepare, capture and restoration only under the project’s verified adapter procedure. Always restore owned state after failure.
 
@@ -52,6 +54,66 @@ Rectangles use native top-left pixels: `[left, top, right, bottom]`, with right 
 Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix/toolkit/WorkflowToolkit.md` for optional AI Kit workflows. No game build or Production check is required.
 
 For sprite/UI rendering diagnosis, `render-inspect --spec FILE --out EMPTY_DIR` combines captured node properties, sprite usage, optional serialized UI settings and related render traces for the Workbench’s **Inspect rendering** drill-down. See [Render inspector](RenderInspector.md).
+
+## Native preview commands
+
+The browser owner in `cli/src/host.ts` supports two modes. `direct` is the default. `start --preview native` embeds the game in the CLI's own isolated browser frame and uses the game's advertised Helix preview capabilities. It never attaches to a person's editor tab or external MCP session. A project adapter can select this mode with `"previewMode": "native"`; an explicit `--preview` overrides it. Stop the owned session before changing modes.
+
+```sh
+./Tools/Helix/bin/helix start --viewport phone --preview native
+./Tools/Helix/bin/helix cheats list
+./Tools/Helix/bin/helix cheats run CHEAT_NAME --args '{}' --scene SCENE_KEY
+./Tools/Helix/bin/helix record-clip --spec Tools/Helix/clip.json --out .helix/evidence/clip-01
+./Tools/Helix/bin/helix render-object --spec Tools/Helix/object-render.json --out .helix/evidence/object-01
+./Tools/Helix/bin/helix stop
+```
+
+Use the names, arguments and active-scene information returned by `cheats list`. `--args` defaults to `{}`; `--scene` disambiguates registrations in different scenes. The native host checks the Cheat's declared arguments and returns failures for unknown Cheats, inactive scenes or invalid inputs. Unsupported preview capabilities fail explicitly. A Cheat is fixture setup, not normal player navigation. Running one clears the selected scenario and its readiness; use a named scenario with a readiness predicate when subsequent evidence needs that guarantee.
+
+A scenario's `steps` can contain this form:
+
+```json
+{"kind":"cheat","purpose":"fixture","name":"CHEAT_NAME","args":{},"sceneKey":"SCENE_KEY"}
+```
+
+`name`, `purpose: "fixture"` and the `args` object are required; `sceneKey` is optional. Use native preview mode. The project owns the Cheat's meaning and the scenario's post-action readiness checks. A native transport timeout or lost document retires the owned session because action completion is uncertain; start a fresh session and restage it, with no automatic replay.
+
+### Clips and object renders
+
+`record-clip` takes a JSON spec with `durationMs` greater than zero and at most 10000. Optional `frames` is an integer from 2 through 16. An optional `cheat` runs at the start of the span:
+
+```json
+{"durationMs":1500,"frames":8,"cheat":{"name":"CHEAT_NAME","args":{},"sceneKey":"SCENE_KEY"}}
+```
+
+Omit `cheat` to film the current state. The output contains `filmstrip.png` and `native.json`. Read `result.frames` for actual frame timestamps, `result.requested` for requested frames and `result.rendered` for rendered frames. A slow renderer can yield fewer kept frames. These are wall-clock observations; they do not establish deterministic game-time samples or event alignment with Unity.
+
+`render-object` takes the named Three.js object and optional view parameters:
+
+```json
+{"name":"OBJECT_NAME","index":0,"yaw":35,"pitch":20,"zoom":1,"size":512,"turntable":4,"context":false}
+```
+
+Only `name` is required. `index` selects a zero-based match when names repeat. The CLI accepts `yaw` from -360 through 360, `pitch` from -89 through 89, `zoom` from 0.1 through 20, integer `size` from 64 through 1024 and integer `turntable` from 1 through 12. `context: true` keeps the surrounding scene in the render. The output contains `object.png` and `native.json`; inspect the returned object facts and views before interpreting it.
+
+Both commands require an empty output directory. The response provides absolute `imagePath` and `receiptPath`; the receipt's `image` is relative to the output directory. They preserve Helix's PNG bytes and record the request, image dimensions and hash, setup history, source hashes, preview document identity and errors. `nativeViewport: false` identifies these diagnostic sheets: they are not native viewport screenshots or evidence of Unity parity. Continue using `capture` for viewport PNGs and `record` for retained video. A failed native capture retains `failure.json` when an output directory has been reserved; use a fresh directory after diagnosis.
+
+### Document lifetime and held reloads
+
+`status.preview` reports the observed document identity, generation, advertised capabilities, pending reload and release reason. Captures retain preview readings with their evidence. A changed document invalidates scenario readiness; reset and restage before collecting dependent evidence. Older previews without a document stamp leave that identity unavailable rather than claiming a source revision.
+
+When new code is held for the current document, choose an explicit reset and scenario replay to load it. To inspect the old staged state intentionally, `capture`, `cheats`, `record-clip` and `render-object` accept `--keep-state yes`; their receipts disclose the held reload. A release means the document must reload and cannot be bypassed with `--keep-state`. The CLI does not silently reload and replay mutating setup commands.
+
+## Variant shipped assets
+
+```sh
+./Tools/Helix/bin/helix assets --shipped index --match TEXT
+./Tools/Helix/bin/helix assets --shipped compute --match TEXT
+```
+
+`index` reads Helix's current stamped row for the configured variant and enqueues no work. A missing row returns `state: "not-indexed"` with `paths: null`; it does not mean the variant ships no assets. `compute` explicitly permits Helix to enqueue classification for a missing or stale row. It returns the service's `pending`, `failed` or `ready` state without polling. A failed computation exits 1; a pending result requires a later read. `--match` filters available paths.
+
+The index describes files shipped by the selected variant, not proof that a particular object or runtime state uses them. The result retains the resolved identity and available worktree stamp. The ordinary `assets` command remains the project-wide catalog.
 
 ## UI comparison
 

@@ -3,7 +3,7 @@ import type { Page } from 'playwright';
 
 // The marker is part of the recorded image. Navigation time, browser clock origins and
 // encoder startup delays therefore do not need to be estimated from wall time.
-export async function armAlignment(page: Page, visible: string) {
+export async function armAlignment(page: Pick<Page, 'evaluate'>, visible: string) {
   await page.evaluate((expression) => {
     const observe = new Function('return (' + expression + ')');
     if (observe()) throw new Error('Alignment event was already active when armed.');
