@@ -1,6 +1,6 @@
 # Helix reference CLI
 
-For project-owned scenario controls and event traces (separate from the removed Workbench mod), see [Porting Workbench](Workbench.md). Start its CLI session with `start --workbench yes`. For offline review, `workbench prepare --spec REVIEW_SPEC --out NEW_DIR` checks pinned evidence and declared source freshness, generates comparisons, and creates a portable evidence bundle; see the Workbench spec and exit-code contract.
+For project-owned scenario controls and event traces (separate from the removed Workbench mod), see [Porting Workbench](Workbench.md). For a project that declares the scenario-control interface, start its CLI session with `start --workbench yes`. Otherwise use the project adapter’s named scenarios. For offline review, `workbench prepare --spec REVIEW_SPEC --out NEW_DIR` checks pinned evidence and declared source freshness, generates comparisons, and creates a portable evidence bundle; see the Workbench spec and exit-code contract.
 
 Requires Node >=22.18 and a configured local Helix service. Install dependencies with `npm ci --prefix Tools/Helix/toolkit` and Chromium with `npm run install-browser --prefix Tools/Helix/toolkit`. Installation and runtime use a dedicated `~/.cache/ai-kit-helix/browsers/<playwright-version>` cache, shared across lanes but isolated from Atom and other Playwright installers. `HELIX_BROWSERS_PATH` explicitly overrides this location for both commands; ambient `PLAYWRIGHT_BROWSERS_PATH` is intentionally ignored. Run the documented install command after dependency setup in a new lane or after a Playwright version change. The browser workflow does not require AI Kit. Automatic Helix Desktop launch is macOS-only; on other platforms start the local service first.
 
@@ -53,7 +53,7 @@ Rectangles use native top-left pixels: `[left, top, right, bottom]`, with right 
 
 Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix/toolkit/WorkflowToolkit.md` for optional AI Kit workflows. No game build or Production check is required.
 
-For sprite/UI rendering diagnosis, `render-inspect --spec FILE --out EMPTY_DIR` combines captured node properties, sprite usage, optional serialized UI settings and related render traces for the Workbench’s **Inspect rendering** drill-down. See [Render inspector](RenderInspector.md).
+For sprite/UI rendering diagnosis, `render-inspect --spec FILE --out EMPTY_DIR` combines captured node properties, sprite usage, optional serialized UI settings and related render traces for scoped offline review. See [Render inspector](RenderInspector.md).
 
 ## Native preview commands
 
@@ -173,7 +173,7 @@ The optional designer UI runs with `python3 Tools/Helix/toolkit/handoff-ui/serve
 
 ## Resume a feature without the previous session
 
-An AI Kit agent with a board key can discover its records with `helix discrepancy-resume --assignment BOARD-KEY` (use the assigned key).
+Find the current issue and next action with `Tools/Helix/bin/helix discrepancy-resume --assignment BOARD-KEY --format summary`. Use `--feature "Feature name"` when you have a feature name. The summary skips evidence hashing. To decide which evidence is reusable, run `discrepancy-resume --id ID` and inspect its `evidenceChecks`. Use `--status all` to include a terminal record.
 
 For an open UI discrepancy, plan `helix discrepancy-rerun --id ID --out .aikit/scratch/new-round`. The additive discrepancy field `uiCase` takes `matrix` (project-relative file), `caseId` (exact matrix row), and `element` (UI spec element ID). Optional `reference` and `candidate` name individual receipt paths from the record's evidence list. The plan checks the saved bytes, PNG, case, viewport, and declared dependencies for each side. Execute its returned argument array to review two retained captures offline, capture one missing side, or capture both. Live capture uses the existing isolated matrix lifecycle. Use a new output directory each round. A blocked issue returns its prerequisite and refuses execution. A record without routing still resumes normally.
 

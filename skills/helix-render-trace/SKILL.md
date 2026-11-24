@@ -5,9 +5,9 @@ description: Trace a selected Unity URP renderer feature, pass inputs, output te
 
 # Trace a render pass
 
-Run the installed CLI directly from the project. Follow the render-trace contract in Tools/Helix/toolkit/Toolkit.md. Start with the question about a camera and pass. Inspect the effective quality/pipeline and camera renderer selection when available; record an assumed selection explicitly. Identify the feature, graph pass label and relevant shader property from project assets and source.
+Run the installed CLI directly from the project. Use the spec in “Per-camera URP render trace” in `Tools/Helix/toolkit/Toolkit.md`. Start with the question about a camera and pass. Inspect the effective quality/pipeline and camera renderer selection when available; record an assumed selection explicitly. Identify the feature, graph pass label and relevant shader property from project assets and source.
 
-Run a configuration-only trace first. Follow the GUID and local-file-ID links; inspect the listed scheduling predicates, resource declarations and shader lines. Confirm what the shader samples and when. Record custom pass order, color/depth format and scope only where source or captured data supports them.
+Run `Tools/Helix/bin/helix render-trace --spec FILE --out EMPTY_DIR` with configuration only. Read the returned pass, active flag and observations first. Open the named report at the feature or resource in question. Follow the GUID and local-file-ID links; inspect the listed scheduling predicates, resource declarations and shader lines. Confirm what the shader samples and when. Record custom pass order, color/depth format and scope only where source or captured data supports them.
 
 For execution evidence, prefer retained camera-specific Render Graph Viewer receipts. If authorized to capture a new frame, capture the desired camera and fixture in the viewer, then export its existing debug data with RenderTraceCapture.Inspect. Keep fixture, camera, revision, capture provenance and any visual crop alongside each receipt. Compare equivalent states with and without the effect's consumer. A disabled or culled pass, an absent pass in a valid selected graph, and a missing capture are distinct outcomes.
 

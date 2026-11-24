@@ -9,7 +9,7 @@ Route multi-step feature state/data semantics to [feature behavior](../helix-com
 
 ## Prerequisites
 
-Read [the shared workflow](../helix-reference/references/comparison-workflow.md). Map the actual source motion system (Phaser tween, Three.js mixer or procedural update) to the actual Unity implementation. Define the event, trigger, initial state/pose, expected final state/pose, required variants and available time basis.
+For a paired comparison, use the [shared scope and evidence requirements](../helix-reference/references/comparison-workflow.md#scope-and-prerequisites). Map the actual source motion system (Phaser tween, Three.js mixer or procedural update) to the actual Unity implementation. Define the event, trigger, initial state/pose, expected final state/pose, required variants and available time basis.
 
 Use a named scenario with reproducible actions for transient interactions. `record` recreates the scenario and drops later manual setup; it does not record the current arbitrary state. If a necessary trigger is not represented, provide a scoped project scenario/fixture before recording that case. Do not invent a freeze or animation-clock command.
 
@@ -21,7 +21,7 @@ Follow [the port recipe](../helix-reference/references/port-recipe.md). Map the 
 
 ## Scene sampling support
 
-Read `Tools/Helix/toolkit/Scene.md` for `scene-record`, the optional Unity `SceneSampling` helper and `scene-motion`. Use a project-observed event timeline, not sampler start time, to align snapshots. The sampler observes the current scenario; it does not reset animations or reproduce an event automatically. Use a scoped motion profile containing required nodes; choose appearance only when property sampling is required. Inspect actual sample timing, capture durations, missed deadlines and unmatched coverage, and keep unsampled transitions unmeasured. A fixture-readiness marker is not animation onset. Retain video and input/event evidence for rendered motion and behavior.
+For transform samples, use “Temporal scene sampling” in `Tools/Helix/toolkit/Scene.md` for `scene-record`, the optional Unity `SceneSampling` helper and `scene-motion`. Use a project-observed event timeline, not sampler start time, to align snapshots. The sampler observes the current scenario; it does not reset animations or reproduce an event automatically. Use a scoped motion profile containing required nodes; choose appearance only when property sampling is required. Inspect actual sample timing, capture durations, missed deadlines and unmatched coverage, and keep unsampled transitions unmeasured. A fixture-readiness marker is not animation onset. Retain video and input/event evidence for rendered motion and behavior.
 
 ## Procedure
 
@@ -49,4 +49,4 @@ For a designer's aligned handoff ZIP, run `handoff-owner --handoff FILE.zip --un
 
 For a presenter event, inspect every property result for the note. A sprite assignment can precede the entrance and persist through the selected frame while a parent scale has a separate live clip binding. Use the writer stack and the property-specific clip path in the linked review.
 
-Before booking a reference session or starting Unity, run `capture-coverage` with the project feature spec and available inventories. Read the per-viewport, per-side capture list. Review retained action windows and use `--basis current` when judging the receiving revision. Pass new capture receipts back as an additional inventory and carry the complete coverage report in the handoff.
+When a project feature spec is available, run `capture-coverage` with it and the available inventories before starting a new capture. Read the per-viewport, per-side capture list. Review retained action windows and use `--basis current` when judging the receiving revision. Pass new capture receipts back as an additional inventory and carry the complete coverage report in the handoff.

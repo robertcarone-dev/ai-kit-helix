@@ -97,6 +97,8 @@ export function catalogStatus(root: string, project: string, acceptance: any = n
     const path = 'Tools/Helix/discrepancies/' + name + '/' + revisions[0], record = read(root, path);
     if (record.schemaVersion !== 1 || record.id !== name || !['open', 'blocked', 'resolved', 'accepted-deviation'].includes(record.status)) throw new Error('Invalid discrepancy: ' + path);
     for (const key of ['expected', 'observed']) text(record[key]);
+    // Terminal records can explicitly clear their next action.
+    if ((record.status === 'resolved' || record.status === 'accepted-deviation') && record.nextAction === '') delete record.nextAction;
     if (record.nextAction !== undefined) text(record.nextAction);
     if (!Array.isArray(record.evidence)) throw new Error('Missing discrepancy evidence list: ' + path);
     discrepancies.set(name, { ...record, path, revision: Number.parseInt(revisions[0]) });

@@ -462,12 +462,17 @@ export async function discrepancyCommand(
     !['active', 'all', 'open', 'blocked', 'resolved', 'accepted-deviation'].includes(options.status)
   )
     throw new Error('Unknown --status filter.');
+  if (options.format !== undefined && !['summary', 'full'].includes(options.format))
+    throw new Error('Use --format summary|full with discrepancy-resume.');
+  if (options.id !== undefined && !idPattern.test(options.id)) throw new Error('Supply --id ID.');
+  const summary = options.format === 'summary';
   const issues = [];
   const hashes = new Map<string, string>();
   const feature = options.feature?.trim().toLowerCase();
   const status = options.status ?? 'active';
   if (await directory(store)) {
-    for (const id of (await readdir(store)).filter((name) => idPattern.test(name)).sort()) {
+    const ids = options.id ? [options.id] : (await readdir(store)).filter((name) => idPattern.test(name)).sort();
+    for (const id of ids) {
       const entry = await latest(id);
       if (!entry) continue;
       const item = entry.record;
@@ -475,6 +480,14 @@ export async function discrepancyCommand(
       if (feature && item.feature.toLowerCase() !== feature) continue;
       if (status === 'active' ? terminal(item) : status !== 'all' && status !== item.status)
         continue;
+      if (summary) {
+        issues.push({
+          id: item.id, feature: item.feature, caseId: item.caseId, assignment: item.assignment,
+          revision: entry.revision, path: entry.path, status: item.status, blocker: item.blocker,
+          nextAction: continuation(item).nextAction,
+        });
+        continue;
+      }
       const evidenceChecks = [];
       for (const evidence of item.evidence)
         evidenceChecks.push(await inspectEvidence(evidence, hashes));
@@ -489,7 +502,7 @@ export async function discrepancyCommand(
     status,
     count: issues.length,
     issues,
-    scope:
+    scope: summary ? 'Latest matching records. Evidence bytes and dependencies were not checked.' :
       'Reuse checks cover recorded artifact bytes and declared file dependencies in this checkout. Acceptance and external source revisions require separate evidence.',
   };
 }

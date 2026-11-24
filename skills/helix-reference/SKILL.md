@@ -5,49 +5,24 @@ description: Run the Phaser/Three.js Helix web reference for porting and verific
 
 # Helix reference
 
-Use this entry point to port or verify Helix web assets, features and UI in Unity, including reference setup, evidence collection and comparisons spanning several visual domains. For a single domain, load its specialist directly.
+Start with the named feature, state and visible difference. Run the installed launcher, `Tools/Helix/bin/helix`, from the consuming checkout. The project adapter owns scenario IDs, Unity recipes and lane access.
 
-## Prerequisites
+- Continuing an issue? Run `discrepancy-resume --assignment BOARD-KEY --format summary` or `--feature "FEATURE" --format summary` to locate its latest record and next action. The summary skips evidence checks. For reuse, run `discrepancy-resume --id ID` in its default full format or, for a routed UI issue, `discrepancy-rerun --id ID --out NEW_DIR` to check which sides need capture.
+- Implementing a new port? Start at the web asset or generator and its caller. Trace the corresponding Unity owner and implement one representative variant using the [port recipe](references/port-recipe.md).
+- Collecting or judging a pair? Use [scope and evidence requirements](references/comparison-workflow.md#scope-and-prerequisites). Keep full reports on disk. Bring the selected IDs, changed inputs, first relevant error or measurement, and artifact paths into the conversation.
 
-Read [the shared comparison workflow](references/comparison-workflow.md) before collecting or accepting evidence. Follow `Tools/Helix/toolkit/Toolkit.md` for installation and commands. The CLI requires Node.js 22.18 or later on the worker's `PATH`. Live browser capture also requires Helix Desktop with the configured project pulled locally. `start` discovers the configured project and variant and opens Helix Desktop on macOS when needed; latest local content is accepted. No modified AI Kit app is required.
+Choose the skill for the question that determines the next edit.
 
-## Route the task
+- [Feature behavior](../helix-compare-feature/SKILL.md) for actions, guards, transitions and data effects.
+- [Models](../helix-compare-models/SKILL.md) for shape, pivot, topology, UVs and material boundaries.
+- [Lighting](../helix-compare-lighting/SKILL.md) for shadows, reflections, illumination and final output.
+- [Motion](../helix-compare-motion/SKILL.md) for timing, easing and trajectories. [Transient VFX](../helix-compare-vfx/SKILL.md) covers effect phases, compositing and cleanup.
+- [UI](../helix-compare-ui/SKILL.md) for layout, text and input states. [Sprite usage](../helix-sprite-usage/SKILL.md) traces a frame to its prefab consumers and packed atlas.
+- [Render trace](../helix-render-trace/SKILL.md) for a camera, renderer feature, pass or texture consumer.
 
-- [Feature behavior](../helix-compare-feature/SKILL.md): inputs, guards, event/state sequences, feedback and data effects.
-- [Models](../helix-compare-models/SKILL.md): shape, proportions, visible surface artifacts, pivots and material-versus-geometry diagnosis.
-- [Lighting](../helix-compare-lighting/SKILL.md): illumination, shadows, reflections and output-pipeline differences.
-- [Motion](../helix-compare-motion/SKILL.md): animation, timing, trajectories and transitions.
-- [Transient VFX](../helix-compare-vfx/SKILL.md): event-relative rendered frames, effect phases, compositing and sampling gaps.
-- [UI](../helix-compare-ui/SKILL.md): layout, responsive states, sprites and typography.
+## Capture and diagnose
 
-Read only the specialty needed for the current case. A full visual audit may use several, with one shared evidence ledger.
-
-## Procedure
-
-1. Establish case IDs, required coverage, source-to-Unity mappings and whether the task is review-only or an authorized port/fix using the shared workflow.
-2. For a continuation, run `discrepancy-resume --feature "FEATURE"` or `discrepancy-resume --assignment BOARD-KEY` before launch. For a routed UI case, plan `discrepancy-rerun --id ID --out .aikit/scratch/ROUND`. Inspect its retained sides and reasons. Follow its returned command when runnable: two retained sides permit offline review, one calls for capturing the missing side, and zero calls for both. For a blocked case, record the prerequisite.
-3. For fresh browser evidence, run `Tools/Helix/bin/helix doctor` and inspect browser installation and catalog discovery. A matrix or routed rerun manages its own browser. For manual capture, start or reuse your owned session at the required viewport, then use `status`, a named `scenario` and `look` as appropriate.
-4. For new coverage, prove one representative case, inspect its receipts and render, then collect the remaining required cases.
-5. Use `capture` for native PNGs, `record` for motion, and `compare` for diagnostic image pairs. `unity-plan` emits the configured argument arrays for the selected AI Kit or Unity CLI backend; execute and restore them using the shared workflow. Follow the specialist's measurement procedure.
-6. Restore owned Unity state, stop owned browser work when finished, and hand off the ledger and accessible evidence.
-
-`look` inspects Phaser and, only when `config.three` is present, configured Three.js data. Inspect the selected configuration and its scope: a gameplay-board mapping does not automatically cover lobby or mascot scenes. It is not a generic model, font or animation probe. Additional measurements need an inspected project fixture or explicit instrumentation.
-
-## Structural diagnosis
-
-Read `Tools/Helix/toolkit/Scene.md` when hierarchy or object placement could explain a visual difference. Use a scoped `scene-look --profile NAME` and a project-supplied Unity scene snapshot, then `scene-compare` with explicit semantic or grouped mappings. Use `scene-report` for native receipt-backed interactive review, or `scene-case` for one case through an existing supported matrix lifecycle. Inspect state, checkpoint, viewport and unsupported measurements before using the report to guide a fix. Keep selectors and semantic meanings project-owned; name-only suggestions do not establish correspondence. For 3D cases, verify the final camera output surface and compare projected landmarks before changing transforms or framing. World distances require project-validated affine conversions and units; never assume a generic axis flip or force camera agreement. Read-only inventories and geometric overlays supplement native screenshots and do not prove rendering or interaction parity.
-
-## Result and stopping condition
-
-Deliver the shared case ledger with source-to-target mapping, reference identity, setup, expected/actual results, evidence, recommended or implemented Unity fixes, retest cases and restoration receipts. For launch diagnostics, add the exact failing command, error and changed prerequisite needed to proceed. Completion means every required case has a supported status; blocked or unmeasured cases remain explicit and do not become passes.
-
-
-For configured Unity/backend captures, follow `Tools/Helix/toolkit/WorkflowToolkit.md` and the project's adapter. Use the readiness/motion helper only after a reviewed live pilot; do not invent hooks or copy another game's fixtures. Record before actions, verify first/last event coverage, and restore owned state. Use delivery receipts to distinguish implemented, validated and integrated work. Reuse evidence only when its declared inputs and bytes remain valid.
-
-## Author fixtures for new porting work
-
-When a requested behavior has no replay, the agent owns fixture authoring. Use `Tools/Helix/bin/helix fixture-list` to discover the project and document contract. Inspect the source caller, initial state, actual player input and outcome. Author the project fixture and any necessary project-local setup or observation hooks; register it with `fixture-create --spec`. Run `fixture-record`, inspect the evidence and correct the fixture when its observations fail. Use `fixture-handoff` to package the recording and clip-relative notes for the porting assignment. See Tools/Helix/toolkit/Toolkit.md. All four commands work without the designer UI. A missing target, guard or observable result belongs in the project adapter or a blocked handoff, never in shared commands.
-
-For a Unity renderer feature, color/depth copy or custom pass investigation, use [render trace](../helix-render-trace/SKILL.md).
-
-For sprite frame provenance, prefab consumers and packed pages use [sprite usage](../helix-sprite-usage/SKILL.md).
+1. Use Node 22.18+ and a locally pulled Helix Desktop project for live browser work. For launch failures, run `doctor` and inspect its error, browser installation and preview provisioning phase. Retry when the reported prerequisite changes.
+2. For a manual live capture, start or reuse the owned session at the requested viewport, select the named scenario, and verify readiness and visible state. A matrix or routed rerun manages its own session. `look` sees the configured scene and cameras. For a hierarchy mismatch, use a scoped `scene-look --profile NAME` and the “Scoped capture profiles” section of `Tools/Helix/toolkit/Scene.md`.
+3. Use `capture` for native PNGs and `record` for named-scenario video. For a missing replay, use `fixture-list` to find a related setup, inspect the actual input and expected outcome, then register a project fixture with `fixture-create --spec FILE`. Run `fixture-record ID --out NEW_DIR` and inspect the action receipt and clip. Use `fixture-handoff` when delivering clip-relative notes.
+4. For paired Unity capture, inspect the configured backend with `unity-plan` and use the project's isolated setup, readiness and restoration procedure. Verify one matched pair before expanding coverage. Preserve the case ledger, restoration receipt and any missing prerequisite.

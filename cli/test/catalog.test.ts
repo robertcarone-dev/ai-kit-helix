@@ -33,6 +33,11 @@ test('latest numeric revision wins; resolved records without nextAction are supp
   assert.equal(report.entries[0].issues[0].revision, 10); assert.equal(report.entries[0].issues[0].nextAction, null);
   assert.deepEqual(report.unmappedDiscrepancies, ['new-gap']); assert.equal(report.summary.accepted, 0);
 });
+test('resolved findings can explicitly clear the next action', t => {
+  const f = fixture(t);
+  f.put('Tools/Helix/discrepancies/home-layout/2.json', { ...f.discrepancy, status: 'resolved', nextAction: '' });
+  assert.equal(catalogStatus(f.root, 'synthetic').entries[0].issues[0].nextAction, null);
+});
 test('definitions reject wrong projects, duplicate IDs, broken mappings, and escaping sources', t => {
   const f = fixture(t);
   assert.throws(() => loadCatalog(f.root, 'other'), /project/);

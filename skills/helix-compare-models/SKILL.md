@@ -7,7 +7,7 @@ description: Port and verify Phaser/Three.js web assets in Unity through model s
 
 ## Prerequisites
 
-Read [the shared workflow](../helix-reference/references/comparison-workflow.md). Identify the corresponding reference and Unity objects, their supported variants and accessible inspection data. Map source asset IDs or procedural mesh generators and parameters to Unity meshes/components/shaders. A missing counterpart supports source capture and a port brief; create it only when implementation is already within task scope.
+For a paired comparison, use the [shared scope and evidence requirements](../helix-reference/references/comparison-workflow.md#scope-and-prerequisites). Identify the corresponding reference and Unity objects, their supported variants and accessible inspection data. Map source asset IDs or procedural mesh generators and parameters to Unity meshes/components/shaders. A missing counterpart supports source capture and a port brief; create it only when implementation is already within task scope.
 
 Match equivalent projected views, aspect, pose and visible state; compare camera projection/pose parameters only for applicable 3D counterparts. Translate unit scale, handedness, axes, pivots, parent transforms and camera projection from inspected source data into the Unity conventions; do not copy numeric transforms blindly. If these are unknown, label world-space measurements unmeasured; do not derive them from pixels alone.
 
@@ -17,14 +17,14 @@ Follow [the port recipe](../helix-reference/references/port-recipe.md). Map a fi
 
 ## Scene property support
 
-Read `Tools/Helix/toolkit/Scene.md` for explicit node/group mappings, projected landmarks, optional common-world conversions and appearance rules. Use a scoped geometry profile and check camera output surfaces and `boundsKind` before interpreting projected bounds. Supported mesh bounds use transformed local boxes in both engines; unsupported deformation remains unmeasured. A geometric box is not a silhouette or topology measurement; asset names are not content hashes. Keep shader, light and coordinate conversions project-owned and supported by inspected data.
+For disputed geometry, consult “Camera-aware geometry” or “Landmarks and world coordinates” in `Tools/Helix/toolkit/Scene.md` for the specific measurement. Use a scoped geometry profile and check camera output surfaces and `boundsKind` before interpreting projected bounds. Supported mesh bounds use transformed local boxes in both engines; unsupported deformation remains unmeasured. A geometric box is not a silhouette or topology measurement; asset names are not content hashes. Keep shader, light and coordinate conversions project-owned and supported by inspected data.
 
 ## Procedure
 
 1. Prove a representative final-output view, preserving intended game crop/clipping. Full-silhouette measurements require the scoped silhouette to be visible and framing to be comparable; label unseen geometry unmeasured rather than invalidating the final-composite case.
 2. Compare shape first under comparable illumination. Use authorized existing fixtures to isolate geometry when needed, preserving original captures and disclosing the fixture. Diagnostic isolates supplement, rather than replace, the final composed player-output comparison.
 3. Measure silhouette bounds and relative proportions in native pixels. When inspected transforms/mesh bounds are available, separately report dimensions, pivot offsets and axes in their stated coordinate system.
-4. Use front, side and three-quarter views only where the acceptance criterion needs them and reproducible camera control exists. The CLI has no camera preset command; otherwise record the unavailable view.
+4. Use front, side and three-quarter views only where the acceptance criterion needs them and reproducible camera control exists. For an advertised native preview capability, `render-object --spec FILE --out EMPTY_DIR` can produce a named Three.js object turntable. See “Clips and object renders” in Toolkit.md. Use that sheet for geometry diagnosis and a native viewport capture for the final composition. Record unavailable views.
 5. Inspect contour breaks, normals-related shading, seams, intersections and material boundaries. Where source assets/generators and shaders are available, compare normals/tangents, winding/culling, material/texture assignments, UV scale/orientation/seams, texture channels and color-space imports for base-color, normal, roughness and metallic inputs. Derive conversions from the actual shaders; do not assume a universal channel swizzle or roughness formula. Classify each difference as geometry, material, lighting, fixture or unresolved; explain the evidence rather than assuming a shader defect is a mesh defect. Equal PBR input values across renderers do not establish equivalent appearance.
 6. Check required object variants using the proven setup, reusing unaffected evidence. Route illumination diagnosis to [lighting](../helix-compare-lighting/SKILL.md) only when necessary.
 

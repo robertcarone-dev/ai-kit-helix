@@ -1,6 +1,6 @@
 # Shared comparison workflow
 
-This contract applies to all Helix comparison specialties. The `Tools/Helix/toolkit/Toolkit.md` defines available commands; `Tools/Helix/project-adapter.md` defines the Unity procedure.
+For a paired comparison, start with “Scope and prerequisites” and “Evidence and bounded execution” below. Use the remaining sections when their operation applies. The consuming project's `Tools/Helix/project-adapter.md` owns its Unity procedure.
 
 Read [Web-to-Unity mapping and capture](web-to-unity.md) when establishing source/target state, coordinates or asset provenance.
 
@@ -22,6 +22,8 @@ Identify the catalog-resolved project and variant, preview URL, served-content h
 6. Use fresh output directories. Attach evidence or place executable helpers in the repository so the next lane can access them; a bare board attachment ID or another lane's temporary path is not a usable handoff.
 
 For report-only scene failures, use `scene-report` with retained valid receipts and a fresh output directory before considering recapture. Follow `Tools/Helix/toolkit/Scene.md` for explicit context, outcome and observation classification. Keep actual outcome differences and missing observations visible; changing the report contract cannot create missing evidence.
+
+Keep raw receipts and verbose command results on disk. Select the affected case, relevant observations and evidence paths for diagnosis. For native images or video, inspect the matched pair or event window before requesting wider coverage.
 
 ## Offline image and recording review
 
@@ -94,7 +96,7 @@ Record the CLI status alongside the QA verdict. Inspect each case's command hist
 
 ### Cross-session continuation
 
-Start with `Tools/Helix/bin/helix discrepancy-resume --feature "FEATURE"` in the receiving checkout, or use `--assignment BOARD-KEY` when the brief gives the board key. For a routed UI case, plan `discrepancy-rerun` before starting either application. Read each record's next action, blocker, assignment and per-claim evidence checks. During a checkpoint, save new findings and update existing IDs using `discrepancy-save --spec FILE [--after REVISION]`. The spec, statuses, file ownership and evidence recovery procedure are in Tools/Helix/toolkit/Toolkit.md under “Resume a feature without the previous session”. Link these project-owned records from the assignment handoff so the next agent can recover work even when the original chat and scratch files are unavailable.
+Locate the record with `Tools/Helix/bin/helix discrepancy-resume --feature "FEATURE" --format summary` in the receiving checkout, or filter by `--assignment BOARD-KEY`. For evidence reuse, run `discrepancy-resume --id ID` in its default full format to verify each artifact and its declared inputs. For a routed UI case, plan `discrepancy-rerun` before starting either application. Read each record's next action, blocker, assignment and per-claim evidence checks. During a checkpoint, save new findings and update existing IDs using `discrepancy-save --spec FILE [--after REVISION]`. The spec, statuses, file ownership and evidence recovery procedure are in Tools/Helix/toolkit/Toolkit.md under “Resume a feature without the previous session”. Link these project-owned records from the assignment handoff so the next agent can recover work even when the original chat and scratch files are unavailable.
 
 For missing pinned files, run `discrepancy-recover --id ID`. For a legacy locator, specify the known source issue with `--issue`; use `--board-root` when working outside a managed lane. Read the per-file recovery diagnostics, input drift and continuation.nextAction before deciding which case needs new evidence. Do not overwrite a changed source dependency to force reuse.
 

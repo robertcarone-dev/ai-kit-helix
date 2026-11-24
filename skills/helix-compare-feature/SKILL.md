@@ -7,7 +7,7 @@ description: Port and verify Phaser/Three.js web feature behavior in Unity throu
 
 ## Prerequisites
 
-Read [the shared workflow](../helix-reference/references/comparison-workflow.md). Identify the scoped feature, acceptance criteria and review-only versus authorized port/fix mode. Map source controllers/state and relevant assets to actual Unity components; equivalent behavior does not require the same architecture.
+For a paired comparison, use the [shared scope and evidence requirements](../helix-reference/references/comparison-workflow.md#scope-and-prerequisites). Identify the scoped feature, acceptance criteria and review-only versus authorized port/fix mode. Map source controllers/state and relevant assets to actual Unity components; equivalent behavior does not require the same architecture.
 
 Establish explicitly matched initial snapshots, including relevant local currency, inventory or progress. Equal seeds do not establish equal state. Use verified isolated state and preserve source behavior as the reference. Missing source behavior supports a documented port question or brief; do not invent backend behavior.
 
@@ -28,7 +28,7 @@ Follow [the port recipe](../helix-reference/references/port-recipe.md). Map the 
 
 ## Tool and evidence limits
 
-Use `fixture-list` to find an authored replay. For an uncovered case, define the initial state, actual player actions and observable outcome in a project fixture and register it with `fixture-create --spec FILE`. Use an `assert` step with an expression and expected JSON value for a specific behavioral check. Run `fixture-record ID --out NEW_DIR` and inspect the action receipt, state and clip. Derive the expected behavior from the source and verify the Unity counterpart independently. A non-`wait` `step` clears the selected scenario; `record` requires and replays a named scenario, includes its setup, then resets. It cannot record an arbitrary sequence of manual steps already performed. For video proof, put reproducible normal actions in a suitable named scenario, or use an applicable capture method; do not label direct state mutation as input proof.
+Run `Tools/Helix/bin/helix fixture-list` and select the matching fixture or scenario ID from its JSON output. Keep the full inventory on disk. For an uncovered case, define the initial state, actual player actions and observable outcome in a project fixture and register it with `fixture-create --spec FILE`. Use an `assert` step with an expression and expected JSON value for a specific behavioral check. Run `fixture-record ID --out NEW_DIR` and inspect the action receipt, state and clip. Derive the expected behavior from the source and verify the Unity counterpart independently. A non-`wait` `step` clears the selected scenario; `record` requires and replays a named scenario, includes its setup, then resets. It cannot record an arbitrary sequence of manual steps already performed. For video proof, put reproducible normal actions in a suitable named scenario, or use an applicable capture method; do not label direct state mutation as input proof.
 
 Record chronology without inventing clock precision. Add milliseconds, frames or game-time basis only when timing is part of the criterion and evidence supports it. Unknown event/data telemetry makes the dependent claim unmeasured; continue supported visible/input observations and independent cases.
 

@@ -7,7 +7,7 @@ description: Port and verify Phaser/Three.js web lighting and shading in Unity, 
 
 ## Prerequisites
 
-Read [the shared workflow](../helix-reference/references/comparison-workflow.md). Establish comparable geometry, material, camera, object state and background before attributing differences to lights. Map source lights, environment, shaders and compositing stages to their Unity counterparts. Record known pipeline settings and disclose unknowns.
+For a paired comparison, use the [shared scope and evidence requirements](../helix-reference/references/comparison-workflow.md#scope-and-prerequisites). Establish comparable geometry, material, camera, object state and background before attributing differences to lights. Map source lights, environment, shaders and compositing stages to their Unity counterparts. Record known pipeline settings and disclose unknowns.
 
 Inspect available color-space, exposure, tone-mapping, quality, antialiasing and output settings in both renderers. Numeric PBR parameters are not necessarily equivalent across renderers; equal values do not establish equal appearance.
 
@@ -17,7 +17,7 @@ Follow [the port recipe](../helix-reference/references/port-recipe.md). Map sour
 
 ## Scene property support
 
-Read `Tools/Helix/toolkit/Scene.md` for read-only material/light inventories and explicit appearance comparison rules. Use an appearance profile and inspect effective Unity values alongside property-block provenance and material defaults. Preserve raw engine values and declare color spaces or numeric conversions only when inspected pipeline semantics support them. Equal shader parameters or light intensity do not establish equal output; missing pipeline properties remain unmeasured. Use the property report to guide one-variable diagnosis alongside native images.
+When the final render differs, use “Appearance diagnostics” in `Tools/Helix/toolkit/Scene.md` to isolate the affected light or material. Use an appearance profile and inspect effective Unity values alongside property-block provenance and material defaults. Preserve raw engine values and declare color spaces or numeric conversions only when inspected pipeline semantics support them. Equal shader parameters or light intensity do not establish equal output; missing pipeline properties remain unmeasured. Use the property report to guide one-variable diagnosis alongside native images.
 
 ## Procedure
 

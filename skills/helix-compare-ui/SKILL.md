@@ -5,51 +5,23 @@ description: Port and verify Phaser/Three.js web UI in Unity, including layout, 
 
 # Compare UI
 
-Route multi-step feature state/data semantics to [feature behavior](../helix-compare-feature/SKILL.md); retain scoped input and state checks needed to verify the UI.
+For an existing issue, use `Tools/Helix/bin/helix discrepancy-resume --assignment BOARD-KEY --format summary` (or `--feature "FEATURE"`). For a routed issue, run `discrepancy-rerun --id ID --out NEW_DIR` to verify retained sides and obtain the next command. For new coverage, start with one matched view and real content. Apply the [shared scope and evidence requirements](../helix-reference/references/comparison-workflow.md#scope-and-prerequisites) to the pair.
 
-## Prerequisites
+Match native dimensions, safe area, state, language, text and scroll position as relevant. Map Phaser origins, logical scale and trim to the actual Unity framework. Compare final-output pixel bounds, hit regions and event order separately. Use native images and receipts to distinguish observations from hypotheses. Device-notch coverage needs an appropriate device or fixture.
 
-Read [the shared workflow](../helix-reference/references/comparison-workflow.md). Match native viewport, orientation, safe area, language, exact text, navigation state, balances/offers, scroll position and selected carousel page where relevant. Record fixture use separately from normal navigation.
+## Find the supplying owner
 
-Map Phaser origins, containers, cameras, logical scale and layout, plus sprite trim/atlas metadata, to the actual Unity framework. For uGUI this may include CanvasScaler, RectTransform anchors/pivot and Image/RawImage; do not force that framework when the target uses another.
+Use the diagnostic that discriminates between the plausible causes. The named sections below are in `Tools/Helix/toolkit/UI.md` unless indicated.
 
-For text cases, read [Typography comparison](references/typography.md). Do not infer font family or loaded fallback from appearance alone.
+- **Wrong bounds or shifting children.** Use `ui-layout-trace` with the same paired receipts and spec as `ui-compare`. Inspect the affected axis, mapped ancestor chain and baseline-within-rect drift. For precise ownership, inspect runtime layoutContext and UiAuthoring.InspectLayout. For grouped elements, use the relationships in `Scene.md` to measure internal spacing. Check responsive rules at the required viewports.
+- **Wrong shared sprite or material.** Follow the scoped UiAuthoring.Inspect procedure in `Tools/Helix/toolkit/UIPort.md`. Trace the effective field to its prefab override and inspect other consumers. Compare GUID and local file ID, including state-swapped materials. Use [sprite usage](../helix-sprite-usage/SKILL.md) when a frame or packed page is in question.
+- **Wrong font, wrapping or baseline.** Use [typography comparison](references/typography.md) on the affected element. Pin the actual content, font/material provenance, wrapping and bounds.
+- **Authored value changes at runtime.** Use `visual-owner` (“Runtime visual property ownership”). Follow the referencing presenter or active animation binding at the failing phase. Trace the caller's data before editing a shared asset.
+- **Scrim or overlay tint.** Use `ui-compositing-compare` on bounded native regions. A same-scene capture without the overlay on each side isolates its contribution. Preserve phase and background gaps.
+- **Wrong input or visibility state.** Trace transition, sorting and input writers from the triggering action. Use [feature behavior](../helix-compare-feature/SKILL.md) for multi-step state or data changes and [motion](../helix-compare-motion/SKILL.md) for event timing.
 
-## Authorized implementation
+## Implement and verify
 
-Follow [the port recipe](../helix-reference/references/port-recipe.md). Map source layout and sprite/font assets to the target UI framework. Implement a representative view with real content and its responsive constraints, then verify the final phone/tablet composition before extending affected states. Diagnose asset trim, typography metrics and state mismatch before compensating with layout offsets. For an authorized shared-control change, preview the operation on the supplying prefab, apply using the reviewed plan hash, and use `ui-impact` to identify affected cases for recapture.
+For an authorized port, apply the [port recipe](../helix-reference/references/port-recipe.md) at the supplying Unity owner. Stage original frames with `ui-assets` if needed. For shared uGUI authoring use `ui-plan`, preview the supplying prefab operation, apply the reviewed plan hash through the supported authoring tool, and use `ui-impact` for affected declared cases. Use a reviewed `conversion-plan` manifest when linking an asset/layout plan to a verification matrix.
 
-## Tool support
-
-Read `Tools/Helix/toolkit/UI.md` for `ui-look`, `ui-compare` and the explicit matrix runner. Prefer semantic bindings and supplied project specs. Inspect report prerequisites and unmeasured checks; a generated report or passing synthetic test is not live parity. The native Game-view adapter does not establish device-notch coverage.
-
-For asset transfer and uGUI layout planning, read `Tools/Helix/toolkit/UIPort.md` and the project's UI conversion adapter when present. Use `ui-assets` to stage original frames, `ui-plan` for a reviewable proposal, and `ui-impact` to narrow recapture to affected declared cases. Use a reviewed `conversion-plan` manifest to retain hash-pinned semantic links across asset/layout plans and verification matrices. Keep selectors, parent mappings, state meanings and gameplay callbacks project-owned. Do not infer responsive anchors from a single image or write prefab YAML. Report blocked layout controllers and unmeasured effects explicitly; a plan or dependency match is not visual acceptance.
-
-For broader hierarchy and grouped-element diagnosis, read `Tools/Helix/toolkit/Scene.md`. Compare explicit semantic mappings in screen space before adjusting local transforms. Keep unresolved matches and unsupported clipping/camera cases explicit. Select a scoped layout profile containing every required element. Prefer a scene-enabled matrix case when the project adapter supports inline scene receipts; use `scene-report` to inspect paired crops and overlays. Use relationship checks for internal gaps, centers, ratios and measured baselines, and project-owned style roles for repeated components. A group union does not verify its internal spacing or order; continue element-level UI measurements and inspect native images.
-
-## Procedure
-
-1. For an existing feature, run `Tools/Helix/bin/helix discrepancy-resume --feature "FEATURE"` first. If the brief gives only a board key, use `discrepancy-resume --assignment BOARD-KEY`. Inspect the open ID, element, viewport, state and evidence checks. Plan `discrepancy-rerun --id ID --out .aikit/scratch/ROUND` for a routed issue. Follow its next command in the assigned workspace. Read the paired crops when both sides are current. Record missing fixture readiness as the next action on the same ID. For a new feature or uncovered case, prove one representative view at a required viewport and inspect the native receipts, visible content and equivalent state.
-2. Map both render paths into final-output pixels, then compare element bounds, alignment, spacing, anchors and layering. Distinguish screen-space bounds from local transform values.
-3. Inspect clipping/masks, scrolling, safe-area response, sprite aspect, atlas trim and nine-slice behavior. Verify input hit regions separately from visible bounds. Identify whether mismatches originate in layout, assets, text metrics or state before proposing a cause.
-4. Check required phone/tablet, orientation, content-length and state variants. Infer responsive rules only from sufficient cases or inspected layout data; one screenshot does not establish an anchor rule.
-5. For a shared control, inspect the bound sprite, TMP font and material fields with the scoped UiAuthoring.Inspect overload in UIPort.md. Follow its source chain and check consumers before proposing a change. If a state swaps material, inspect the adapter-declared component field that supplies that state. Compare atlas GUID and file ID. For a review, report the supplying prefab and field, effective value, proposed change and affected consumers. A read-only preview can support the proposal. Apply the typography reference to scoped text. Use inspection/source data for renderer properties; Phaser text is not DOM text, so do not claim CSS properties without evidence.
-6. Verify scoped UI state transitions, input response and gameplay-facing effects against the web behavior. Use paired images and annotations to substantiate differences. Route interaction timing to [motion](../helix-compare-motion/SKILL.md) when needed; a static screenshot does not verify a transition.
-
-## Measurements and observations
-
-Record pixel bounds/gaps and coordinate origin, plus normalized ratios only when useful. Distinguish measured wrapping/line count from hypotheses about font or layout settings. Exact pixel scores can reflect rasterization; assess the task's criteria and approved tolerances rather than assigning a whole-frame percentage threshold.
-
-## Deliverable and completion
-
-Add the shared ledger fields plus source-to-target layout/framework mapping, view/state and input behavior, viewport/safe-area/language/text, element identifiers, measured bounds/gaps, clipping or responsive findings and relevant font provenance. Link annotated native captures and inspection receipts.
-
-Finish when each required view/state/viewport case has a supported disposition and cleanup is verified. Stop only affected claims when content, state, native dimensions or typography provenance cannot be matched; mark them unmeasured or blocked and continue independent cases without reducing required coverage.
-
-For layout discrepancies, use `ui-layout-trace` with the same paired receipts and spec as ui-compare. Include mapped ancestors, inspect per-axis parent contributions and baseline-within-rect drift, and follow the reported driver or serialized property through its supplying prefab/override. Capture runtime layoutContext and a current UiAuthoring.InspectLayout for precise ownership. Keep inherited displacement, plausible tuning controls, runtime writers and verified causes distinct. Attach the trace to the existing discrepancy. See Tools/Helix/toolkit/UI.md under “Layout ownership trace”.
-
-Before editing a visual field with possible runtime owners, use `visual-owner` (Tools/Helix/toolkit/UI.md). Trace the supplying prefab override, inspect referencing view fields and animation bindings, and observe the actual presenter write or active binding at the relevant phase. Keep candidate owners separate from observed writes and trace the data supplied by the caller before changing a shared asset.
-
-For scrims and overlay tints, use `ui-compositing-compare` on native renders and explicitly bounded regions. Inspect the signed per-channel difference and the verified prefab owner for each tint channel before choosing an edit. Capture the same scene without the overlay on both sides to measure its isolated contribution. Keep phase exceptions and missing background observations with the result.
-
-In the first paired pilot, identify the runtime writer for visibility, input availability, sorting and transition phases, and the supplying prefab for shared overrides. Record exact files, current owners and other affected consumers in the handoff. When the pilot proves a runtime mismatch, route it to its owner with the input and observed event. Continue independent art cases. For a shared control, release dependent work once its scoped change reaches the receiving revision and carry open screen measurements forward separately.
+Check the affected states and viewports for layout, clipping and normal input as scoped. Keep the paired receipts, measured bounds, verified writer, changed field and impacted consumers with the existing case. Reuse unaffected evidence with current fingerprints. In a review, report the proposed edit and retest cases. Record any blocked controller, unobserved writer or unmatched state with the claim it limits.

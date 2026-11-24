@@ -40,7 +40,7 @@ const help = `helix — project-owned local reference tools (Node >=22.18)
   acceptance status --folder ID [--discipline dev|ta|shared|unassigned]
   acceptance plan --folder ID --out NEW_SCRATCH_DIR [--discipline dev|ta|shared|unassigned] [--viewport ID]
   acceptance plan|run --item ID --case ID --viewport ID --out NEW_SCRATCH_DIR [--mode retained|capture]
-  discrepancy-resume [--feature NAME] [--assignment ID] [--status active|open|blocked|resolved|accepted-deviation|all]
+  discrepancy-resume [--id ID] [--format summary|full] [--feature NAME] [--assignment ID] [--status active|open|blocked|resolved|accepted-deviation|all]
   discrepancy-save --spec FILE [--after REVISION]
   discrepancy-recover --id ID [--issue ISSUE] [--board-root OWNER_CHECKOUT]
   discrepancy-rerun --id ID --out SCRATCH_DIR [--execute yes]
@@ -198,7 +198,7 @@ async function main() {
     catalog: ['reference', 'folder', 'discipline', 'scope', 'format'],
     evidence: ['directory', 'apply', 'path', 'out'],
     acceptance: ['apply', 'folder', 'discipline', 'spec', 'reference', 'item', 'case', 'viewport', 'out', 'mode'],
-    'discrepancy-resume': ['feature', 'assignment', 'status'],
+    'discrepancy-resume': ['id', 'feature', 'assignment', 'status', 'format'],
     'discrepancy-recover': ['id', 'issue', 'board-root'],
     'discrepancy-rerun': ['id', 'out', 'execute', 'ai-kit'],
     'discrepancy-save': ['spec', 'after'],
