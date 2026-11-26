@@ -1,7 +1,5 @@
 # Helix reference CLI
 
-For project-owned scenario controls and event traces (separate from the removed Workbench mod), see [Porting Workbench](Workbench.md). For a project that declares the scenario-control interface, start its CLI session with `start --workbench yes`. Otherwise use the project adapter’s named scenarios. For offline review, `workbench prepare --spec REVIEW_SPEC --out NEW_DIR` checks pinned evidence and declared source freshness, generates comparisons, and creates a portable evidence bundle; see the Workbench spec and exit-code contract.
-
 Requires Node >=22.18 and a configured local Helix service. Install dependencies with `npm ci --prefix Tools/Helix/toolkit` and Chromium with `npm run install-browser --prefix Tools/Helix/toolkit`. Installation and runtime use a dedicated `~/.cache/ai-kit-helix/browsers/<playwright-version>` cache, shared across lanes but isolated from Atom and other Playwright installers. `HELIX_BROWSERS_PATH` explicitly overrides this location for both commands; ambient `PLAYWRIGHT_BROWSERS_PATH` is intentionally ignored. Run the documented install command after dependency setup in a new lane or after a Playwright version change. The browser workflow does not require AI Kit. Automatic Helix Desktop launch is macOS-only; on other platforms start the local service first.
 
 For offline image review, use `compare` for native PNG pairs and regional measurements, `debug-image` for image channels, `recording-sheet` for recording contact sheets, and `vfx-compare` for paired event filmstrips. PNG diagnostics use the installed `pngjs` dependency; recording review requires Python 3.10+, ffmpeg and ffprobe. None requires Pillow (`PIL`). Prefer these commands over custom PIL scripts. See `Tools/Helix/toolkit/DebugViews.md` and the recording-sheet spec in `Tools/Helix/toolkit/WorkflowToolkit.md` in the installed snapshot. `doctor` does not check these offline dependencies.
@@ -54,6 +52,8 @@ Rectangles use native top-left pixels: `[left, top, right, bottom]`, with right 
 Read `Tools/Helix/project-adapter.md` for game-specific recipes and `Tools/Helix/toolkit/WorkflowToolkit.md` for optional AI Kit workflows. No game build or Production check is required.
 
 For sprite/UI rendering diagnosis, `render-inspect --spec FILE --out EMPTY_DIR` combines captured node properties, sprite usage, optional serialized UI settings and related render traces for scoped offline review. See [Render inspector](RenderInspector.md).
+
+For project-owned scenario controls and event traces, see the [Workbench CLI contract](Workbench.md). Projects that declare the scenario-control interface can use `start --workbench yes`.
 
 ## Native preview commands
 
@@ -121,13 +121,13 @@ The index describes files shipped by the selected variant, not proof that a part
 
 ## UI conversion tools
 
-`ui-assets --spec JSON --out EMPTY_DIR` stages local PNG/WebP/JPEG frames as PNGs with import metadata. `ui-plan --spec JSON --out EMPTY_DIR` proposes layout edits from paired native observations and explicit project mappings. `ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR` identifies cases affected by declared dependency changes. These commands do not launch Unity or apply prefab changes. Read the conversion contract (`Tools/Helix/toolkit/UIPort.md` when installed; [ui-port.md](ui-port.md) in the source repository) before authoring specs.
+`ui-assets --spec JSON --out EMPTY_DIR` stages local PNG/WebP/JPEG frames as PNGs with import metadata. `ui-plan --spec JSON --out EMPTY_DIR` proposes layout edits from paired native observations and explicit project mappings. `ui-impact --spec JSON [--previous JSON] --out EMPTY_DIR` identifies cases affected by declared dependency changes. These commands do not launch Unity or apply prefab changes. Read the [conversion contract](ui-port.md) before authoring specs.
 
 `conversion-plan --spec JSON --out EMPTY_DIR` joins hash-pinned, reviewed semantic links to existing asset/layout specs and optional verification matrices. It stages assets and proposes layouts; it never applies changes or executes verification. Read the same conversion contract for manifest requirements.
 
 ## Scene comparison
 
-`scene-look [--profile NAME]` prints a read-only Phaser/Three scene inventory from a ready named scenario. A profile selects a built-in property set or a project-owned semantic scope from `sceneProfiles`. `capture SCENARIO --out EMPTY_DIR --scene-profile NAME` embeds that scene observation during the existing capture hold. `scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR` compares explicit node or group mappings, camera-projected landmarks and optional declared world-coordinate conversions. It writes diagnostic JSON plus geometric SVG overlays. Read the scene contract (`Tools/Helix/toolkit/Scene.md` when installed; [scene.md](scene.md) in the source repository) for snapshot prerequisites, supported bounds and result statuses. Scene snapshots supplement separately captured images; they are not visual acceptance.
+`scene-look [--profile NAME]` prints a read-only Phaser/Three scene inventory from a ready named scenario. A profile selects a built-in property set or a project-owned semantic scope from `sceneProfiles`. `capture SCENARIO --out EMPTY_DIR --scene-profile NAME` embeds that scene observation during the existing capture hold. `scene-compare --reference JSON --candidate JSON --spec JSON --out EMPTY_DIR` compares explicit node or group mappings, camera-projected landmarks and optional declared world-coordinate conversions. It writes diagnostic JSON plus geometric SVG overlays. Read the [scene contract](scene.md) for snapshot prerequisites, supported bounds and result statuses. Scene snapshots supplement separately captured images; they are not visual acceptance.
 
 `scene-record --out EMPTY_DIR --duration SECONDS --interval-ms MS [--profile NAME]` samples the current ready scenario without replaying setup. `scene-motion --reference SEQUENCE --candidate SEQUENCE --spec JSON --out EMPTY_DIR` compares samples using explicit event-relative timelines and time tolerance. Appearance, relationship and repeated-style rules in the scene spec compare explicitly selected observations with declared tolerances and conversions. Inspect deadline timing and missed samples before interpreting temporal coverage. Read the scene contract before interpreting material values, event clocks or incomplete coverage.
 
@@ -159,7 +159,7 @@ The batch captures native lossless PNGs using the full Chromium distribution ins
 
 Measure initial loading, fixture preparation, view changes and PNG capture separately. Warm capture latency excludes startup and fixture setup. The generic toolkit has no universal subsecond guarantee: benchmark the actual project and machine. Before accepting scene reuse, compare a representative reused case with a fresh-session capture at the same state, viewport and seed, then inspect the images and receipts.
 
-The required project-owned `batch` adapter is documented in `Tools/Helix/toolkit/Adapter.md` (source: [project-adapter.md](project-adapter.md)).
+The required project-owned `batch` adapter is documented in the [project adapter guide](project-adapter.md).
 
 ## Agent-authored fixtures
 

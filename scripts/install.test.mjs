@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync,existsSync,symlinkSync,readlinkSync,renameSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,readdirSync,readFileSync,writeFileSync,rmSync,existsSync,symlinkSync,readlinkSync,renameSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {run} from './install.mjs';
@@ -22,6 +22,18 @@ test('preview, repeated install, update and removal preserve project-owned files
  assert.equal(existsSync(join(root,'Tools/Helix/toolkit/src/cli.ts')),false);
  assert.equal(readFileSync(config,'utf8'),'{"game":"owned"}');
  assert.equal(readFileSync(join(root,'.aikit/rules/state.json'),'utf8'),'{}');
+}));
+test('installed guides link to the exact installed filenames',()=>withProject(root=>{
+ call('install',root);
+ const directory=join(root,'Tools/Helix/toolkit');
+ const filenames=readdirSync(directory).filter(name=>name.endsWith('.md'));
+ for(const name of filenames) {
+  const markdown=readFileSync(join(directory,name),'utf8');
+  for(const [,target] of markdown.matchAll(/\]\(([^/#:)]+\.md)(?:#[^)]*)?\)/g)) {
+   assert.ok(filenames.includes(target),`${name} links to missing guide ${target}`);
+  }
+ }
+ assert.match(readFileSync(join(directory,'UI.md'),'utf8'),/\(Scene\.md#paired-image-review-and-one-case-execution\)/);
 }));
 test('conflicts abort all writes and removal refuses locally edited files',()=>withProject(root=>{
  call('install',root);

@@ -1,14 +1,12 @@
-> The Helix Workbench mod and progress UI are removed. Use the Unity repo’s configured evidence index, generated with `helix evidence-report`. CLI evidence, QA and discrepancy histories remain supported.
-
 # AI Kit Helix
 
-Install a reusable Helix browser reference CLI, six comparison skills and optional project rules into a Unity project. Capture the running prototype, inspect its state, and prepare evidence for comparison with Unity. The toolkit does not patch AI Kit or automatically implement a game's Unity integration.
+Install a reusable Helix browser reference CLI, nine skills and optional project rules into a Unity project. Capture the running prototype, inspect its state, and prepare evidence for comparison with Unity. The toolkit does not patch AI Kit or automatically implement a game's Unity integration.
 
 Generic readiness/motion and delivery helpers are optional. Their execution requires reviewed project-owned hooks; see [capture adapters](docs/project-adapter.md#optional-capture-workflow-adapter) and [workflow commands](docs/workflows.md#readiness-and-synchronized-motion). Browser-only use remains independent of AI Kit.
 
-## Release 1.5.0
+## Release 2.0.0
 
-Adds explicit acceptance execution adapters, immutable capture-pinned agent assessments, bounded Unity preparation receipts, and optional inactive Three.js inspection. Workbench findings remain separate from freshness and human acceptance. See [acceptance contracts](docs/Acceptance.md). Upgrade consumers through an installer preview and update; never install into active lanes as part of a shared-source release. Existing evidence and consumer-owned adapters remain in place.
+Shared tools, dependencies and guides now install under `Tools/Helix/toolkit/`. Existing projects can preview the layout change before updating. See the [migration guide](docs/migration.md).
 
 ## Prerequisites
 
@@ -33,8 +31,7 @@ From this toolkit folder, replace `/path/to/unity-project` with the actual check
 ./install.sh install --project-root /path/to/unity-project --rules helix --init
 
 # Install the pinned runtime dependencies and Chromium
-npm ci --prefix /path/to/unity-project/Tools/Helix/toolkit
-npm run install-browser --prefix /path/to/unity-project/Tools/Helix/toolkit
+(cd "/path/to/unity-project/Tools/Helix/toolkit" && npm ci && npm run install-browser)
 ```
 
 `install.sh` is a thin macOS/Linux convenience wrapper: it checks Node and forwards arguments to the existing Node installer. It does not install Node, download dependencies, start applications or change directories for the caller. If an archive loses its executable bit, use `sh install.sh ...`.
@@ -80,17 +77,15 @@ Every CLI command accepts `--project-root DIR`. Otherwise it discovers the neare
 
 To add the optional Unity comparison helper, include `--unity-helper` in a reviewed installer preview and install/update. It requires an existing `com.unity.nuget.newtonsoft-json` and `com.unity.render-pipelines.universal` dependencies; the installer does not change Unity packages. The selection persists on updates and the helper files are protected by the same manifest/conflict checks. A project-owned adapter must implement setup, readiness, capture and restoration; installation does not enable Unity execution. See [the helper contract](docs/project-adapter.md#optional-unity-comparison-helper).
 
-## Workbench evidence and review
+## Evidence and review
 
-The [port acceptance contracts](docs/Acceptance.md) add versioned consumer scope, required cases, durable run/reviewer records, and generated progress. Game catalogs and recipes remain consumer-owned.
+For a paired review, use the CLI to prepare an offline evidence bundle and check its inputs. See [evidence baselines](docs/EvidenceBaselines.md) and [review preparation](docs/Workbench.md#one-command-review-preparation).
 
-The toolkit retains CLI evidence and review formats. The installed CLI also supplies offline evidence bundles, dependency-checked review preparation, rendering inspection, review summaries/refresh, revision comparisons, and checkout-local dashboards. Start with [Workbench](docs/Workbench.md), [Evidence baselines](docs/EvidenceBaselines.md), [Render inspector](docs/RenderInspector.md), [Objects](docs/Objects.md), and [Dashboard](docs/Dashboard.md). These guides install under the same filenames in `Tools/Helix/toolkit`.
-
-Live scenario/object commands require the existing project-owned browser hooks; they are separate from the removed Workbench mod. Offline evidence and feedback commands use local files. Select a checkout with cwd discovery or `--project-root DIR`; feedback requires `--decisions REVIEWS_JSON`.
+For a team handoff, update the project’s existing status document. To generate its evidence index, configure `Tools/Helix/report.json` with the status document and output paths, then run `./Tools/Helix/bin/helix evidence-report` from the Unity checkout. The project supplies both the report configuration and the status document. See the [repository report configuration](docs/Acceptance.md#repository-report-preferred-reading-surface).
 
 ## Use with Claude and Codex
 
-The installer places the same six skills in the native project discovery locations:
+The installer places the same nine skills in the native project discovery locations:
 
 - Claude: `.claude/skills/helix-*/SKILL.md`.
 - Codex: `.agents/skills/helix-*`, normally aliases to those same checkout-local directories.
@@ -144,6 +139,9 @@ and native viewports, and report evidence and remaining coverage explicitly.
 | `helix-compare-models` | Shape, proportions, pivots, meshes, materials and textures. |
 | `helix-compare-lighting` | Lighting, shadows, reflections and final rendering. |
 | `helix-compare-motion` | Timing, easing, trajectories, poses and transitions. |
+| `helix-compare-vfx` | Event timing, compositing and frame-by-frame comparison of transient effects. |
+| `helix-render-trace` | URP cameras, renderer features, pass inputs and output textures. |
+| `helix-sprite-usage` | Tracing a Phaser texture frame to Unity prefab references and packed atlas pages. |
 
 For implementation work, explicitly state that the agent should port/fix the scoped Unity behavior and recheck it. Fixtures do not prove normal navigation; image differences alone do not establish a parity verdict.
 
@@ -166,8 +164,7 @@ After obtaining a reviewed toolkit version, run from its source folder:
 ```sh
 ./install.sh preview --project-root /path/to/unity-project
 ./install.sh update --project-root /path/to/unity-project
-npm ci --prefix /path/to/unity-project/Tools/Helix/toolkit
-npm run install-browser --prefix /path/to/unity-project/Tools/Helix/toolkit
+(cd "/path/to/unity-project/Tools/Helix/toolkit" && npm ci && npm run install-browser)
 ```
 
 Update preserves the previous rule selection and refuses edits to managed files. Stop owned browser sessions before changing their runtime. Review and commit the updated snapshot and manifest.
